@@ -10,8 +10,8 @@ Push-Location $projectRoot
 try {
     # Explicit source roots prevent custom data/backup directories from being
     # swept into a source release merely because they are outside data/.
-    $files=@('go.mod','go.sum','README.md','.gitignore')
-    $sourceFiles=& rg --files --hidden cmd internal scripts docs web/src web/tests -g '!*.db' -g '!*.db-*' -g '!*.sqlite*' -g '!*.key' -g '!.env*' -g '!*.log' -g '!*.tmp'
+    $files=@('go.mod','go.sum','README.md','.gitignore','config.example.yaml')
+    $sourceFiles=& rg --files --hidden cmd internal scripts docs deploy web/src web/tests -g '!*.db' -g '!*.db-*' -g '!*.sqlite*' -g '!*.key' -g '!.env*' -g '!*.log' -g '!*.tmp'
     if($LASTEXITCODE -ne 0){throw '源码文件枚举失败'}
     $files += $sourceFiles
     $files += Get-ChildItem -LiteralPath (Join-Path $projectRoot 'web') -File | Where-Object { $_.Name -match '^(package(-lock)?\.json|tsconfig[^/]*\.json|index\.html|vite\.config\.ts|vitest\.config\.ts|playwright\.config\.ts)$' } | ForEach-Object { 'web\'+$_.Name }

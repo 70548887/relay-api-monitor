@@ -13,25 +13,29 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"relaylab/internal/domain"
 	"relaylab/internal/security"
 	"relaylab/internal/store"
+	"relaylab/internal/update"
 	"relaylab/internal/upstream"
 	"relaylab/internal/webassets"
 )
 
 type Server struct {
-	Store     *store.Store
-	Vault     *security.Vault
-	Client    *upstream.Client
-	mu        sync.Mutex
-	rates     map[string]*rateBucket
-	active    map[string]int
-	total     int
-	authSlots chan struct{}
+	Store       *store.Store
+	Vault       *security.Vault
+	Client      *upstream.Client
+	mu          sync.Mutex
+	rates       map[string]*rateBucket
+	active      map[string]int
+	total       int
+	authSlots   chan struct{}
+	maintenance atomic.Bool
+	updates     *update.Manager
 }
 type rateBucket struct {
 	Start time.Time
@@ -41,6 +45,13 @@ type rateBucket struct {
 func New(st *store.Store, v *security.Vault) *Server {
 	return &Server{Store: st, Vault: v, Client: upstream.New(), rates: map[string]*rateBucket{}, active: map[string]int{}, authSlots: make(chan struct{}, 2)}
 }
+
+// SetUpdateManager wires the online updater without changing the existing
+// constructor used by tests and manually embedded deployments.
+func (s *Server) SetUpdateManager(m *update.Manager) { s.updates = m }
+func (s *Server) UpdateManager() *update.Manager     { return s.updates }
+func (s *Server) SetMaintenance(v bool)              { s.maintenance.Store(v) }
+func (s *Server) Maintenance() bool                  { return s.maintenance.Load() }
 
 func (s *Server) Handler() http.Handler {
 	gin.SetMode(gin.ReleaseMode)
@@ -97,6 +108,13 @@ func (s *Server) Handler() http.Handler {
 	admin.PATCH("/artifacts/:id", s.hideArtifact)
 	admin.DELETE("/artifacts/:id", s.deleteArtifact)
 	admin.GET("/audit", s.audit)
+	admin.GET("/updates", s.updatesSnapshot)
+	admin.POST("/updates/check", s.updatesCheck)
+	admin.POST("/updates/download", s.updatesDownload)
+	admin.POST("/updates/apply", s.updatesApply)
+	admin.POST("/updates/rollback", s.updatesRollback)
+	admin.GET("/updates/status", s.updatesSnapshot)
+	admin.GET("/updates/history", s.updatesHistory)
 	a.GET("/public/monitor", s.monitor)
 	a.GET("/public/models/:id/history", s.history)
 	a.GET("/public/templates", s.templates)

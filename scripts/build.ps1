@@ -14,5 +14,8 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $projectRoot 'bin') -Force | Out-Null
     & go build -trimpath -ldflags "-s -w -X main.version=$Version" -o (Join-Path $projectRoot 'bin\relaylab.exe') ./cmd/relaylab
     if ($LASTEXITCODE -ne 0) { throw 'Go 构建失败' }
+    & go build -trimpath -ldflags "-s -w -X main.version=$Version" -o (Join-Path $projectRoot 'bin\relaylab-launcher.exe') ./cmd/relaylab-launcher
+    if ($LASTEXITCODE -ne 0) { throw 'Launcher 构建失败' }
     Write-Host "构建完成：$(Join-Path $projectRoot 'bin\relaylab.exe')"
+    Write-Host "构建完成：$(Join-Path $projectRoot 'bin\relaylab-launcher.exe')"
 } finally { Pop-Location }

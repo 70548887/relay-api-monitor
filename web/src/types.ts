@@ -59,3 +59,13 @@ export interface IntelligenceGroup {
  latest_attempt:PublicAttempt|null;history:Artifact[];
 }
 export interface IntelligenceData {groups:IntelligenceGroup[];history_scope:'group'|'model';updated_at:string;worker_online:boolean}
+
+export type UpdateState = 'idle'|'checking'|'available'|'downloading'|'ready'|'draining'|'stopping'|'backing_up'|'starting'|'validating'|'succeeded'|'failed'|'rolled_back'|'pending_restart'|string;
+export interface UpdateCurrent {version:string;commit?:string;build_time?:string;os?:string;arch?:string}
+export interface UpdateAsset {name:string;os?:string;arch?:string;size?:number;sha256?:string;download_url?:string;compatible?:boolean;verified?:boolean;local_path?:string}
+export interface UpdateRelease {tag_name:string;name?:string;published_at?:string;body?:string;url?:string;assets?:UpdateAsset[]}
+export interface UpdateInfo {current_version:string;latest_version:string;release_url?:string;published_at?:string;asset_name?:string;asset_size?:number;sha256?:string;compatible:boolean;available:boolean;notes?:string}
+export interface UpdateOperation {id?:string;state:UpdateState;version?:string;progress?:number;error_code?:string;message?:string;started_at?:string;finished_at?:string}
+export interface UpdateMaintenance {active:boolean;draining_requests?:number;running_jobs?:number;worker_online?:boolean}
+export interface UpdateSnapshot {enabled:boolean;repository:string|{owner:string;repo:string};current:UpdateCurrent;latest?:UpdateInfo|null;release?:UpdateRelease|null;state?:UpdateState;operation?:UpdateOperation|null;staged_path?:string;history?:UpdateHistory[];checked_at?:string|null}
+export interface UpdateHistory {id:string;kind?:string;state:UpdateState;version?:string;message?:string;created_at?:string;finished_at?:string}

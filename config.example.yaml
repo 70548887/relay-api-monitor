@@ -1,0 +1,16 @@
+server:
+  address: "127.0.0.1:42783"
+  data_dir: "./data"
+
+# ========== 服务端自更新配置 ==========
+update:
+  enabled: true
+  github_owner: "70548887"
+  github_repo: "relay-api-monitor"
+  # Keep credentials outside this file in production.
+  github_token: "${RELAYLAB_UPDATE_GITHUB_TOKEN}"
+  check_interval: 0
+  proxy: "${RELAYLAB_UPDATE_PROXY}"
+  auto_download: false
+  auto_restart: true
+  backup_dir: "./data/backups"

@@ -1468,6 +1468,226 @@
         ],
         "type": "object"
       },
+      "UpdateAsset": {
+        "properties": {
+          "arch": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "os": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "verified": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateHistory": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateHistoryResponse": {
+        "properties": {
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/UpdateHistory"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateInfo": {
+        "properties": {
+          "asset_name": {
+            "type": "string"
+          },
+          "asset_size": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "compatible": {
+            "type": "boolean"
+          },
+          "current_version": {
+            "type": "string"
+          },
+          "latest_version": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "published_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "release_url": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateOperation": {
+        "properties": {
+          "error_code": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "progress": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateRelease": {
+        "properties": {
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/UpdateAsset"
+            },
+            "type": "array"
+          },
+          "body": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "published_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "tag_name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateSnapshot": {
+        "properties": {
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "current": {
+            "type": "object"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/UpdateHistory"
+            },
+            "type": "array"
+          },
+          "latest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "operation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateOperation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "release": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateRelease"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "repository": {
+            "type": "string"
+          },
+          "staged_path": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "Usage": {
         "properties": {
           "input_tokens": {
@@ -3347,6 +3567,394 @@
           }
         ],
         "summary": "更新模板并增加版本"
+      }
+    },
+    "/admin/updates": {
+      "get": {
+        "operationId": "admin_updates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateSnapshot"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "读取在线升级状态"
+      }
+    },
+    "/admin/updates/apply": {
+      "post": {
+        "operationId": "admin_updates_apply_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateSnapshot"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "安装已校验升级包并重启服务"
+      }
+    },
+    "/admin/updates/check": {
+      "post": {
+        "operationId": "admin_updates_check_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateSnapshot"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "检查 GitHub 最新 Release"
+      }
+    },
+    "/admin/updates/download": {
+      "post": {
+        "operationId": "admin_updates_download_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateSnapshot"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "下载并校验当前平台安装包"
+      }
+    },
+    "/admin/updates/history": {
+      "get": {
+        "operationId": "admin_updates_history_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateHistoryResponse"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "读取在线升级历史"
+      }
+    },
+    "/admin/updates/rollback": {
+      "post": {
+        "operationId": "admin_updates_rollback_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateSnapshot"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "回滚到最近兼容程序版本"
+      }
+    },
+    "/admin/updates/status": {
+      "get": {
+        "operationId": "admin_updates_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateSnapshot"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "读取在线升级操作状态"
       }
     },
     "/auth/login": {

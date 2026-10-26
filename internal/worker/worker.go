@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,7 +39,13 @@ type Worker struct {
 	syncRevision        map[string]int
 	nextCleanup         time.Time
 	nextMaintenance     time.Time
+	maintenanceFile     string
 }
+
+// SetMaintenanceFile connects the worker to the launcher maintenance fence.
+// While the fence exists, heartbeats and leases continue, but no new durable
+// jobs, schedules, discovery calls or cleanup writes are started.
+func (w *Worker) SetMaintenanceFile(path string) { w.maintenanceFile = path }
 
 func New(st *store.Store, vault *security.Vault, client *upstream.Client) *Worker {
 	if client == nil {
@@ -137,6 +144,13 @@ func (w *Worker) tick(ctx context.Context, now time.Time) error {
 		return err
 	}
 	cfg = normalized(cfg)
+	if w.maintenanceFile != "" {
+		if _, statErr := os.Stat(w.maintenanceFile); statErr == nil {
+			return nil
+		} else if !os.IsNotExist(statErr) {
+			return statErr
+		}
+	}
 	if err = w.st.RecoverJobs(ctx, now); err != nil {
 		return err
 	}

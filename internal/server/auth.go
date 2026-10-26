@@ -127,6 +127,10 @@ func (s *Server) authAdmission(c *gin.Context) bool {
 
 func (s *Server) authRelease() { <-s.authSlots }
 func (s *Server) requireAuth(c *gin.Context) {
+	if s.Maintenance() && c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead && !strings.HasPrefix(c.Request.URL.Path, "/api/v1/admin/updates") {
+		fail(c, http.StatusServiceUnavailable, "maintenance_mode", "系统正在升级维护，请稍后重试")
+		return
+	}
 	token, e := c.Cookie("relaylab_session")
 	if e != nil {
 		fail(c, 401, "unauthorized", "请先登录")

@@ -1,17 +1,25 @@
-param([string]$DataDir = '')
+param([string]$DataDir = '', [string]$ControlAddress = '')
 $ErrorActionPreference = 'Stop'
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$exePath = Join-Path $projectRoot 'bin\relaylab.exe'
+$launcherPath = Join-Path $projectRoot 'bin\relaylab-launcher.exe'
 if ($DataDir -eq '') { $DataDir = Join-Path $projectRoot 'data' }
-$pidPath = Join-Path ([System.IO.Path]::GetFullPath($DataDir)) 'processes.json'
+$DataDir = [System.IO.Path]::GetFullPath($DataDir)
+$pidPath = Join-Path $DataDir 'launcher.process.json'
 if (-not (Test-Path -LiteralPath $pidPath)) { Write-Host '没有找到运行记录'; exit 0 }
 $state = Get-Content -LiteralPath $pidPath -Raw | ConvertFrom-Json
-[System.IO.File]::WriteAllText((Join-Path ([System.IO.Path]::GetFullPath($DataDir)) 'stop.request'), [DateTime]::UtcNow.ToString('O'))
-foreach ($item in $state.processes) {
-    $process = Get-Process -Id $item.id -ErrorAction SilentlyContinue
-    if ($null -ne $process -and $process.Path -eq $exePath -and $process.StartTime.ToUniversalTime().Ticks -eq [long]$item.start_ticks) {
-        if (-not $process.WaitForExit(15000)) { Stop-Process -Id $process.Id }
+if ($ControlAddress -eq '') { $ControlAddress = $state.control_address }
+$controlUri = [Uri]('http://' + $ControlAddress)
+$controlBase = 'http://' + $controlUri.Host + ':' + $controlUri.Port
+$tokenPath = Join-Path $DataDir 'launcher.token'
+if (Test-Path -LiteralPath $tokenPath) {
+    $token = (Get-Content -LiteralPath $tokenPath -Raw).Trim()
+    if ($token -ne '') {
+        try { Invoke-RestMethod -Method Post -Uri ($controlBase + '/control/stop') -Headers @{ 'X-RelayLab-Launcher-Token' = $token } -TimeoutSec 25 | Out-Null } catch {}
     }
 }
-Remove-Item -LiteralPath $pidPath
+$process = Get-Process -Id $state.id -ErrorAction SilentlyContinue
+if ($null -ne $process -and $process.Path -eq $launcherPath -and $process.StartTime.ToUniversalTime().Ticks -eq [long]$state.start_ticks) {
+    if (-not $process.WaitForExit(15000)) { Stop-Process -Id $process.Id -Force }
+}
+Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue
 Write-Host 'Relay Lab 已停止。'

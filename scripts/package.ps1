@@ -16,6 +16,7 @@ New-Item -ItemType Directory -Path (Join-Path $stage 'bin') -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $stage 'scripts') -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $stage 'docs') -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $projectRoot 'bin\relaylab.exe') -Destination (Join-Path $stage 'bin\relaylab.exe')
+Copy-Item -LiteralPath (Join-Path $projectRoot 'bin\relaylab-launcher.exe') -Destination (Join-Path $stage 'bin\relaylab-launcher.exe')
 foreach($name in @('start.ps1','stop.ps1','backup.ps1','restore.ps1')){Copy-Item -LiteralPath (Join-Path $projectRoot ('scripts\'+$name)) -Destination (Join-Path $stage ('scripts\'+$name))}
 foreach($name in @('openapi.json','VALIDATION.md','CHANGELOG.md','LIVE_TESTS.md')){if(Test-Path -LiteralPath (Join-Path $projectRoot ('docs\'+$name))){Copy-Item -LiteralPath (Join-Path $projectRoot ('docs\'+$name)) -Destination (Join-Path $stage ('docs\'+$name))}}
 Copy-Item -LiteralPath (Join-Path $projectRoot 'README.md') -Destination (Join-Path $stage 'README.md')

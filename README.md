@@ -4,6 +4,8 @@ Go + React 的中转 API 监控与模型测试平台。公开页面包含中转 
 
 当前版本 **1.1.1**。智商测试采用分组状态、主动画和八次真实历史预览，支持实际推理强度配置。手动新增和自动发现的模型均默认关闭自动付费任务；归档对象不再出现在可运行目标中。升级保留账号、加密Key与历史数据。
 
+后台“在线升级”页面可检查并安装 `70548887/relay-api-monitor` 的 GitHub Release。复制 `config.example.yaml` 为 `config.yaml`，通过 `RELAYLAB_UPDATE_GITHUB_TOKEN` 配置私有仓库读取 Token；不要把 Token、代理凭据或本地配置提交到仓库。完整流程见 [docs/UPDATES.md](docs/UPDATES.md)。
+
 ## 本机启动
 
 开发构建需要 Go 1.26+、Node.js 22.16+；成品启动只需要 `bin/relaylab.exe`。

@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,9 +12,11 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -23,11 +26,14 @@ import (
 	"relaylab/internal/security"
 	"relaylab/internal/server"
 	"relaylab/internal/store"
+	"relaylab/internal/update"
 	"relaylab/internal/upstream"
 	"relaylab/internal/worker"
 )
 
 var version = "dev"
+var commit = "unknown"
+var buildTime = "unknown"
 
 func main() {
 	if e := run(os.Args[1:]); e != nil {
@@ -35,6 +41,96 @@ func main() {
 		os.Exit(1)
 	}
 }
+
+func runUpdateChecks(ctx context.Context, manager *update.Manager, interval time.Duration) {
+	if interval <= 0 || manager == nil {
+		return
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if _, err := manager.Check(ctx); err != nil {
+				continue
+			}
+			if manager.Config().AutoDownload {
+				_, _ = manager.Download(ctx)
+			}
+		}
+	}
+}
+
+func watchMaintenance(ctx context.Context, dataDir string, app *server.Server) {
+	path := filepath.Join(dataDir, "maintenance.request")
+	tick := time.NewTicker(200 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+			_, err := os.Stat(path)
+			app.SetMaintenance(err == nil)
+		}
+	}
+}
+
+// wireLauncherUpdater connects the web process to a colocated launcher when
+// one is present. Direct `relaylab serve` runs remain usable and report
+// pending_restart until they are started under the launcher.
+func wireLauncherUpdater(manager *update.Manager, dataDir, backupDir string) {
+	if manager == nil {
+		return
+	}
+	tokenBytes, err := os.ReadFile(filepath.Join(dataDir, "launcher.token"))
+	if err != nil || strings.TrimSpace(string(tokenBytes)) == "" {
+		return
+	}
+	token := strings.TrimSpace(string(tokenBytes))
+	address := os.Getenv("RELAYLAB_LAUNCHER_CONTROL_ADDR")
+	if address == "" {
+		address = "127.0.0.1:42784"
+	}
+	client := &http.Client{Timeout: 15 * time.Minute}
+	manager.SetApplier(func(ctx context.Context, stagedPath string, info update.UpdateInfo) error {
+		body, _ := json.Marshal(map[string]string{"staged_path": stagedPath, "sha256": info.SHA256, "backup_dir": backupDir})
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+address+"/control/replace", bytes.NewReader(body))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-RelayLab-Launcher-Token", token)
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode > 299 {
+			return fmt.Errorf("launcher returned HTTP %d", resp.StatusCode)
+		}
+		return nil
+	})
+	manager.SetRollback(func(ctx context.Context) error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+address+"/control/rollback", nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("X-RelayLab-Launcher-Token", token)
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode > 299 {
+			return fmt.Errorf("launcher returned HTTP %d", resp.StatusCode)
+		}
+		return nil
+	})
+}
+
 func run(args []string) error {
 	if len(args) == 0 {
 		fmt.Println("Relay Lab — 中转 API 监控与模型测试\n命令: serve | worker | init-admin | backup | restore | version\n运行 scripts/start.ps1 启动网站和任务进程。")
@@ -49,10 +145,13 @@ func run(args []string) error {
 	default:
 		return fmt.Errorf("未知命令 %q", args[0])
 	}
-	cfg := config.Default()
+	defaults := config.Default()
+	dataDirArg, addrArg := defaults.DataDir, defaults.Address
+	configPath := os.Getenv("RELAYLAB_CONFIG")
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
-	flags.StringVar(&cfg.DataDir, "data-dir", cfg.DataDir, "数据目录")
-	flags.StringVar(&cfg.Address, "addr", cfg.Address, "监听地址")
+	flags.StringVar(&dataDirArg, "data-dir", dataDirArg, "数据目录")
+	flags.StringVar(&addrArg, "addr", addrArg, "监听地址")
+	flags.StringVar(&configPath, "config", configPath, "YAML 配置文件")
 	output := flags.String("output", "", "备份 ZIP 输出路径")
 	input := flags.String("input", "", "恢复 ZIP 路径")
 	username := flags.String("username", "admin", "管理员账号")
@@ -62,6 +161,18 @@ func run(args []string) error {
 	if flags.NArg() != 0 {
 		return errors.New("命令包含未识别的参数")
 	}
+	cfg, e := config.Load(configPath)
+	if e != nil {
+		return e
+	}
+	flags.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "data-dir":
+			cfg.DataDir = dataDirArg
+		case "addr":
+			cfg.Address = addrArg
+		}
+	})
 	abs, e := filepath.Abs(cfg.DataDir)
 	if e != nil {
 		return e
@@ -158,6 +269,16 @@ func run(args []string) error {
 		return nil
 	case "serve":
 		app := server.New(st, vault)
+		updater, updateErr := update.New(cfg.Update, cfg.DataDir, update.BuildInfo{Version: version, Commit: commit, BuildTime: buildTime, OS: runtime.GOOS, Arch: runtime.GOARCH})
+		if updateErr != nil {
+			return updateErr
+		}
+		app.SetUpdateManager(updater)
+		go watchMaintenance(ctx, cfg.DataDir, app)
+		wireLauncherUpdater(updater, cfg.DataDir, cfg.Update.BackupDir)
+		if cfg.Update.CheckInterval > 0 {
+			go runUpdateChecks(ctx, updater, cfg.Update.CheckInterval)
+		}
 		hs := newHTTPServer(cfg.Address, app.Handler(), ctx)
 		ln, e := net.Listen("tcp", cfg.Address)
 		if e != nil {
@@ -166,7 +287,9 @@ func run(args []string) error {
 		log.Printf("Relay Lab %s 已启动 http://%s", version, ln.Addr())
 		return serveHTTP(ctx, hs, ln)
 	case "worker":
-		err := worker.New(st, vault, upstream.New()).Run(ctx)
+		w := worker.New(st, vault, upstream.New())
+		w.SetMaintenanceFile(filepath.Join(cfg.DataDir, "maintenance.request"))
+		err := w.Run(ctx)
 		if errors.Is(err, context.Canceled) {
 			return nil
 		}
