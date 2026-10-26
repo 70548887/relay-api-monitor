@@ -1,4 +1,4 @@
-$ErrorActionPreference='Stop'
+﻿$ErrorActionPreference='Stop'
 $fixture=[IO.Path]::GetFullPath((Join-Path $env:TEMP ('relaylab-package-test-'+[guid]::NewGuid().ToString('N'))))
 New-Item -ItemType Directory -Path $fixture -Force | Out-Null
 foreach($dir in @('scripts','bin','docs\releases','deploy','web\src','web\tests','cmd','internal','release','.github\workflows','custom-private-data','release\relaylab-windows-amd64-9.9.9\data')){New-Item -ItemType Directory -Path (Join-Path $fixture $dir) -Force | Out-Null}

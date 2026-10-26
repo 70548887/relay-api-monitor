@@ -1,4 +1,4 @@
-param([string]$Address = '', [string]$DataDir = '', [string]$ControlAddress = '', [string]$Config = '', [switch]$NoBrowser)
+﻿param([string]$Address = '', [string]$DataDir = '', [string]$ControlAddress = '', [string]$Config = '', [switch]$NoBrowser)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'process-common.ps1')
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))

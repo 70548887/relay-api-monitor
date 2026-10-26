@@ -1,4 +1,4 @@
-param([ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version='')
+﻿param([ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version='')
 $ErrorActionPreference='Stop'
 $projectRoot=[System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $expected=([IO.File]::ReadAllText((Join-Path $projectRoot 'VERSION'))).Trim()

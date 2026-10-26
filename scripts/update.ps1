@@ -1,4 +1,4 @@
-param([string]$DataDir = '', [string]$ControlAddress = '', [string]$Binary = '')
+﻿param([string]$DataDir = '', [string]$ControlAddress = '', [string]$Binary = '')
 $ErrorActionPreference = 'Stop'
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if ($DataDir -eq '') { $DataDir = Join-Path $projectRoot 'data' }

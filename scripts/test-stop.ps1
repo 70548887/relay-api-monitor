@@ -1,4 +1,11 @@
 $ErrorActionPreference='Stop'
+# Windows PowerShell 5 uses the active ANSI codepage for BOM-less scripts.
+# Parse the actual deployed file before testing guard behavior, so syntax
+# failures cannot masquerade as a safe rejected request.
+$stopSource=Join-Path $PSScriptRoot 'stop.ps1'
+$parseTokens=$null;$parseErrors=$null
+[Management.Automation.Language.Parser]::ParseFile($stopSource,[ref]$parseTokens,[ref]$parseErrors)|Out-Null
+if(@($parseErrors).Count){throw 'stop.ps1 must parse before testing shutdown guards'}
 # Isolated command mocks: no network request or real process termination.
 $fixture=Join-Path $env:TEMP ('relaylab-stop-tests-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path (Join-Path $fixture 'scripts'),(Join-Path $fixture 'bin') -Force | Out-Null
@@ -50,6 +57,7 @@ foreach($mode in @('protocol2-conflict','protocol2-timeout','unreachable','inval
         if($failed -or $recordExists -or $markerExists -or $global:StopTestCalls -contains '/control/stop' -or $global:StopTestCalls -contains 'force'){throw 'protocol 2 accepted shutdown regression'}
     }else{
         if(-not $failed -or -not $recordExists -or $markerExists -or $global:StopTestCalls -contains '/control/stop' -or $global:StopTestCalls -contains 'force' -or $global:StopTestCalls -contains 'wait'){throw "ambiguous/rejected shutdown changed processes: $mode"}
+        if($mode -ne 'missing-token' -and $global:StopTestCalls -notcontains '/status'){throw "guard test did not reach status request: $mode"}
     }
     Write-Host "PASS: $mode"
 }

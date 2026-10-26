@@ -80,6 +80,10 @@ def package_files(root, goos, arch, binary_dir, local_names=False):
     for name, (path, _) in files.items():
         if not path.is_file():
             raise ValueError(f'missing package input {name}: {path}')
+        if name.endswith('.ps1'):
+            raw = path.read_bytes()
+            if any(byte >= 128 for byte in raw) and not raw.startswith(b'\xef\xbb\xbf'):
+                raise ValueError(f'Windows PowerShell 5 requires UTF-8 BOM for non-ASCII script: {name}')
     return files
 
 

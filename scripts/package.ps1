@@ -1,4 +1,4 @@
-param([string]$Version = '', [switch]$Refresh)
+﻿param([string]$Version = '', [switch]$Refresh)
 $ErrorActionPreference = 'Stop'
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $expected = ([IO.File]::ReadAllText((Join-Path $projectRoot 'VERSION'))).Trim()
