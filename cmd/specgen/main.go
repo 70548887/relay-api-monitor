@@ -23,6 +23,11 @@ func main() {
 	}
 }
 func generate() error {
+	versionBytes, versionErr := os.ReadFile("VERSION")
+	if versionErr != nil {
+		return versionErr
+	}
+	releaseVersion := strings.TrimSpace(string(versionBytes))
 	types := []any{domain.Platform{}, domain.Channel{}, domain.Model{}, domain.Usage{}, domain.ProbeResult{}, domain.PromptTemplate{}, domain.Artifact{}, domain.Job{}, domain.Settings{}, domain.Schedule{}, domain.WorkerHealth{}, domain.AuditEvent{}}
 	schemas := object{}
 	var ts strings.Builder
@@ -81,6 +86,23 @@ func generate() error {
 	schemas["UpdateHistory"] = object{"type": "object", "properties": object{"id": object{"type": "string"}, "state": object{"type": "string"}, "version": object{"type": "string"}, "message": object{"type": "string"}, "created_at": object{"type": "string", "format": "date-time"}}}
 	schemas["UpdateHistoryResponse"] = object{"type": "object", "properties": object{"history": object{"type": "array", "items": ref("UpdateHistory")}}}
 	schemas["UpdateSnapshot"] = object{"type": "object", "properties": object{"enabled": object{"type": "boolean"}, "repository": object{"type": "string"}, "current": object{"type": "object"}, "latest": object{"anyOf": []any{ref("UpdateInfo"), object{"type": "null"}}}, "release": object{"anyOf": []any{ref("UpdateRelease"), object{"type": "null"}}}, "state": object{"type": "string"}, "operation": object{"anyOf": []any{ref("UpdateOperation"), object{"type": "null"}}}, "staged_path": object{"type": "string"}, "history": object{"type": "array", "items": ref("UpdateHistory")}, "checked_at": object{"anyOf": []any{object{"type": "string", "format": "date-time"}, object{"type": "null"}}}}}
+	updateProperties := schemas["UpdateSnapshot"].(object)["properties"].(object)
+	delete(updateProperties, "staged_path")
+	updateProperties["launcher_managed"] = object{"type": "boolean"}
+	updateProperties["launcher_protocol"] = object{"type": "integer"}
+	updateProperties["auto_restart"] = object{"type": "boolean"}
+	updateProperties["maintenance"] = object{"type": "object", "properties": object{"active": object{"type": "boolean"}, "draining_requests": object{"type": "integer"}, "running_jobs": object{"type": "integer"}, "worker_online": object{"type": "boolean"}}}
+	for _, name := range []string{"UpdateInfo", "UpdateRelease"} {
+		props := schemas[name].(object)["properties"].(object)
+		props["commit"] = object{"type": "string"}
+		for _, field := range []string{"launcher_protocol", "database_schema", "min_database_schema"} {
+			props[field] = object{"type": "integer"}
+		}
+	}
+	for _, field := range []string{"bytes_downloaded", "total_bytes", "eta_seconds"} {
+		schemas["UpdateOperation"].(object)["properties"].(object)[field] = object{"type": "integer", "minimum": 0}
+	}
+	schemas["UpdateOperation"].(object)["properties"].(object)["bytes_per_second"] = object{"type": "number", "minimum": 0}
 	paths := object{}
 	add := func(path, method, summary, request, response string, secured, array bool) {
 		op := object{"operationId": strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(strings.Trim(path, "/"), "/", "_"), "{", ""), "}", "") + "_" + method, "summary": summary, "responses": object{"200": object{"description": "成功", "content": object{"application/json": object{"schema": object{}}}}, "400": object{"description": "无效请求", "content": object{"application/json": object{"schema": ref("Error")}}}, "401": object{"description": "需要登录"}, "403": object{"description": "来源或 CSRF 验证失败"}, "409": object{"description": "状态冲突"}, "429": object{"description": "超过限流"}, "502": object{"description": "上游失败"}}}
@@ -164,6 +186,13 @@ func generate() error {
 		responses["201"] = responses["200"]
 		delete(responses, "200")
 	}
+	for _, action := range []string{"check", "download", "apply", "rollback"} {
+		responses := paths["/admin/updates/"+action].(object)["post"].(object)["responses"].(object)
+		responses["202"] = responses["200"]
+		responses["202"].(object)["description"] = "后台操作已接受；轮询 status，只有 launcher 验证两进程后才报告安装成功"
+		delete(responses, "200")
+		responses["501"] = object{"description": "升级被禁用或未配置"}
+	}
 	history := paths["/public/models/{id}/history"].(object)["get"].(object)
 	history["parameters"] = append(history["parameters"].([]any), object{"name": "limit", "in": "query", "schema": object{"type": "integer", "minimum": 1, "maximum": 5000, "default": 1000}, "description": "最近检测记录条数；按时间倒序"})
 	for _, pathValue := range paths {
@@ -174,7 +203,7 @@ func generate() error {
 			operationValue.(object)["responses"].(object)["413"] = object{"description": "请求体超过2MiB限制"}
 		}
 	}
-	doc := object{"openapi": "3.1.0", "info": object{"title": "Relay Lab API", "version": "1.1.0", "description": "中转监控、分组作品与实时状态及访客临时测试。所有时间为UTC ISO8601。管理写操作需要X-CSRF-Token。JSON请求体必须是单个完整对象且不超过2MiB；浏览器Origin必须同源，非浏览器JSON CLI可省略Origin。默认本机端口42783。分组核验仅标记Token绑定，不证明实际路由或账号身份。"}, "servers": []any{object{"url": "/api/v1"}}, "paths": paths, "components": object{"schemas": schemas, "securitySchemes": object{"cookieAuth": object{"type": "apiKey", "in": "cookie", "name": "relaylab_session"}}}}
+	doc := object{"openapi": "3.1.0", "info": object{"title": "Relay Lab API", "version": releaseVersion, "description": "中转监控、分组作品与实时状态及访客临时测试。所有时间为UTC ISO8601。管理写操作需要X-CSRF-Token。JSON请求体必须是单个完整对象且不超过2MiB；浏览器Origin必须同源，非浏览器JSON CLI可省略Origin。默认本机端口42783。分组核验仅标记Token绑定，不证明实际路由或账号身份。"}, "servers": []any{object{"url": "/api/v1"}}, "paths": paths, "components": object{"schemas": schemas, "securitySchemes": object{"cookieAuth": object{"type": "apiKey", "in": "cookie", "name": "relaylab_session"}}}}
 	b, e := json.MarshalIndent(doc, "", "  ")
 	if e != nil {
 		return e

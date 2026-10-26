@@ -16,6 +16,7 @@ func TestControlHandlerRequiresLoopbackAndToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = s.Close() })
 	request := httptest.NewRequest(http.MethodGet, "/status", nil)
 	request.RemoteAddr = "192.0.2.10:1234"
 	response := httptest.NewRecorder()
@@ -51,6 +52,7 @@ func TestWriteTokenAndStateAreAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = s.Close() })
 	tokenPath, err := s.WriteTokenFile()
 	if err != nil {
 		t.Fatal(err)

@@ -1536,14 +1536,26 @@
           "available": {
             "type": "boolean"
           },
+          "commit": {
+            "type": "string"
+          },
           "compatible": {
             "type": "boolean"
           },
           "current_version": {
             "type": "string"
           },
+          "database_schema": {
+            "type": "integer"
+          },
           "latest_version": {
             "type": "string"
+          },
+          "launcher_protocol": {
+            "type": "integer"
+          },
+          "min_database_schema": {
+            "type": "integer"
           },
           "notes": {
             "type": "string"
@@ -1563,8 +1575,20 @@
       },
       "UpdateOperation": {
         "properties": {
+          "bytes_downloaded": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "bytes_per_second": {
+            "minimum": 0,
+            "type": "number"
+          },
           "error_code": {
             "type": "string"
+          },
+          "eta_seconds": {
+            "minimum": 0,
+            "type": "integer"
           },
           "id": {
             "type": "string"
@@ -1583,6 +1607,10 @@
           },
           "state": {
             "type": "string"
+          },
+          "total_bytes": {
+            "minimum": 0,
+            "type": "integer"
           },
           "updated_at": {
             "format": "date-time",
@@ -1605,6 +1633,18 @@
           "body": {
             "type": "string"
           },
+          "commit": {
+            "type": "string"
+          },
+          "database_schema": {
+            "type": "integer"
+          },
+          "launcher_protocol": {
+            "type": "integer"
+          },
+          "min_database_schema": {
+            "type": "integer"
+          },
           "name": {
             "type": "string"
           },
@@ -1623,6 +1663,9 @@
       },
       "UpdateSnapshot": {
         "properties": {
+          "auto_restart": {
+            "type": "boolean"
+          },
           "checked_at": {
             "anyOf": [
               {
@@ -1656,6 +1699,29 @@
               }
             ]
           },
+          "launcher_managed": {
+            "type": "boolean"
+          },
+          "launcher_protocol": {
+            "type": "integer"
+          },
+          "maintenance": {
+            "properties": {
+              "active": {
+                "type": "boolean"
+              },
+              "draining_requests": {
+                "type": "integer"
+              },
+              "running_jobs": {
+                "type": "integer"
+              },
+              "worker_online": {
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
           "operation": {
             "anyOf": [
               {
@@ -1677,9 +1743,6 @@
             ]
           },
           "repository": {
-            "type": "string"
-          },
-          "staged_path": {
             "type": "string"
           },
           "state": {
@@ -1765,7 +1828,7 @@
   "info": {
     "description": "中转监控、分组作品与实时状态及访客临时测试。所有时间为UTC ISO8601。管理写操作需要X-CSRF-Token。JSON请求体必须是单个完整对象且不超过2MiB；浏览器Origin必须同源，非浏览器JSON CLI可省略Origin。默认本机端口42783。分组核验仅标记Token绑定，不证明实际路由或账号身份。",
     "title": "Relay Lab API",
-    "version": "1.1.0"
+    "version": "1.2.2"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -3631,7 +3694,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3639,7 +3702,7 @@
                 }
               }
             },
-            "description": "成功"
+            "description": "后台操作已接受；轮询 status，只有 launcher 验证两进程后才报告安装成功"
           },
           "400": {
             "content": {
@@ -3665,6 +3728,9 @@
           },
           "429": {
             "description": "超过限流"
+          },
+          "501": {
+            "description": "升级被禁用或未配置"
           },
           "502": {
             "description": "上游失败"
@@ -3692,7 +3758,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3700,7 +3766,7 @@
                 }
               }
             },
-            "description": "成功"
+            "description": "后台操作已接受；轮询 status，只有 launcher 验证两进程后才报告安装成功"
           },
           "400": {
             "content": {
@@ -3726,6 +3792,9 @@
           },
           "429": {
             "description": "超过限流"
+          },
+          "501": {
+            "description": "升级被禁用或未配置"
           },
           "502": {
             "description": "上游失败"
@@ -3753,7 +3822,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3761,7 +3830,7 @@
                 }
               }
             },
-            "description": "成功"
+            "description": "后台操作已接受；轮询 status，只有 launcher 验证两进程后才报告安装成功"
           },
           "400": {
             "content": {
@@ -3787,6 +3856,9 @@
           },
           "429": {
             "description": "超过限流"
+          },
+          "501": {
+            "description": "升级被禁用或未配置"
           },
           "502": {
             "description": "上游失败"
@@ -3862,7 +3934,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3870,7 +3942,7 @@
                 }
               }
             },
-            "description": "成功"
+            "description": "后台操作已接受；轮询 status，只有 launcher 验证两进程后才报告安装成功"
           },
           "400": {
             "content": {
@@ -3896,6 +3968,9 @@
           },
           "429": {
             "description": "超过限流"
+          },
+          "501": {
+            "description": "升级被禁用或未配置"
           },
           "502": {
             "description": "上游失败"

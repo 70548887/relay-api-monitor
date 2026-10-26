@@ -1,10 +1,10 @@
-// Package update implements the GitHub Release side of Relay Lab updates.
-// Process replacement is intentionally delegated to the launcher; this package
-// only discovers, downloads, verifies and journals update artifacts.
+// Package update discovers, verifies and stages releases. The launcher owns
+// replacement, backup, rollback and health confirmation.
 package update
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -17,7 +17,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -26,21 +25,27 @@ import (
 )
 
 const (
-	stateFileName   = "update-state.json"
-	maxReleaseBody  = 4 << 20
-	maxDownloadSize = 2 << 30
+	stateFileName         = "update-state.json"
+	launcherStateFileName = "launcher-update.json"
+	maxReleaseBody        = 4 << 20
+	maxDownloadSize       = 2 << 30
+	LauncherProtocol      = 2
+	DatabaseSchema        = 1
 )
 
-var semverPattern = regexp.MustCompile(`^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:[-+][0-9A-Za-z.-]+)?$`)
 var repoPartPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
-var credentialURLPattern = regexp.MustCompile(`(?i)(https?://)([^/@\s]+)@`)
+var digestPattern = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
+var commitPattern = regexp.MustCompile(`^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$`)
+var urlPattern = regexp.MustCompile(`https?://[^\s<>"']+`)
 var bearerPattern = regexp.MustCompile(`(?i)(bearer\s+)[^\s,;]+`)
-
 var (
 	ErrDisabled            = errors.New("update: updater is disabled")
 	ErrNoRelease           = errors.New("update: no compatible release found")
-	ErrApplyUnavailable    = errors.New("update: launcher is required to apply an update")
-	ErrRollbackUnavailable = errors.New("update: launcher is required to roll back an update")
+	ErrBusy                = errors.New("update: another operation is active")
+	ErrApplyUnavailable    = errors.New("update: launcher protocol 2 is required; manually upgrade a 1.2.1 launcher before applying")
+	ErrRollbackUnavailable = errors.New("update: launcher protocol 2 is required to roll back")
+	ErrStateDurability     = errors.New("update: cannot durably write update state")
+	ErrInvalidManifest     = errors.New("update: invalid or incompatible required manifest")
 )
 
 type BuildInfo struct {
@@ -50,7 +55,6 @@ type BuildInfo struct {
 	OS        string `json:"os"`
 	Arch      string `json:"arch"`
 }
-
 type Asset struct {
 	Name        string `json:"name"`
 	OS          string `json:"os"`
@@ -59,42 +63,52 @@ type Asset struct {
 	SHA256      string `json:"sha256,omitempty"`
 	DownloadURL string `json:"-"`
 	Verified    bool   `json:"verified"`
-	LocalPath   string `json:"local_path,omitempty"`
+	LocalPath   string `json:"-"`
 }
-
 type Release struct {
-	TagName     string    `json:"tag_name"`
-	Name        string    `json:"name"`
-	URL         string    `json:"url"`
-	PublishedAt time.Time `json:"published_at"`
-	Body        string    `json:"body"`
-	Assets      []Asset   `json:"assets"`
+	TagName           string    `json:"tag_name"`
+	Name              string    `json:"name"`
+	URL               string    `json:"url"`
+	PublishedAt       time.Time `json:"published_at"`
+	Body              string    `json:"body"`
+	Assets            []Asset   `json:"assets"`
+	Commit            string    `json:"commit,omitempty"`
+	BuildTime         string    `json:"build_time,omitempty"`
+	LauncherProtocol  int       `json:"launcher_protocol"`
+	DatabaseSchema    int       `json:"database_schema"`
+	MinDatabaseSchema int       `json:"min_database_schema"`
 }
-
 type UpdateInfo struct {
-	CurrentVersion string     `json:"current_version"`
-	LatestVersion  string     `json:"latest_version"`
-	ReleaseURL     string     `json:"release_url"`
-	PublishedAt    *time.Time `json:"published_at,omitempty"`
-	AssetName      string     `json:"asset_name"`
-	AssetSize      int64      `json:"asset_size"`
-	SHA256         string     `json:"sha256,omitempty"`
-	Compatible     bool       `json:"compatible"`
-	Available      bool       `json:"available"`
-	Notes          string     `json:"notes,omitempty"`
+	CurrentVersion    string     `json:"current_version"`
+	LatestVersion     string     `json:"latest_version"`
+	ReleaseURL        string     `json:"release_url"`
+	PublishedAt       *time.Time `json:"published_at,omitempty"`
+	AssetName         string     `json:"asset_name"`
+	AssetSize         int64      `json:"asset_size"`
+	SHA256            string     `json:"sha256,omitempty"`
+	Compatible        bool       `json:"compatible"`
+	Available         bool       `json:"available"`
+	Notes             string     `json:"notes,omitempty"`
+	OperationID       string     `json:"operation_id,omitempty"`
+	Commit            string     `json:"commit"`
+	LauncherProtocol  int        `json:"launcher_protocol"`
+	DatabaseSchema    int        `json:"database_schema"`
+	MinDatabaseSchema int        `json:"min_database_schema"`
 }
-
 type Operation struct {
-	ID        string    `json:"id"`
-	State     string    `json:"state"`
-	Version   string    `json:"version,omitempty"`
-	Progress  int       `json:"progress"`
-	ErrorCode string    `json:"error_code,omitempty"`
-	Message   string    `json:"message,omitempty"`
-	StartedAt time.Time `json:"started_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID              string    `json:"id"`
+	State           string    `json:"state"`
+	Version         string    `json:"version,omitempty"`
+	Progress        int       `json:"progress"`
+	BytesDownloaded int64     `json:"bytes_downloaded"`
+	TotalBytes      int64     `json:"total_bytes"`
+	BytesPerSecond  float64   `json:"bytes_per_second"`
+	ETASeconds      int64     `json:"eta_seconds"`
+	ErrorCode       string    `json:"error_code,omitempty"`
+	Message         string    `json:"message,omitempty"`
+	StartedAt       time.Time `json:"started_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
-
 type HistoryEntry struct {
 	ID        string    `json:"id"`
 	State     string    `json:"state"`
@@ -102,40 +116,58 @@ type HistoryEntry struct {
 	Message   string    `json:"message,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
-
 type Snapshot struct {
-	Enabled    bool           `json:"enabled"`
-	Repository string         `json:"repository"`
-	Current    BuildInfo      `json:"current"`
-	Latest     *UpdateInfo    `json:"latest,omitempty"`
-	Release    *Release       `json:"release,omitempty"`
-	State      string         `json:"state"`
-	Operation  *Operation     `json:"operation,omitempty"`
-	StagedPath string         `json:"staged_path,omitempty"`
+	Enabled    bool        `json:"enabled"`
+	Repository string      `json:"repository"`
+	Current    BuildInfo   `json:"current"`
+	Latest     *UpdateInfo `json:"latest,omitempty"`
+	Release    *Release    `json:"release,omitempty"`
+	State      string      `json:"state"`
+	Operation  *Operation  `json:"operation,omitempty"`
+	// Kept for Go callers; local filesystem paths are never serialized.
+	StagedPath string         `json:"-"`
 	History    []HistoryEntry `json:"history"`
 	CheckedAt  *time.Time     `json:"checked_at,omitempty"`
 }
-
 type stateJournal struct {
-	Latest     *UpdateInfo    `json:"latest,omitempty"`
-	Release    *Release       `json:"release,omitempty"`
-	State      string         `json:"state"`
-	Operation  *Operation     `json:"operation,omitempty"`
-	StagedPath string         `json:"staged_path,omitempty"`
-	History    []HistoryEntry `json:"history"`
-	CheckedAt  *time.Time     `json:"checked_at,omitempty"`
+	Latest              *UpdateInfo    `json:"latest,omitempty"`
+	Release             *Release       `json:"release,omitempty"`
+	State               string         `json:"state"`
+	Operation           *Operation     `json:"operation,omitempty"`
+	StagedPath          string         `json:"staged_path,omitempty"`
+	StagedBinding       string         `json:"staged_binding,omitempty"`
+	LauncherOperationID string         `json:"launcher_operation_id,omitempty"`
+	History             []HistoryEntry `json:"history"`
+	CheckedAt           *time.Time     `json:"checked_at,omitempty"`
 }
 
+// LauncherStatus is an observation of the launcher's authoritative journal.
+// The manager never writes launcher-update.json or infers success from its build.
+type LauncherStatus struct {
+	OperationID string    `json:"operation_id"`
+	Kind        string    `json:"kind,omitempty"`
+	State       string    `json:"state"`
+	Version     string    `json:"version,omitempty"`
+	Progress    int       `json:"progress"`
+	ErrorCode   string    `json:"error_code,omitempty"`
+	Message     string    `json:"message,omitempty"`
+	StartedAt   time.Time `json:"started_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
 type Manager struct {
-	mu       sync.Mutex
-	cfg      config.UpdateConfig
-	dataDir  string
-	build    BuildInfo
-	client   *http.Client
-	apiBase  string
-	state    stateJournal
-	applier  func(context.Context, string, UpdateInfo) error
-	rollback func(context.Context) error
+	mu      sync.Mutex
+	cfg     config.UpdateConfig
+	dataDir string
+	build   BuildInfo
+	client  *http.Client
+	// apiBase is package-private and used only by in-process HTTP tests.
+	apiBase        string
+	state          stateJournal
+	busy           bool
+	launcher       *LauncherStatus
+	applier        func(context.Context, string, UpdateInfo) error
+	rollback       func(context.Context) error
+	rollbackWithID func(context.Context, string) error
 }
 
 func New(cfg config.UpdateConfig, dataDir string, build BuildInfo) (*Manager, error) {
@@ -151,29 +183,25 @@ func New(cfg config.UpdateConfig, dataDir string, build BuildInfo) (*Manager, er
 	if !repoPartPattern.MatchString(cfg.GitHubOwner) || !repoPartPattern.MatchString(cfg.GitHubRepo) {
 		return nil, errors.New("update: invalid GitHub repository")
 	}
+	abs, err := filepath.Abs(dataDir)
+	if err != nil {
+		return nil, errors.New("update: invalid data directory")
+	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if strings.TrimSpace(cfg.Proxy) != "" {
-		u, err := url.Parse(cfg.Proxy)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+		u, e := url.Parse(cfg.Proxy)
+		if e != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.RawQuery != "" || u.Fragment != "" {
 			return nil, errors.New("update: invalid proxy URL")
 		}
 		transport.Proxy = http.ProxyURL(u)
 	}
-	m := &Manager{cfg: cfg, dataDir: dataDir, build: build, client: &http.Client{Transport: transport, Timeout: 2 * time.Minute}}
-	m.client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if !allowedGitHubHost(req.URL.Hostname()) {
-			return errors.New("update: redirect outside GitHub is blocked")
-		}
-		if len(via) > 6 {
-			return errors.New("update: too many redirects")
-		}
-		return nil
+	m := &Manager{cfg: cfg, dataDir: abs, build: build, client: &http.Client{Transport: transport, Timeout: 2 * time.Minute}, state: stateJournal{State: "idle", History: []HistoryEntry{}}}
+	m.client.CheckRedirect = m.checkRedirect
+	if err = m.load(); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
 	}
-	m.state = stateJournal{State: "idle", History: []HistoryEntry{}}
-	_ = m.load()
 	return m, nil
 }
-
 func (m *Manager) SetApplier(fn func(context.Context, string, UpdateInfo) error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -184,224 +212,211 @@ func (m *Manager) SetRollback(fn func(context.Context) error) {
 	defer m.mu.Unlock()
 	m.rollback = fn
 }
+func (m *Manager) SetRollbackWithID(fn func(context.Context, string) error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.rollbackWithID = fn
+}
 func (m *Manager) Config() config.UpdateConfig { m.mu.Lock(); defer m.mu.Unlock(); return m.cfg }
-
 func (m *Manager) Snapshot() Snapshot {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	var latest *UpdateInfo
-	if m.state.Latest != nil {
-		v := *m.state.Latest
-		latest = &v
-	}
-	var release *Release
-	if m.state.Release != nil {
-		v := *m.state.Release
-		v.Assets = append([]Asset(nil), m.state.Release.Assets...)
-		release = &v
-	}
-	var op *Operation
-	if m.state.Operation != nil {
-		v := *m.state.Operation
-		op = &v
-	}
-	history := append([]HistoryEntry(nil), m.state.History...)
-	var checkedAt *time.Time
-	if m.state.CheckedAt != nil {
-		v := *m.state.CheckedAt
-		checkedAt = &v
-	}
-	return Snapshot{Enabled: m.cfg.Enabled, Repository: m.cfg.GitHubOwner + "/" + m.cfg.GitHubRepo, Current: m.build, Latest: latest, Release: release, State: m.state.State, Operation: op, StagedPath: m.state.StagedPath, History: history, CheckedAt: checkedAt}
+	m.readLauncherLocked()
+	return m.snapshotLocked()
 }
 
+func (m *Manager) beginLocked(state, version string) error {
+	m.readLauncherLocked()
+	if !m.cfg.Enabled {
+		return ErrDisabled
+	}
+	if m.busy || m.launcherActiveLocked() || isActiveState(m.effectiveStateLocked()) {
+		return ErrBusy
+	}
+	if l := m.launcher; l != nil && l.OperationID == m.state.LauncherOperationID && !isActiveState(l.State) {
+		found := false
+		for _, h := range m.state.History {
+			if h.ID == l.OperationID && h.State == l.State {
+				found = true
+				break
+			}
+		}
+		if !found {
+			m.state.History = append([]HistoryEntry{{ID: l.OperationID, State: l.State, Version: l.Version, Message: l.Message, CreatedAt: l.UpdatedAt}}, m.state.History...)
+			if len(m.state.History) > 20 {
+				m.state.History = m.state.History[:20]
+			}
+		}
+	}
+	now := time.Now().UTC()
+	m.state.Operation = &Operation{ID: randomID(), State: state, Version: version, StartedAt: now, UpdatedAt: now}
+	m.state.State = state
+	m.state.LauncherOperationID = ""
+	m.launcher = nil
+	if err := m.persistLocked(); err != nil {
+		// Even asynchronous callers that only poll must see this failure. No
+		// network request or launcher handoff starts without durable acceptance.
+		m.durabilityFailureLocked()
+		return err
+	}
+	m.busy = true
+	return nil
+}
 func (m *Manager) Check(ctx context.Context) (Snapshot, error) {
 	m.mu.Lock()
-	if !m.cfg.Enabled {
+	if err := m.beginLocked("checking", ""); err != nil {
+		out := m.snapshotLocked()
 		m.mu.Unlock()
-		return m.Snapshot(), ErrDisabled
+		return out, err
 	}
-	if m.state.Operation != nil && (m.state.State == "checking" || m.state.State == "downloading") {
-		m.mu.Unlock()
-		return m.Snapshot(), errors.New("update: another operation is active")
-	}
-	op := Operation{ID: randomID(), State: "checking", Progress: 0, StartedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
-	m.state.Operation = &op
-	m.state.State = "checking"
-	m.persistLocked()
 	m.mu.Unlock()
 	rel, err := m.fetchLatest(ctx)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	defer func() { m.busy = false }()
+	if err != nil {
+		return m.finishErrorLocked(err)
+	}
 	now := time.Now().UTC()
 	m.state.CheckedAt = &now
-	if err != nil {
-		m.failLocked(err)
-		return m.snapshotLocked(), err
-	}
 	asset, ok := selectAsset(rel.Assets, runtime.GOOS, runtime.GOARCH)
 	if !ok {
-		m.state.Latest = nil
-		m.state.Release = &rel
-		m.state.State = "idle"
-		m.completeLocked("没有匹配当前系统和架构的安装包")
-		return m.snapshotLocked(), ErrNoRelease
+		return m.finishErrorLocked(ErrNoRelease)
 	}
 	info := makeInfo(m.build, rel, asset)
-	info.Available = isNewer(rel.TagName, m.build.Version)
-	info.Compatible = true
-	m.state.Release = &rel
-	m.state.Latest = &info
-	if info.Available {
-		m.state.State = "available"
-	} else {
-		m.state.State = "idle"
+	m.state.Operation.Version = rel.TagName
+	oldBinding := ""
+	if m.state.Latest != nil {
+		oldBinding = targetBinding(*m.state.Latest)
 	}
-	m.completeLocked("检查完成")
+	newBinding := targetBinding(info)
+	if oldBinding != newBinding || m.state.StagedBinding != newBinding {
+		m.clearStagingLocked()
+	}
+	m.state.Latest = &info
+	m.state.Release = &rel
+	state := "idle"
+	if info.Available {
+		state = "available"
+	}
+	if m.state.StagedPath != "" && m.state.StagedBinding == newBinding {
+		state = "ready"
+		m.markVerifiedLocked(asset.Name, m.state.StagedPath)
+	}
+	if err = m.completeLocked(state, "检查完成"); err != nil {
+		return m.snapshotLocked(), err
+	}
 	return m.snapshotLocked(), nil
 }
-
 func (m *Manager) Download(ctx context.Context) (Snapshot, error) {
 	m.mu.Lock()
-	if !m.cfg.Enabled {
+	if err := m.beginLocked("downloading", ""); err != nil {
+		out := m.snapshotLocked()
 		m.mu.Unlock()
-		return m.Snapshot(), ErrDisabled
+		return out, err
 	}
-	if m.state.Release == nil || m.state.Latest == nil {
+	if m.state.Latest == nil || m.state.Release == nil || !m.state.Latest.Available || !validInfo(*m.state.Latest) {
+		out, err := m.finishErrorLocked(ErrNoRelease)
+		m.busy = false
 		m.mu.Unlock()
-		if _, err := m.Check(ctx); err != nil {
-			return m.Snapshot(), err
-		}
-		m.mu.Lock()
+		return out, err
 	}
-	if m.state.Operation != nil && m.state.State == "downloading" {
-		m.mu.Unlock()
-		return m.Snapshot(), errors.New("update: another operation is active")
-	}
-	rel := *m.state.Release
 	info := *m.state.Latest
-	asset, ok := selectAsset(rel.Assets, runtime.GOOS, runtime.GOARCH)
-	if !ok {
+	asset, ok := selectAsset(m.state.Release.Assets, runtime.GOOS, runtime.GOARCH)
+	if !ok || asset.DownloadURL == "" || targetBinding(makeInfo(m.build, *m.state.Release, asset)) != targetBinding(info) {
+		out, err := m.finishErrorLocked(ErrNoRelease)
+		m.busy = false
 		m.mu.Unlock()
-		return m.Snapshot(), ErrNoRelease
+		return out, err
 	}
-	op := Operation{ID: randomID(), State: "downloading", Version: rel.TagName, StartedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
-	m.state.Operation = &op
-	m.state.State = "downloading"
-	m.state.StagedPath = ""
-	m.persistLocked()
+	opID := m.state.Operation.ID
+	m.state.Operation.Version = info.LatestVersion
+	m.state.Operation.TotalBytes = asset.Size
+	m.clearStagingLocked()
+	if err := m.persistLocked(); err != nil {
+		m.busy = false
+		m.durabilityFailureLocked()
+		out := m.snapshotLocked()
+		m.mu.Unlock()
+		return out, err
+	}
 	m.mu.Unlock()
-	if !info.Available {
-		m.mu.Lock()
-		m.state.State = "idle"
-		m.completeLocked("当前已是最新版本")
-		m.persistLocked()
-		out := m.snapshotLocked()
-		m.mu.Unlock()
-		return out, ErrNoRelease
-	}
-	versionDir := filepath.Join(m.dataDir, "updates", safeVersion(rel.TagName))
-	if err := os.MkdirAll(versionDir, 0700); err != nil {
-		m.mu.Lock()
-		m.failLocked(err)
-		out := m.snapshotLocked()
-		m.mu.Unlock()
-		return out, err
-	}
-	tmp, err := os.CreateTemp(versionDir, ".download-*")
+	path, err := m.download(ctx, asset, opID)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	defer func() { m.busy = false }()
 	if err != nil {
-		m.mu.Lock()
-		m.failLocked(err)
-		out := m.snapshotLocked()
-		m.mu.Unlock()
-		return out, err
+		return m.finishErrorLocked(err)
 	}
-	tmpPath := tmp.Name()
+	// This binding cannot change while busy. Persist it together with ready.
+	m.state.StagedPath = path
+	m.state.StagedBinding = targetBinding(info)
+	m.markVerifiedLocked(asset.Name, path)
+	m.state.Operation.BytesDownloaded = asset.Size
+	m.state.Operation.TotalBytes = asset.Size
+	m.state.Operation.ETASeconds = 0
+	if err = m.completeLocked("ready", "下载并校验完成"); err != nil {
+		m.clearStagingLocked()
+		m.state.State = "failed"
+		return m.snapshotLocked(), err
+	}
+	return m.snapshotLocked(), nil
+}
+func (m *Manager) download(ctx context.Context, asset Asset, opID string) (path string, err error) {
+	dir := filepath.Join(m.dataDir, "updates", opID)
+	if e := os.MkdirAll(dir, 0700); e != nil {
+		return "", errors.New("update: cannot create staging directory")
+	}
+	tmp, e := os.CreateTemp(dir, ".download-*")
+	if e != nil {
+		return "", errors.New("update: cannot create staged artifact")
+	}
+	tempPath := tmp.Name()
 	defer func() {
 		_ = tmp.Close()
 		if err != nil {
-			_ = os.Remove(tmpPath)
+			_ = os.Remove(tempPath)
 		}
 	}()
-	resp, err := m.request(ctx, asset.DownloadURL, "application/octet-stream")
-	if resp != nil {
-		defer resp.Body.Close()
+	resp, e := m.request(ctx, asset.DownloadURL, "application/octet-stream")
+	if e != nil {
+		return "", e
 	}
-	if err == nil {
-		if resp.ContentLength > maxDownloadSize {
-			err = errors.New("update: download exceeds size limit")
-		}
+	defer resp.Body.Close()
+	if resp.ContentLength > 0 && resp.ContentLength != asset.Size {
+		return "", errors.New("update: download size mismatch")
 	}
-	var n int64
-	var sum string
-	if err == nil {
-		h := sha256.New()
-		writer := io.Writer(io.MultiWriter(tmp, h))
-		if resp.ContentLength > 0 {
-			writer = &downloadProgress{target: writer, manager: m, total: resp.ContentLength}
-		}
-		n, err = io.Copy(writer, io.LimitReader(resp.Body, maxDownloadSize+1))
-		if err == nil && n > maxDownloadSize {
-			err = errors.New("update: download exceeds size limit")
-		}
-		sum = hex.EncodeToString(h.Sum(nil))
+	h := sha256.New()
+	progress := &downloadProgress{target: io.MultiWriter(tmp, h), manager: m, total: asset.Size, operationID: opID, started: time.Now()}
+	n, e := io.Copy(progress, io.LimitReader(resp.Body, asset.Size+1))
+	if e != nil {
+		return "", m.safeError(e)
 	}
-	if err == nil {
-		err = tmp.Sync()
+	if n != asset.Size {
+		return "", errors.New("update: download size mismatch or truncated artifact")
 	}
-	if closeErr := tmp.Close(); err == nil {
-		err = closeErr
+	if !strings.EqualFold(hex.EncodeToString(h.Sum(nil)), asset.SHA256) {
+		return "", errors.New("update: SHA-256 mismatch")
 	}
-	if err == nil && asset.Size > 0 && n != asset.Size {
-		err = fmt.Errorf("update: size mismatch: got %d want %d", n, asset.Size)
+	if tmp.Sync() != nil {
+		return "", errors.New("update: cannot sync staged artifact")
 	}
-	if err == nil && asset.SHA256 != "" && !strings.EqualFold(asset.SHA256, sum) {
-		err = errors.New("update: SHA-256 mismatch")
+	if tmp.Close() != nil {
+		return "", errors.New("update: cannot close staged artifact")
 	}
-	if err != nil {
-		m.mu.Lock()
-		m.failLocked(err)
-		out := m.snapshotLocked()
-		m.mu.Unlock()
-		return out, err
+	final := filepath.Join(dir, asset.Name)
+	if os.Rename(tempPath, final) != nil {
+		return "", errors.New("update: cannot commit staged artifact")
 	}
-	finalPath := filepath.Join(versionDir, filepath.Base(asset.Name))
-	if err = os.Rename(tmpPath, finalPath); err != nil {
-		m.mu.Lock()
-		m.failLocked(err)
-		out := m.snapshotLocked()
-		m.mu.Unlock()
-		return out, err
-	}
-	m.mu.Lock()
-	info.SHA256 = sum
-	info.AssetSize = n
-	info.AssetName = asset.Name
-	info.Available = true
-	info.Compatible = true
-	if m.state.Release != nil {
-		for i := range m.state.Release.Assets {
-			if m.state.Release.Assets[i].Name == asset.Name {
-				m.state.Release.Assets[i].SHA256 = sum
-				m.state.Release.Assets[i].Verified = true
-				m.state.Release.Assets[i].LocalPath = finalPath
-			}
-		}
-	}
-	m.state.Latest = &info
-	m.state.StagedPath = finalPath
-	m.state.State = "ready"
-	m.completeLocked("下载并校验完成")
-	out := m.snapshotLocked()
-	m.mu.Unlock()
-	return out, nil
+	return final, nil
 }
 
 type downloadProgress struct {
-	target  io.Writer
-	manager *Manager
-	total   int64
-	read    int64
-	last    time.Time
+	target        io.Writer
+	manager       *Manager
+	total, read   int64
+	operationID   string
+	started, last time.Time
 }
 
 func (p *downloadProgress) Write(b []byte) (int, error) {
@@ -410,333 +425,214 @@ func (p *downloadProgress) Write(b []byte) (int, error) {
 	now := time.Now()
 	if p.last.IsZero() || now.Sub(p.last) >= 500*time.Millisecond || err != nil {
 		p.manager.mu.Lock()
-		if p.manager.state.Operation != nil && p.manager.state.State == "downloading" && p.total > 0 {
-			p.manager.state.Operation.Progress = int((p.read * 100) / p.total)
-			if p.manager.state.Operation.Progress > 99 {
-				p.manager.state.Operation.Progress = 99
+		op := p.manager.state.Operation
+		if op != nil && op.ID == p.operationID && p.manager.state.State == "downloading" {
+			op.BytesDownloaded = p.read
+			op.TotalBytes = p.total
+			if p.total > 0 {
+				op.Progress = int(p.read * 100 / p.total)
+				if op.Progress > 99 {
+					op.Progress = 99
+				}
 			}
-			p.manager.state.Operation.UpdatedAt = now.UTC()
-			p.manager.persistLocked()
+			if elapsed := now.Sub(p.started).Seconds(); elapsed > 0 {
+				op.BytesPerSecond = float64(p.read) / elapsed
+				if op.BytesPerSecond > 0 && p.total > p.read {
+					op.ETASeconds = int64(float64(p.total-p.read) / op.BytesPerSecond)
+				}
+			}
+			op.UpdatedAt = now.UTC()
+			if e := p.manager.persistLocked(); e != nil && err == nil {
+				err = e
+			}
 		}
 		p.manager.mu.Unlock()
 		p.last = now
 	}
 	return n, err
 }
-
 func (m *Manager) Apply(ctx context.Context) (Snapshot, error) {
 	m.mu.Lock()
-	if m.state.StagedPath == "" || m.state.Latest == nil {
+	if !m.cfg.Enabled {
+		out := m.snapshotLocked()
+		m.mu.Unlock()
+		return out, ErrDisabled
+	}
+	m.readLauncherLocked()
+	if m.busy || m.launcherActiveLocked() || isActiveState(m.effectiveStateLocked()) {
+		out := m.snapshotLocked()
+		m.mu.Unlock()
+		return out, ErrBusy
+	}
+	if m.state.State != "ready" || m.state.Latest == nil || !validInfo(*m.state.Latest) || m.state.StagedPath == "" || m.state.StagedBinding != targetBinding(*m.state.Latest) {
 		out := m.snapshotLocked()
 		m.mu.Unlock()
 		return out, ErrNoRelease
 	}
-	path, info, fn := m.state.StagedPath, *m.state.Latest, m.applier
-	if fn != nil {
-		if m.state.Operation == nil {
-			now := time.Now().UTC()
-			m.state.Operation = &Operation{ID: randomID(), Version: info.LatestVersion, StartedAt: now, UpdatedAt: now}
-		}
-		m.state.State = "validating"
-		m.state.Operation.State = "validating"
-		m.state.Operation.Version = info.LatestVersion
-		m.state.Operation.Message = "正在交给启动器排空并替换"
-		m.state.Operation.UpdatedAt = time.Now().UTC()
-		m.persistLocked()
-	}
-	m.mu.Unlock()
-	if fn == nil {
-		m.mu.Lock()
-		m.state.State = "pending_restart"
-		m.completeLocked("升级包已就绪，需由 relaylab-launcher 执行替换和重启")
+	if m.applier == nil {
 		out := m.snapshotLocked()
 		m.mu.Unlock()
 		return out, ErrApplyUnavailable
 	}
-	if err := fn(ctx, path, info); err != nil {
-		m.mu.Lock()
-		m.failLocked(err)
+	path, info, fn := m.state.StagedPath, *m.state.Latest, m.applier
+	if err := m.beginLocked("validating", info.LatestVersion); err != nil {
 		out := m.snapshotLocked()
 		m.mu.Unlock()
 		return out, err
 	}
-	// The launcher acknowledges the handoff before stopping this web process.
-	// Keep the journal in validating state; the next process confirms the
-	// target version and converts it to succeeded or failed during load().
-	m.mu.Lock()
-	out := m.snapshotLocked()
+	info.OperationID = m.state.Operation.ID
+	m.state.Latest.OperationID = info.OperationID
+	m.state.LauncherOperationID = info.OperationID
+	if err := m.persistLocked(); err != nil {
+		m.busy = false
+		m.durabilityFailureLocked()
+		out := m.snapshotLocked()
+		m.mu.Unlock()
+		return out, err
+	}
 	m.mu.Unlock()
-	return out, nil
+	err := m.verifyStaged(path, info)
+	if err == nil {
+		err = fn(ctx, path, info)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	defer func() { m.busy = false }()
+	if err != nil {
+		return m.finishErrorLocked(err)
+	}
+	// An accepted request is still pending. Only launcher journal health results
+	// can report succeeded or rolled_back, including after a process restart.
+	m.state.Operation.Message = "启动器已接受升级，等待健康验证"
+	if err = m.persistLocked(); err != nil {
+		m.durabilityFailureLocked()
+		m.readLauncherLocked()
+		return m.snapshotLocked(), err
+	}
+	m.readLauncherLocked()
+	return m.snapshotLocked(), nil
 }
-
 func (m *Manager) Rollback(ctx context.Context) (Snapshot, error) {
 	m.mu.Lock()
-	fn := m.rollback
-	m.mu.Unlock()
-	if fn == nil {
-		m.mu.Lock()
-		m.state.State = "failed"
-		m.completeLocked("回滚需由 relaylab-launcher 执行")
+	if !m.cfg.Enabled {
+		out := m.snapshotLocked()
+		m.mu.Unlock()
+		return out, ErrDisabled
+	}
+	m.readLauncherLocked()
+	if m.busy || m.launcherActiveLocked() || isActiveState(m.effectiveStateLocked()) {
+		out := m.snapshotLocked()
+		m.mu.Unlock()
+		return out, ErrBusy
+	}
+	if m.rollback == nil && m.rollbackWithID == nil {
 		out := m.snapshotLocked()
 		m.mu.Unlock()
 		return out, ErrRollbackUnavailable
 	}
-	if err := fn(ctx); err != nil {
-		m.mu.Lock()
-		m.failLocked(err)
+	if err := m.beginLocked("validating", ""); err != nil {
 		out := m.snapshotLocked()
 		m.mu.Unlock()
 		return out, err
 	}
-	m.mu.Lock()
-	m.state.State = "rolled_back"
-	m.completeLocked("回滚完成")
-	out := m.snapshotLocked()
+	id, fn, fnID := m.state.Operation.ID, m.rollback, m.rollbackWithID
+	m.state.LauncherOperationID = id
+	if err := m.persistLocked(); err != nil {
+		m.busy = false
+		m.durabilityFailureLocked()
+		out := m.snapshotLocked()
+		m.mu.Unlock()
+		return out, err
+	}
 	m.mu.Unlock()
-	return out, nil
-}
-
-func (m *Manager) fetchLatest(ctx context.Context) (Release, error) {
-	if !repoPartPattern.MatchString(m.cfg.GitHubOwner) || !repoPartPattern.MatchString(m.cfg.GitHubRepo) {
-		return Release{}, errors.New("update: invalid GitHub repository")
+	var err error
+	if fnID != nil {
+		err = fnID(ctx, id)
+	} else {
+		err = fn(ctx)
 	}
-	base := m.apiBase
-	if base == "" {
-		base = "https://api.github.com"
-	}
-	endpoint := strings.TrimRight(base, "/") + "/repos/" + url.PathEscape(m.cfg.GitHubOwner) + "/" + url.PathEscape(m.cfg.GitHubRepo) + "/releases/latest"
-	resp, err := m.request(ctx, endpoint, "application/vnd.github+json")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	defer func() { m.busy = false }()
 	if err != nil {
-		return Release{}, err
+		return m.finishErrorLocked(err)
 	}
-	defer resp.Body.Close()
-	var raw struct {
-		TagName     string `json:"tag_name"`
-		Name        string `json:"name"`
-		HTMLURL     string `json:"html_url"`
-		PublishedAt string `json:"published_at"`
-		Body        string `json:"body"`
-		Assets      []struct {
-			Name string `json:"name"`
-			Size int64  `json:"size"`
-			URL  string `json:"browser_download_url"`
-		} `json:"assets"`
+	m.state.Operation.Message = "启动器已接受回滚，等待健康验证"
+	if err = m.persistLocked(); err != nil {
+		m.durabilityFailureLocked()
+		m.readLauncherLocked()
+		return m.snapshotLocked(), err
 	}
-	if err = json.NewDecoder(io.LimitReader(resp.Body, maxReleaseBody)).Decode(&raw); err != nil {
-		return Release{}, fmt.Errorf("update: invalid GitHub release: %w", err)
+	m.readLauncherLocked()
+	return m.snapshotLocked(), nil
+}
+func (m *Manager) verifyStaged(path string, info UpdateInfo) error {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return errors.New("update: invalid staged artifact")
 	}
-	if !semverPattern.MatchString(raw.TagName) {
-		return Release{}, errors.New("update: release tag is not semantic version")
+	stagingRelative, stagingErr := filepath.Rel(filepath.Join(m.dataDir, "updates"), abs)
+	if stagingErr != nil || stagingRelative == ".." || strings.HasPrefix(stagingRelative, ".."+string(os.PathSeparator)) || filepath.IsAbs(stagingRelative) || filepath.Base(abs) != info.AssetName {
+		return errors.New("update: staged artifact is outside staging directory")
 	}
-	var published time.Time
-	if raw.PublishedAt != "" {
-		published, _ = time.Parse(time.RFC3339, raw.PublishedAt)
+	real, err := filepath.EvalSymlinks(abs)
+	realRoot, rootErr := filepath.EvalSymlinks(m.dataDir)
+	originalRelative, relativeErr := filepath.Rel(m.dataDir, abs)
+	realRelative, realRelativeErr := filepath.Rel(realRoot, real)
+	sameRelative := originalRelative == realRelative
+	if runtime.GOOS == "windows" {
+		sameRelative = strings.EqualFold(originalRelative, realRelative)
 	}
-	rel := Release{TagName: raw.TagName, Name: raw.Name, URL: raw.HTMLURL, PublishedAt: published, Body: raw.Body, Assets: []Asset{}}
-	for _, a := range raw.Assets {
-		if a.Name == "" || a.URL == "" || a.Size < 0 {
-			continue
+	if err != nil || rootErr != nil || relativeErr != nil || realRelativeErr != nil || !sameRelative {
+		return errors.New("update: staged artifact path changed")
+	}
+	st, err := os.Lstat(abs)
+	if err != nil || !st.Mode().IsRegular() || st.Size() != info.AssetSize {
+		return errors.New("update: staged artifact size mismatch")
+	}
+	f, err := os.Open(abs)
+	if err != nil {
+		return errors.New("update: cannot open staged artifact")
+	}
+	defer f.Close()
+	h := sha256.New()
+	n, err := io.Copy(h, io.LimitReader(f, info.AssetSize+1))
+	if err != nil || n != info.AssetSize {
+		return errors.New("update: staged artifact size mismatch")
+	}
+	if !strings.EqualFold(hex.EncodeToString(h.Sum(nil)), info.SHA256) {
+		return errors.New("update: staged SHA-256 mismatch")
+	}
+	return nil
+}
+func (m *Manager) clearStagingLocked() {
+	m.state.StagedPath = ""
+	m.state.StagedBinding = ""
+	if m.state.Release != nil {
+		for i := range m.state.Release.Assets {
+			m.state.Release.Assets[i].Verified = false
+			m.state.Release.Assets[i].LocalPath = ""
 		}
-		osName, arch := assetPlatform(a.Name)
-		rel.Assets = append(rel.Assets, Asset{Name: a.Name, Size: a.Size, DownloadURL: a.URL, OS: osName, Arch: arch})
 	}
-	// Releases produced by the project include manifest.json. It is optional
-	// for older releases, but when present its per-asset hashes are copied into
-	// the public snapshot and enforced during download.
-	for _, manifestAsset := range rel.Assets {
-		if strings.EqualFold(manifestAsset.Name, "manifest.json") {
-			if manifest, fetchErr := m.fetchManifest(ctx, manifestAsset.DownloadURL); fetchErr == nil {
-				for i := range rel.Assets {
-					if item, ok := manifest[rel.Assets[i].Name]; ok {
-						rel.Assets[i].SHA256 = item.SHA256
-						rel.Assets[i].Verified = item.SHA256 != ""
-					}
-				}
+}
+func (m *Manager) markVerifiedLocked(name, path string) {
+	if m.state.Release != nil {
+		for i := range m.state.Release.Assets {
+			if m.state.Release.Assets[i].Name == name {
+				m.state.Release.Assets[i].Verified = true
+				m.state.Release.Assets[i].LocalPath = path
 			}
-			break
 		}
 	}
-	if !releaseHasChecksums(rel.Assets) {
-		for _, sumsAsset := range rel.Assets {
-			name := strings.ToLower(sumsAsset.Name)
-			if name != "sha256sums" && name != "sha256sums.txt" && !strings.HasSuffix(name, ".sha256") {
-				continue
-			}
-			if sums, sumsErr := m.fetchChecksums(ctx, sumsAsset.DownloadURL); sumsErr == nil {
-				for i := range rel.Assets {
-					if hash, ok := sums[rel.Assets[i].Name]; ok {
-						rel.Assets[i].SHA256 = hash
-						rel.Assets[i].Verified = true
-					}
-				}
-			}
-			break
-		}
-	}
-	return rel, nil
 }
-
-type manifestAsset struct {
-	SHA256 string `json:"sha256"`
+func validInfo(info UpdateInfo) bool {
+	_, ok := parseVersion(info.LatestVersion)
+	return ok && info.Available && info.Compatible && info.AssetName == platformAssetName(runtime.GOOS, runtime.GOARCH) && info.AssetSize > 0 && info.AssetSize <= maxDownloadSize && digestPattern.MatchString(info.SHA256) && commitPattern.MatchString(info.Commit) && info.LauncherProtocol == LauncherProtocol && info.DatabaseSchema >= DatabaseSchema && info.MinDatabaseSchema > 0 && info.MinDatabaseSchema <= DatabaseSchema && info.MinDatabaseSchema <= info.DatabaseSchema
 }
-
-func (m *Manager) fetchManifest(ctx context.Context, rawURL string) (map[string]manifestAsset, error) {
-	resp, err := m.request(ctx, rawURL, "application/json")
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	var raw struct {
-		Assets []struct {
-			Name   string `json:"name"`
-			SHA256 string `json:"sha256"`
-		} `json:"assets"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxReleaseBody)).Decode(&raw); err != nil {
-		return nil, err
-	}
-	out := make(map[string]manifestAsset, len(raw.Assets))
-	for _, item := range raw.Assets {
-		if item.Name != "" && len(item.SHA256) == 64 {
-			out[item.Name] = manifestAsset{SHA256: strings.ToLower(item.SHA256)}
-		}
-	}
-	return out, nil
-}
-
-func releaseHasChecksums(assets []Asset) bool {
-	for _, asset := range assets {
-		if asset.SHA256 != "" {
-			return true
-		}
-	}
-	return false
-}
-
-func (m *Manager) fetchChecksums(ctx context.Context, rawURL string) (map[string]string, error) {
-	resp, err := m.request(ctx, rawURL, "text/plain")
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return nil, err
-	}
-	out := map[string]string{}
-	for _, line := range strings.Split(string(b), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 2 || len(fields[0]) != sha256.Size*2 {
-			continue
-		}
-		name := strings.TrimPrefix(fields[1], "*")
-		if name != "" {
-			out[name] = strings.ToLower(fields[0])
-		}
-	}
-	return out, nil
-}
-
-func (m *Manager) request(ctx context.Context, rawURL, accept string) (*http.Response, error) {
-	u, err := url.Parse(rawURL)
-	allowed := err == nil && allowedGitHubHost(u.Hostname())
-	if !allowed && m.apiBase != "" {
-		if base, baseErr := url.Parse(m.apiBase); baseErr == nil && strings.EqualFold(base.Host, u.Host) {
-			allowed = true
-		}
-	}
-	if err != nil || !allowed {
-		return nil, errors.New("update: URL is outside GitHub")
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", accept)
-	req.Header.Set("User-Agent", "RelayLab-Updater/1")
-	if m.cfg.GitHubToken != "" {
-		req.Header.Set("Authorization", "Bearer "+m.cfg.GitHubToken)
-	}
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
-		resp.Body.Close()
-		return nil, fmt.Errorf("update: GitHub returned HTTP %d", resp.StatusCode)
-	}
-	return resp, nil
-}
-
-func selectAsset(assets []Asset, goos, goarch string) (Asset, bool) {
-	for _, a := range assets {
-		if a.Name == "relaylab-"+goos+"-"+goarch || a.Name == "relaylab-"+goos+"-"+goarch+".exe" {
-			return a, true
-		}
-	}
-	for _, a := range assets {
-		n := strings.ToLower(a.Name)
-		if strings.Contains(n, "relaylab") && strings.Contains(n, goos) && strings.Contains(n, goarch) && !strings.Contains(n, "launcher") {
-			return a, true
-		}
-	}
-	return Asset{}, false
-}
-func assetPlatform(name string) (string, string) {
-	n := strings.ToLower(name)
-	goos, arch := "", ""
-	for _, v := range []string{"windows", "linux", "darwin"} {
-		if strings.Contains(n, v) {
-			goos = v
-			break
-		}
-	}
-	for _, v := range []string{"amd64", "arm64", "386", "arm"} {
-		if strings.Contains(n, v) {
-			arch = v
-			break
-		}
-	}
-	return goos, arch
-}
-func allowedGitHubHost(host string) bool {
-	host = strings.ToLower(strings.TrimSuffix(host, "."))
-	return host == "api.github.com" || host == "github.com" || strings.HasSuffix(host, ".github.com") || strings.HasSuffix(host, ".githubusercontent.com") || strings.HasSuffix(host, ".githubassets.com")
-}
-func safeVersion(v string) string {
-	v = strings.Map(func(r rune) rune {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '-' || r == '+' {
-			return r
-		}
-		return '_'
-	}, v)
-	return strings.Trim(v, "._")
-}
-func isNewer(latest, current string) bool {
-	if !semverPattern.MatchString(latest) {
-		return false
-	}
-	if !semverPattern.MatchString(current) {
-		return true
-	}
-	parse := func(v string) [3]int64 {
-		v = strings.TrimPrefix(v, "v")
-		v = strings.FieldsFunc(v, func(r rune) bool { return r == '-' || r == '+' })[0]
-		p := strings.Split(v, ".")
-		var out [3]int64
-		for i := range out {
-			out[i], _ = strconv.ParseInt(p[i], 10, 64)
-		}
-		return out
-	}
-	a, b := parse(latest), parse(current)
-	for i := 0; i < 3; i++ {
-		if a[i] != b[i] {
-			return a[i] > b[i]
-		}
-	}
-	return false
+func targetBinding(info UpdateInfo) string {
+	b, _ := json.Marshal([]any{info.LatestVersion, info.Commit, info.AssetName, info.AssetSize, strings.ToLower(info.SHA256), info.LauncherProtocol, info.DatabaseSchema, info.MinDatabaseSchema})
+	hash := sha256.Sum256(b)
+	return hex.EncodeToString(hash[:])
 }
 func makeInfo(build BuildInfo, rel Release, asset Asset) UpdateInfo {
 	var published *time.Time
@@ -744,154 +640,38 @@ func makeInfo(build BuildInfo, rel Release, asset Asset) UpdateInfo {
 		v := rel.PublishedAt
 		published = &v
 	}
-	return UpdateInfo{CurrentVersion: build.Version, LatestVersion: rel.TagName, ReleaseURL: rel.URL, PublishedAt: published, AssetName: asset.Name, AssetSize: asset.Size, Compatible: true, Notes: rel.Body, Available: isNewer(rel.TagName, build.Version)}
+	return UpdateInfo{CurrentVersion: build.Version, LatestVersion: rel.TagName, ReleaseURL: rel.URL, PublishedAt: published, AssetName: asset.Name, AssetSize: asset.Size, SHA256: asset.SHA256, Compatible: true, Available: isNewer(rel.TagName, build.Version), Notes: rel.Body, Commit: rel.Commit, LauncherProtocol: rel.LauncherProtocol, DatabaseSchema: rel.DatabaseSchema, MinDatabaseSchema: rel.MinDatabaseSchema}
 }
-func randomID() string { return fmt.Sprintf("%d", time.Now().UnixNano()) }
-
-func (m *Manager) load() error {
-	b, err := os.ReadFile(filepath.Join(m.dataDir, stateFileName))
-	if err != nil {
-		return err
+func randomID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err == nil {
+		return hex.EncodeToString(b[:])
 	}
-	var st stateJournal
-	if err = json.Unmarshal(b, &st); err != nil {
-		return err
+	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+func (m *Manager) safeText(s string) string {
+	if m.cfg.GitHubToken != "" {
+		s = strings.ReplaceAll(s, m.cfg.GitHubToken, "[redacted]")
 	}
-	if st.History == nil {
-		st.History = []HistoryEntry{}
-	}
-	recovered := isActiveState(st.State)
-	if recovered {
-		state := "failed"
-		message := "上次升级进程中断，已恢复为失败状态"
-		if st.State != "checking" && st.State != "downloading" && st.Latest != nil && isSameVersion(m.build.Version, st.Latest.LatestVersion) {
-			state = "succeeded"
-			message = "升级后服务已重新启动并通过版本确认"
-		}
-		st.State = state
-		st.Operation = nil
-		st.History = append([]HistoryEntry{{ID: randomID(), State: state, Version: func() string {
-			if st.Latest != nil {
-				return st.Latest.LatestVersion
+	if m.cfg.Proxy != "" {
+		if u, e := url.Parse(m.cfg.Proxy); e == nil && u.User != nil {
+			if p, ok := u.User.Password(); ok && p != "" {
+				s = strings.ReplaceAll(s, p, "[redacted]")
 			}
-			return ""
-		}(), Message: message, CreatedAt: time.Now().UTC()}}, st.History...)
-		if len(st.History) > 20 {
-			st.History = st.History[:20]
 		}
 	}
-	m.state = st
-	if recovered {
-		m.persistLocked()
-	}
-	return nil
+	return safeMessage(errors.New(s))
 }
-
-func isSameVersion(a, b string) bool {
-	if a == "" || b == "" {
-		return false
-	}
-	return strings.TrimPrefix(a, "v") == strings.TrimPrefix(b, "v")
-}
-
-func isActiveState(state string) bool {
-	switch state {
-	case "checking", "downloading", "draining", "stopping", "backing_up", "starting", "validating":
-		return true
-	default:
-		return false
-	}
-}
-func (m *Manager) persistLocked() {
-	dir := m.dataDir
-	_ = os.MkdirAll(dir, 0700)
-	b, err := json.Marshal(m.state)
-	if err != nil {
-		return
-	}
-	tmp, err := os.CreateTemp(dir, ".update-state-*")
-	if err != nil {
-		return
-	}
-	name := tmp.Name()
-	defer func() { _ = tmp.Close(); _ = os.Remove(name) }()
-	_ = tmp.Chmod(0600)
-	if _, err = tmp.Write(b); err != nil {
-		return
-	}
-	if err = tmp.Sync(); err != nil {
-		return
-	}
-	_ = tmp.Close()
-	_ = os.Rename(name, filepath.Join(dir, stateFileName))
-}
-func (m *Manager) failLocked(err error) {
-	m.state.State = "failed"
-	if m.state.Operation == nil {
-		m.state.Operation = &Operation{ID: randomID(), StartedAt: time.Now().UTC()}
-	}
-	m.state.Operation.ErrorCode = classifyError(err)
-	m.state.Operation.Message = safeMessage(err)
-	m.completeLocked(m.state.Operation.Message)
-	m.persistLocked()
-}
-func (m *Manager) completeLocked(message string) {
-	now := time.Now().UTC()
-	if m.state.Operation != nil {
-		m.state.Operation.UpdatedAt = now
-		if m.state.Operation.Progress < 100 && (m.state.State == "ready" || m.state.State == "succeeded") {
-			m.state.Operation.Progress = 100
-		}
-		m.state.Operation.Message = safeMessage(errors.New(message))
-		m.state.History = append([]HistoryEntry{{ID: m.state.Operation.ID, State: m.state.State, Version: m.state.Operation.Version, Message: m.state.Operation.Message, CreatedAt: now}}, m.state.History...)
-		if len(m.state.History) > 20 {
-			m.state.History = m.state.History[:20]
-		}
-		m.state.Operation = nil
-	}
-	m.persistLocked()
-}
-func (m *Manager) snapshotLocked() Snapshot {
-	var latest *UpdateInfo
-	if m.state.Latest != nil {
-		v := *m.state.Latest
-		latest = &v
-	}
-	var release *Release
-	if m.state.Release != nil {
-		v := *m.state.Release
-		v.Assets = append([]Asset(nil), m.state.Release.Assets...)
-		release = &v
-	}
-	var operation *Operation
-	if m.state.Operation != nil {
-		v := *m.state.Operation
-		operation = &v
-	}
-	var checkedAt *time.Time
-	if m.state.CheckedAt != nil {
-		v := *m.state.CheckedAt
-		checkedAt = &v
-	}
-	return Snapshot{Enabled: m.cfg.Enabled, Repository: m.cfg.GitHubOwner + "/" + m.cfg.GitHubRepo, Current: m.build, Latest: latest, Release: release, State: m.state.State, Operation: operation, StagedPath: m.state.StagedPath, History: append([]HistoryEntry(nil), m.state.History...), CheckedAt: checkedAt}
-}
-func classifyError(err error) string {
+func (m *Manager) safeError(err error) error {
 	if err == nil {
-		return ""
+		return nil
 	}
-	s := strings.ToLower(err.Error())
-	switch {
-	case strings.Contains(s, "sha-256"):
-		return "checksum_mismatch"
-	case strings.Contains(s, "http"):
-		return "github_http_error"
-	case strings.Contains(s, "timeout"):
-		return "timeout"
-	case strings.Contains(s, "proxy"):
-		return "proxy_error"
-	default:
-		return "update_failed"
+	for _, known := range []error{ErrDisabled, ErrNoRelease, ErrBusy, ErrApplyUnavailable, ErrRollbackUnavailable, ErrStateDurability} {
+		if errors.Is(err, known) {
+			return known
+		}
 	}
+	return errors.New(m.safeText(err.Error()))
 }
 func safeMessage(err error) string {
 	if err == nil {
@@ -903,10 +683,47 @@ func safeMessage(err error) string {
 		}
 		return r
 	}, err.Error())
-	s = credentialURLPattern.ReplaceAllString(s, "$1[redacted]@")
-	s = bearerPattern.ReplaceAllString(s, "$1[redacted]")
-	if len(s) > 512 {
-		s = s[:512]
+	s = urlPattern.ReplaceAllStringFunc(s, func(raw string) string {
+		u, e := url.Parse(raw)
+		if e != nil {
+			return "[redacted URL]"
+		}
+		u.User = nil
+		u.RawQuery = ""
+		u.Fragment = ""
+		return u.String()
+	})
+	s = bearerPattern.ReplaceAllString(s, "${1}[redacted]")
+	if len(s) > 2048 {
+		s = s[:2048]
 	}
 	return s
+}
+func classifyError(err error) string {
+	if err == nil {
+		return ""
+	}
+	switch {
+	case errors.Is(err, ErrBusy):
+		return "operation_busy"
+	case errors.Is(err, ErrStateDurability):
+		return "state_write_failed"
+	case errors.Is(err, ErrInvalidManifest):
+		return "invalid_manifest"
+	}
+	s := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(s, "sha-256"):
+		return "checksum_mismatch"
+	case strings.Contains(s, "size mismatch") || strings.Contains(s, "truncat"):
+		return "size_mismatch"
+	case strings.Contains(s, "http"):
+		return "github_http_error"
+	case strings.Contains(s, "deadline") || strings.Contains(s, "timeout"):
+		return "timeout"
+	case strings.Contains(s, "proxy"):
+		return "proxy_error"
+	default:
+		return "update_failed"
+	}
 }

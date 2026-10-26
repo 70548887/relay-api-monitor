@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,7 +25,6 @@ type UpdateConfig struct {
 	AutoRestart   bool          `yaml:"auto_restart" json:"auto_restart"`
 	BackupDir     string        `yaml:"backup_dir" json:"backup_dir"`
 }
-
 type Config struct {
 	DataDir    string       `yaml:"data_dir" json:"data_dir"`
 	Address    string       `yaml:"address" json:"address"`
@@ -35,7 +35,6 @@ type Config struct {
 func defaultUpdate() UpdateConfig {
 	return UpdateConfig{Enabled: true, GitHubOwner: "70548887", GitHubRepo: "relay-api-monitor", AutoRestart: true, BackupDir: filepath.Join("data", "backups")}
 }
-
 func Default() Config {
 	d := os.Getenv("RELAYLAB_DATA_DIR")
 	if d == "" {
@@ -49,24 +48,41 @@ func Default() Config {
 	return Config{DataDir: abs, Address: a, Update: defaultUpdate()}
 }
 
+// Decode scalars before interpolation so secret text cannot inject YAML fields.
+type scalar string
+
+func (s *scalar) UnmarshalYAML(decode func(interface{}) error) error {
+	var value interface{}
+	if err := decode(&value); err != nil {
+		return err
+	}
+	switch value.(type) {
+	case string, bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		*s = scalar(fmt.Sprint(value))
+		return nil
+	default:
+		return errors.New("expected a scalar")
+	}
+}
+
 type rawUpdate struct {
-	Enabled       *bool   `yaml:"enabled"`
-	GitHubOwner   *string `yaml:"github_owner"`
-	GitHubRepo    *string `yaml:"github_repo"`
-	GitHubToken   *string `yaml:"github_token"`
-	CheckInterval *int64  `yaml:"check_interval"`
-	Proxy         *string `yaml:"proxy"`
-	AutoDownload  *bool   `yaml:"auto_download"`
-	AutoRestart   *bool   `yaml:"auto_restart"`
-	BackupDir     *string `yaml:"backup_dir"`
+	Enabled       *scalar `yaml:"enabled"`
+	GitHubOwner   *scalar `yaml:"github_owner"`
+	GitHubRepo    *scalar `yaml:"github_repo"`
+	GitHubToken   *scalar `yaml:"github_token"`
+	CheckInterval *scalar `yaml:"check_interval"`
+	Proxy         *scalar `yaml:"proxy"`
+	AutoDownload  *scalar `yaml:"auto_download"`
+	AutoRestart   *scalar `yaml:"auto_restart"`
+	BackupDir     *scalar `yaml:"backup_dir"`
 }
 type rawConfig struct {
 	Server struct {
-		Address *string `yaml:"address"`
-		DataDir *string `yaml:"data_dir"`
+		Address *scalar `yaml:"address"`
+		DataDir *scalar `yaml:"data_dir"`
 	} `yaml:"server"`
-	Address *string   `yaml:"address"`
-	DataDir *string   `yaml:"data_dir"`
+	Address *scalar   `yaml:"address"`
+	DataDir *scalar   `yaml:"data_dir"`
 	Update  rawUpdate `yaml:"update"`
 }
 
@@ -85,142 +101,133 @@ func Load(path string) (Config, error) {
 				path = candidate
 				break
 			} else if !os.IsNotExist(err) {
-				return Config{}, err
+				return Config{}, errors.New("config: cannot inspect configuration file")
 			}
 		}
 	}
-	if path == "" {
-		candidates := []string{"config.yaml"}
-		if exe, exeErr := os.Executable(); exeErr == nil {
-			candidates = append(candidates, filepath.Join(filepath.Dir(exe), "config.yaml"))
+	base := ""
+	if path != "" {
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return Config{}, errors.New("config: invalid configuration path")
 		}
-		for _, candidate := range candidates {
-			if _, err := os.Stat(candidate); err == nil {
-				path = candidate
-				break
-			} else if !os.IsNotExist(err) {
-				return Config{}, err
-			}
+		b, err := os.ReadFile(abs)
+		if err != nil {
+			return Config{}, errors.New("config: cannot read configuration file")
 		}
+		var raw rawConfig
+		// Parser errors may quote literal credentials. Return a fixed diagnostic.
+		if yaml.Unmarshal(b, &raw) != nil {
+			return Config{}, errors.New("config: invalid YAML")
+		}
+		setString(&cfg.Address, raw.Server.Address, true)
+		setString(&cfg.Address, raw.Address, true)
+		setString(&cfg.DataDir, raw.Server.DataDir, false)
+		setString(&cfg.DataDir, raw.DataDir, false)
+		if err := applyRawUpdate(&cfg.Update, raw.Update); err != nil {
+			return Config{}, err
+		}
+		cfg.ConfigPath, base = abs, filepath.Dir(abs)
 	}
-	if path == "" {
-		applyEnv(&cfg)
-		return normalize(cfg, "")
-	}
-	abs, err := filepath.Abs(path)
-	if err != nil {
+	if err := applyEnv(&cfg); err != nil {
 		return Config{}, err
 	}
-	b, err := os.ReadFile(abs)
-	if err != nil {
-		return Config{}, err
-	}
-	var raw rawConfig
-	if err = yaml.Unmarshal([]byte(interpolate(string(b))), &raw); err != nil {
-		return Config{}, fmt.Errorf("config: invalid YAML: %w", err)
-	}
-	if raw.Server.Address != nil {
-		cfg.Address = strings.TrimSpace(*raw.Server.Address)
-	}
-	if raw.Address != nil {
-		cfg.Address = strings.TrimSpace(*raw.Address)
-	}
-	if raw.Server.DataDir != nil {
-		cfg.DataDir = *raw.Server.DataDir
-	}
-	if raw.DataDir != nil {
-		cfg.DataDir = *raw.DataDir
-	}
-	applyRawUpdate(&cfg.Update, raw.Update)
-	applyEnv(&cfg)
-	cfg.ConfigPath = abs
-	return normalize(cfg, filepath.Dir(abs))
+	return normalize(cfg, base)
 }
 
 var envReference = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 
 func interpolate(value string) string {
-	return envReference.ReplaceAllStringFunc(value, func(match string) string {
-		name := strings.TrimSuffix(strings.TrimPrefix(match, "${"), "}")
-		return os.Getenv(name)
-	})
+	return envReference.ReplaceAllStringFunc(value, func(match string) string { return os.Getenv(strings.TrimSuffix(strings.TrimPrefix(match, "${"), "}")) })
 }
-
-func applyRawUpdate(dst *UpdateConfig, raw rawUpdate) {
-	if raw.Enabled != nil {
-		dst.Enabled = *raw.Enabled
+func setString(dst *string, value *scalar, trim bool) {
+	if value == nil {
+		return
 	}
-	if raw.GitHubOwner != nil {
-		dst.GitHubOwner = strings.TrimSpace(*raw.GitHubOwner)
+	v := interpolate(string(*value))
+	if trim {
+		v = strings.TrimSpace(v)
 	}
-	if raw.GitHubRepo != nil {
-		dst.GitHubRepo = strings.TrimSpace(*raw.GitHubRepo)
+	*dst = v
+}
+func parseBool(value, field string) (bool, error) {
+	v, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("config: %s must be a boolean", field)
 	}
-	if raw.GitHubToken != nil {
-		dst.GitHubToken = *raw.GitHubToken
+	return v, nil
+}
+func parseInterval(value, field string) (time.Duration, error) {
+	n, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || n < 0 || n > math.MaxInt64/int64(time.Second) {
+		return 0, fmt.Errorf("config: %s must be a non-negative number of seconds within duration range", field)
 	}
+	return time.Duration(n) * time.Second, nil
+}
+func applyRawUpdate(dst *UpdateConfig, raw rawUpdate) error {
+	for _, item := range []struct {
+		value *scalar
+		dst   *bool
+		name  string
+	}{
+		{raw.Enabled, &dst.Enabled, "update.enabled"}, {raw.AutoDownload, &dst.AutoDownload, "update.auto_download"}, {raw.AutoRestart, &dst.AutoRestart, "update.auto_restart"},
+	} {
+		if item.value != nil {
+			v, err := parseBool(interpolate(string(*item.value)), item.name)
+			if err != nil {
+				return err
+			}
+			*item.dst = v
+		}
+	}
+	setString(&dst.GitHubOwner, raw.GitHubOwner, true)
+	setString(&dst.GitHubRepo, raw.GitHubRepo, true)
+	setString(&dst.GitHubToken, raw.GitHubToken, false)
+	setString(&dst.Proxy, raw.Proxy, true)
+	setString(&dst.BackupDir, raw.BackupDir, false)
 	if raw.CheckInterval != nil {
-		dst.CheckInterval = time.Duration(*raw.CheckInterval) * time.Second
+		v, err := parseInterval(interpolate(string(*raw.CheckInterval)), "update.check_interval")
+		if err != nil {
+			return err
+		}
+		dst.CheckInterval = v
 	}
-	if raw.Proxy != nil {
-		dst.Proxy = strings.TrimSpace(*raw.Proxy)
-	}
-	if raw.AutoDownload != nil {
-		dst.AutoDownload = *raw.AutoDownload
-	}
-	if raw.AutoRestart != nil {
-		dst.AutoRestart = *raw.AutoRestart
-	}
-	if raw.BackupDir != nil {
-		dst.BackupDir = *raw.BackupDir
-	}
+	return nil
 }
-
-func applyEnv(cfg *Config) {
-	if v := os.Getenv("RELAYLAB_ADDR"); v != "" {
-		cfg.Address = v
-	}
-	if v := os.Getenv("RELAYLAB_DATA_DIR"); v != "" {
-		cfg.DataDir = v
-	}
-	u := &cfg.Update
-	if v := os.Getenv("RELAYLAB_UPDATE_ENABLED"); v != "" {
-		if b, e := strconv.ParseBool(v); e == nil {
-			u.Enabled = b
+func applyEnv(cfg *Config) error {
+	for _, item := range []struct {
+		name string
+		dst  *string
+	}{
+		{"RELAYLAB_ADDR", &cfg.Address}, {"RELAYLAB_DATA_DIR", &cfg.DataDir}, {"RELAYLAB_UPDATE_GITHUB_OWNER", &cfg.Update.GitHubOwner}, {"RELAYLAB_UPDATE_GITHUB_REPO", &cfg.Update.GitHubRepo}, {"RELAYLAB_UPDATE_GITHUB_TOKEN", &cfg.Update.GitHubToken}, {"RELAYLAB_UPDATE_PROXY", &cfg.Update.Proxy}, {"RELAYLAB_UPDATE_BACKUP_DIR", &cfg.Update.BackupDir},
+	} {
+		if v := os.Getenv(item.name); v != "" {
+			*item.dst = v
 		}
 	}
-	if v := os.Getenv("RELAYLAB_UPDATE_GITHUB_OWNER"); v != "" {
-		u.GitHubOwner = v
-	}
-	if v := os.Getenv("RELAYLAB_UPDATE_GITHUB_REPO"); v != "" {
-		u.GitHubRepo = v
-	}
-	if v := os.Getenv("RELAYLAB_UPDATE_GITHUB_TOKEN"); v != "" {
-		u.GitHubToken = v
-	}
-	if v := os.Getenv("RELAYLAB_UPDATE_CHECK_INTERVAL"); v != "" {
-		if n, e := strconv.ParseInt(v, 10, 64); e == nil && n >= 0 {
-			u.CheckInterval = time.Duration(n) * time.Second
+	for _, item := range []struct {
+		name string
+		dst  *bool
+	}{
+		{"RELAYLAB_UPDATE_ENABLED", &cfg.Update.Enabled}, {"RELAYLAB_UPDATE_AUTO_DOWNLOAD", &cfg.Update.AutoDownload}, {"RELAYLAB_UPDATE_AUTO_RESTART", &cfg.Update.AutoRestart},
+	} {
+		if value := os.Getenv(item.name); value != "" {
+			v, err := parseBool(value, item.name)
+			if err != nil {
+				return err
+			}
+			*item.dst = v
 		}
 	}
-	if v := os.Getenv("RELAYLAB_UPDATE_PROXY"); v != "" {
-		u.Proxy = v
-	}
-	if v := os.Getenv("RELAYLAB_UPDATE_AUTO_DOWNLOAD"); v != "" {
-		if b, e := strconv.ParseBool(v); e == nil {
-			u.AutoDownload = b
+	if value := os.Getenv("RELAYLAB_UPDATE_CHECK_INTERVAL"); value != "" {
+		v, err := parseInterval(value, "RELAYLAB_UPDATE_CHECK_INTERVAL")
+		if err != nil {
+			return err
 		}
+		cfg.Update.CheckInterval = v
 	}
-	if v := os.Getenv("RELAYLAB_UPDATE_AUTO_RESTART"); v != "" {
-		if b, e := strconv.ParseBool(v); e == nil {
-			u.AutoRestart = b
-		}
-	}
-	if v := os.Getenv("RELAYLAB_UPDATE_BACKUP_DIR"); v != "" {
-		u.BackupDir = v
-	}
+	return nil
 }
-
 func normalize(cfg Config, base string) (Config, error) {
 	if strings.TrimSpace(cfg.Address) == "" {
 		return Config{}, errors.New("config: server address is empty")
@@ -231,7 +238,10 @@ func normalize(cfg Config, base string) (Config, error) {
 	if base != "" && !filepath.IsAbs(cfg.DataDir) {
 		cfg.DataDir = filepath.Join(base, cfg.DataDir)
 	}
-	cfg.DataDir, _ = filepath.Abs(cfg.DataDir)
+	var err error
+	if cfg.DataDir, err = filepath.Abs(cfg.DataDir); err != nil {
+		return Config{}, errors.New("config: invalid data directory")
+	}
 	if cfg.Update.BackupDir == "" {
 		cfg.Update.BackupDir = filepath.Join(cfg.DataDir, "backups")
 	} else if !filepath.IsAbs(cfg.Update.BackupDir) {

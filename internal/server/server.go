@@ -18,6 +18,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"relaylab/internal/domain"
+	"relaylab/internal/runtimecontrol"
 	"relaylab/internal/security"
 	"relaylab/internal/store"
 	"relaylab/internal/update"
@@ -26,16 +27,20 @@ import (
 )
 
 type Server struct {
-	Store       *store.Store
-	Vault       *security.Vault
-	Client      *upstream.Client
-	mu          sync.Mutex
-	rates       map[string]*rateBucket
-	active      map[string]int
-	total       int
-	authSlots   chan struct{}
-	maintenance atomic.Bool
-	updates     *update.Manager
+	Store            *store.Store
+	Vault            *security.Vault
+	Client           *upstream.Client
+	mu               sync.Mutex
+	rates            map[string]*rateBucket
+	active           map[string]int
+	total            int
+	authSlots        chan struct{}
+	gate             runtimecontrol.Gate
+	updateBusy       atomic.Bool
+	updateContext    context.Context
+	launcherManaged  bool
+	launcherProtocol int
+	updates          *update.Manager
 }
 type rateBucket struct {
 	Start time.Time
@@ -50,8 +55,18 @@ func New(st *store.Store, v *security.Vault) *Server {
 // constructor used by tests and manually embedded deployments.
 func (s *Server) SetUpdateManager(m *update.Manager) { s.updates = m }
 func (s *Server) UpdateManager() *update.Manager     { return s.updates }
-func (s *Server) SetMaintenance(v bool)              { s.maintenance.Store(v) }
-func (s *Server) Maintenance() bool                  { return s.maintenance.Load() }
+func (s *Server) SetMaintenance(v bool)              { s.gate.Set(v) }
+func (s *Server) Maintenance() bool                  { paused, _ := s.gate.Snapshot(); return paused }
+func (s *Server) SetMaintenanceFile(path string)     { s.gate.Configure(path) }
+func (s *Server) RuntimeState() (bool, int, bool) {
+	paused, active := s.gate.Snapshot()
+	return paused, active, true
+}
+func (s *Server) ConfigureUpdates(ctx context.Context, managed bool, protocol int) {
+	s.updateContext = ctx
+	s.launcherManaged = managed
+	s.launcherProtocol = protocol
+}
 
 func (s *Server) Handler() http.Handler {
 	gin.SetMode(gin.ReleaseMode)
@@ -65,6 +80,20 @@ func (s *Server) Handler() http.Handler {
 		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
 			c.Header("Cache-Control", "no-store")
 			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2<<20)
+		}
+		c.Next()
+	})
+	// The fence is checked at admission, not by a delayed polling goroutine.
+	// Count all business writes, including login/setup, discovery and streaming.
+	r.Use(func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, "/api/v1/") && c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead && !strings.HasPrefix(c.Request.URL.Path, "/api/v1/admin/updates") {
+			leave, ok := s.gate.Enter()
+			if !ok {
+				c.Header("Retry-After", "5")
+				fail(c, 503, "maintenance_mode", "系统正在升级维护，请稍后重试")
+				return
+			}
+			defer leave()
 		}
 		c.Next()
 	})

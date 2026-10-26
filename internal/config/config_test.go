@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -53,5 +54,74 @@ func TestDefaultHasSafeUpdateRepository(t *testing.T) {
 	cfg := Default()
 	if cfg.Update.GitHubOwner != "70548887" || cfg.Update.GitHubRepo != "relay-api-monitor" {
 		t.Fatalf("unexpected defaults: %#v", cfg.Update)
+	}
+}
+
+func TestInterpolationCannotInjectYAML(t *testing.T) {
+	for _, name := range []string{"RELAYLAB_UPDATE_ENABLED", "RELAYLAB_UPDATE_AUTO_RESTART", "RELAYLAB_UPDATE_CHECK_INTERVAL", "RELAYLAB_UPDATE_GITHUB_TOKEN"} {
+		t.Setenv(name, "")
+	}
+	secret := "fake-secret: # credential\n  enabled: false\n  auto_restart: false\n  github_owner: injected"
+	t.Setenv("TEST_SCALAR_SECRET", secret)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("update:\n  github_token: ${TEST_SCALAR_SECRET}\n  enabled: true\n  auto_restart: true\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Update.GitHubToken != secret || !cfg.Update.Enabled || !cfg.Update.AutoRestart || cfg.Update.GitHubOwner == "injected" {
+		t.Fatal("interpolation changed configuration structure")
+	}
+}
+
+func TestStrictEnvironmentValuesAndDurationOverflow(t *testing.T) {
+	for _, test := range []struct{ name, value string }{
+		{"RELAYLAB_UPDATE_ENABLED", "perhaps"}, {"RELAYLAB_UPDATE_AUTO_DOWNLOAD", "invalid"}, {"RELAYLAB_UPDATE_AUTO_RESTART", "invalid"},
+		{"RELAYLAB_UPDATE_CHECK_INTERVAL", "-1"}, {"RELAYLAB_UPDATE_CHECK_INTERVAL", "9223372036854775807"}, {"RELAYLAB_UPDATE_CHECK_INTERVAL", "9223372037"}, {"RELAYLAB_UPDATE_CHECK_INTERVAL", "1.5"}, {"RELAYLAB_UPDATE_CHECK_INTERVAL", "not-a-number"},
+	} {
+		t.Run(test.name+test.value, func(t *testing.T) {
+			for _, name := range []string{"RELAYLAB_UPDATE_ENABLED", "RELAYLAB_UPDATE_AUTO_DOWNLOAD", "RELAYLAB_UPDATE_AUTO_RESTART", "RELAYLAB_UPDATE_CHECK_INTERVAL"} {
+				t.Setenv(name, "")
+			}
+			t.Setenv(test.name, test.value)
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, []byte("{}\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(path); err == nil || !strings.Contains(err.Error(), test.name) {
+				t.Fatalf("invalid environment silently accepted: %v", err)
+			}
+		})
+	}
+}
+
+func TestInvalidYAMLAndScalarErrorsNeverEchoSecrets(t *testing.T) {
+	t.Setenv("RELAYLAB_UPDATE_CHECK_INTERVAL", "")
+	for _, body := range []string{"update:\n  github_token: [fake-literal-secret\n", "update:\n  github_token: fake-literal-secret\n  enabled: fake-literal-secret\n", "update:\n  github_token: fake-literal-secret\n  check_interval: 9223372036854775807\n"} {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(path); err == nil || strings.Contains(err.Error(), "fake-literal-secret") {
+			t.Fatalf("unsafe YAML diagnostic: %v", err)
+		}
+	}
+}
+
+func TestScalarBooleanAndIntegerInterpolation(t *testing.T) {
+	for _, name := range []string{"RELAYLAB_UPDATE_ENABLED", "RELAYLAB_UPDATE_CHECK_INTERVAL"} {
+		t.Setenv(name, "")
+	}
+	t.Setenv("TEST_UPDATE_BOOL", "false")
+	t.Setenv("TEST_UPDATE_SECONDS", "42")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("update:\n  enabled: ${TEST_UPDATE_BOOL}\n  check_interval: ${TEST_UPDATE_SECONDS}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil || cfg.Update.Enabled || cfg.Update.CheckInterval != 42*time.Second {
+		t.Fatalf("scalar interpolation failed: %v", err)
 	}
 }

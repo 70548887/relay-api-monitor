@@ -1,6 +1,7 @@
 /data/
 /bin/
 /release/
+/dist/
 /backups/
 /.gocache/
 /web/node_modules/
@@ -34,3 +35,8 @@ update-state.json
 *.log
 *.tmp
 *.out
+__pycache__/
+*.pyc
+launcher-update.json
+runtime-serve.json
+runtime-worker.json

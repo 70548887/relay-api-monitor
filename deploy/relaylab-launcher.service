@@ -9,7 +9,7 @@ User=relaylab
 Group=relaylab
 WorkingDirectory=/opt/relaylab
 EnvironmentFile=-/opt/relaylab/relaylab.env
-ExecStart=/opt/relaylab/bin/relaylab-launcher --relaylab /opt/relaylab/bin/relaylab --data-dir /opt/relaylab/data --addr ${RELAYLAB_ADDR} --control-addr ${RELAYLAB_LAUNCHER_ADDR} --config /opt/relaylab/config.yaml
+ExecStart=/opt/relaylab/bin/relaylab-launcher --relaylab /opt/relaylab/bin/relaylab --config /opt/relaylab/config.yaml
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
@@ -17,6 +17,8 @@ PrivateTmp=true
 ProtectSystem=full
 ProtectHome=true
 ReadWritePaths=/opt/relaylab/data /opt/relaylab/bin
+TimeoutStopSec=60
+KillMode=mixed
 
 [Install]
 WantedBy=multi-user.target

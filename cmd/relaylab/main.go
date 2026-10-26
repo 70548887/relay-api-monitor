@@ -3,7 +3,6 @@ package main
 import (
 	"archive/zip"
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,7 +11,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -23,6 +21,7 @@ import (
 
 	"golang.org/x/term"
 	"relaylab/internal/config"
+	"relaylab/internal/runtimecontrol"
 	"relaylab/internal/security"
 	"relaylab/internal/server"
 	"relaylab/internal/store"
@@ -63,72 +62,8 @@ func runUpdateChecks(ctx context.Context, manager *update.Manager, interval time
 	}
 }
 
-func watchMaintenance(ctx context.Context, dataDir string, app *server.Server) {
-	path := filepath.Join(dataDir, "maintenance.request")
-	tick := time.NewTicker(200 * time.Millisecond)
-	defer tick.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-tick.C:
-			_, err := os.Stat(path)
-			app.SetMaintenance(err == nil)
-		}
-	}
-}
-
-// wireLauncherUpdater connects the web process to a colocated launcher when
-// one is present. Direct `relaylab serve` runs remain usable and report
-// pending_restart until they are started under the launcher.
-func wireLauncherUpdater(manager *update.Manager, dataDir, backupDir string) {
-	if manager == nil {
-		return
-	}
-	tokenBytes, err := os.ReadFile(filepath.Join(dataDir, "launcher.token"))
-	if err != nil || strings.TrimSpace(string(tokenBytes)) == "" {
-		return
-	}
-	token := strings.TrimSpace(string(tokenBytes))
-	address := os.Getenv("RELAYLAB_LAUNCHER_CONTROL_ADDR")
-	if address == "" {
-		address = "127.0.0.1:42784"
-	}
-	client := &http.Client{Timeout: 15 * time.Minute}
-	manager.SetApplier(func(ctx context.Context, stagedPath string, info update.UpdateInfo) error {
-		body, _ := json.Marshal(map[string]string{"staged_path": stagedPath, "sha256": info.SHA256, "backup_dir": backupDir})
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+address+"/control/replace", bytes.NewReader(body))
-		if err != nil {
-			return err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-RelayLab-Launcher-Token", token)
-		resp, err := client.Do(req)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode < 200 || resp.StatusCode > 299 {
-			return fmt.Errorf("launcher returned HTTP %d", resp.StatusCode)
-		}
-		return nil
-	})
-	manager.SetRollback(func(ctx context.Context) error {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+address+"/control/rollback", nil)
-		if err != nil {
-			return err
-		}
-		req.Header.Set("X-RelayLab-Launcher-Token", token)
-		resp, err := client.Do(req)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode < 200 || resp.StatusCode > 299 {
-			return fmt.Errorf("launcher returned HTTP %d", resp.StatusCode)
-		}
-		return nil
-	})
+func buildMetadata() runtimecontrol.Build {
+	return runtimecontrol.Build{Version: version, Commit: commit, BuildTime: buildTime, OS: runtime.GOOS, Arch: runtime.GOARCH, LauncherProtocol: runtimecontrol.Protocol, DatabaseSchema: 1, MinDatabaseSchema: 1}
 }
 
 func run(args []string) error {
@@ -137,6 +72,12 @@ func run(args []string) error {
 		return nil
 	}
 	if args[0] == "version" {
+		if len(args) == 2 && args[1] == "--json" {
+			return json.NewEncoder(os.Stdout).Encode(buildMetadata())
+		}
+		if len(args) != 1 {
+			return errors.New("version 仅支持 --json")
+		}
 		fmt.Println(version)
 		return nil
 	}
@@ -230,9 +171,11 @@ func run(args []string) error {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					if info, err := os.Stat(filepath.Join(cfg.DataDir, "stop.request")); err == nil && !info.ModTime().Before(startedAt) {
-						cancel()
-						return
+					for _, name := range []string{"stop.request", args[0] + ".stop.request"} {
+						if info, err := os.Stat(filepath.Join(cfg.DataDir, name)); err == nil && !info.ModTime().Before(startedAt) {
+							cancel()
+							return
+						}
 					}
 				}
 			}
@@ -269,14 +212,15 @@ func run(args []string) error {
 		return nil
 	case "serve":
 		app := server.New(st, vault)
+		app.SetMaintenanceFile(filepath.Join(cfg.DataDir, "maintenance.request"))
 		updater, updateErr := update.New(cfg.Update, cfg.DataDir, update.BuildInfo{Version: version, Commit: commit, BuildTime: buildTime, OS: runtime.GOOS, Arch: runtime.GOARCH})
 		if updateErr != nil {
 			return updateErr
 		}
 		app.SetUpdateManager(updater)
-		go watchMaintenance(ctx, cfg.DataDir, app)
-		wireLauncherUpdater(updater, cfg.DataDir, cfg.Update.BackupDir)
-		if cfg.Update.CheckInterval > 0 {
+		managed, protocol := wireLauncherUpdater(updater, cfg.Update.AutoRestart)
+		app.ConfigureUpdates(ctx, managed, protocol)
+		if cfg.Update.Enabled && cfg.Update.CheckInterval > 0 {
 			go runUpdateChecks(ctx, updater, cfg.Update.CheckInterval)
 		}
 		hs := newHTTPServer(cfg.Address, app.Handler(), ctx)
@@ -285,10 +229,14 @@ func run(args []string) error {
 			return e
 		}
 		log.Printf("Relay Lab %s 已启动 http://%s", version, ln.Addr())
+		stopReport := runtimecontrol.StartReporter(ctx, cfg.DataDir, "serve", buildMetadata(), app.RuntimeState)
+		defer stopReport()
 		return serveHTTP(ctx, hs, ln)
 	case "worker":
 		w := worker.New(st, vault, upstream.New())
 		w.SetMaintenanceFile(filepath.Join(cfg.DataDir, "maintenance.request"))
+		stopReport := runtimecontrol.StartReporter(ctx, cfg.DataDir, "worker", buildMetadata(), w.RuntimeState)
+		defer stopReport()
 		err := w.Run(ctx)
 		if errors.Is(err, context.Canceled) {
 			return nil

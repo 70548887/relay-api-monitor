@@ -2,99 +2,111 @@ name: Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
 
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
-  GO_VERSION: '1.26.10'
-  NODE_VERSION: '22'
+  CGO_ENABLED: '0'
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  actual-binaries:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
-      - name: Checkout
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify actual upgrade and recovery on amd64
+        env:
+          RELAYLAB_UPGRADE_INTEGRATION: '1'
+        run: go test ./cmd/relaylab -run TestActualBinaryUpgradeAndRecovery -count=1 -timeout=360s
+
+  release:
+    needs: actual-binaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout release tag
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Set up Go
+      - name: Verify tag and Chinese release notes
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REF_TYPE: ${{ github.ref_type }}
+        run: |
+          python - <<'PY'
+          import os, pathlib, re
+          version = pathlib.Path('VERSION').read_text().strip()
+          assert re.fullmatch(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)', version), 'stable VERSION required'
+          if os.environ['RELEASE_REF_TYPE'] == 'tag':
+              assert os.environ['RELEASE_TAG'] == 'v' + version, 'tag must match VERSION'
+          assert pathlib.Path('docs/releases/v' + version + '.md').is_file(), 'Chinese release notes required'
+          PY
+
+      - name: Set up Go from module baseline
         uses: actions/setup-go@v5
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
           cache: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '22'
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - name: Build embedded frontend
-        working-directory: web
-        run: npm ci && npm run build
-
-      - name: Test frontend
-        working-directory: web
-        run: npm test -- --run
-
-      - name: Verify source
+      - name: Install locked dependencies
         run: |
-          go test ./...
+          go mod download
+          npm --prefix web ci
+
+      - name: Verify source and packaging
+        run: |
+          go test ./... -count=1 -timeout=5m
           go vet ./...
-          npm --prefix web test -- --run
+          npm --prefix web test
           npm --prefix web run typecheck
+          python -m unittest discover -s scripts -p 'test_release.py' -v
 
-      - name: Build release binaries
-        shell: bash
+      - name: Build embedded frontend
         run: |
-          set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          commit="$(git rev-parse HEAD)"
-          build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          export BUILD_TIME="$build_time"
-          mkdir -p dist
-          for target in "windows amd64 exe" "linux amd64 noext" "linux arm64 noext"; do
-            read -r goos goarch suffix <<<"$target"
-            if [[ "$suffix" == "exe" ]]; then ext=.exe; else ext=; fi
-            GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags "-s -w -X main.version=$version -X main.commit=$commit -X main.buildTime=$build_time" -o "dist/relaylab-${goos}-${goarch}${ext}" ./cmd/relaylab
-            if [[ ! -d cmd/relaylab-launcher ]]; then
-              echo 'cmd/relaylab-launcher is required for a release' >&2
-              exit 1
-            fi
-            GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags "-s -w -X main.version=$version" -o "dist/relaylab-launcher-${goos}-${goarch}${ext}" ./cmd/relaylab-launcher
-          done
-          printf '%s  %s\n' "$commit" > dist/BUILD_COMMIT
-          printf '%s\n' "$build_time" > dist/BUILD_TIME
+          npm --prefix web run build
+          node scripts/notices.mjs
 
-      - name: Generate checksums and manifest
-        shell: bash
+      - name: Verify concurrency on Linux
+        env:
+          CGO_ENABLED: '1'
+        run: go test -race ./internal/launcher ./internal/update ./internal/runtimecontrol ./internal/server ./internal/worker -count=1 -timeout=5m
+
+      - name: Build and validate complete release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          export BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          sha256sum dist/relaylab-* > dist/SHA256SUMS
-          python - "$version" "$(git rev-parse HEAD)" <<'PY'
-          import hashlib, json, os, pathlib, platform, re, sys
-          version, commit = sys.argv[1:]
-          root = pathlib.Path('dist')
-          assets = []
-          pattern = re.compile(r'^relaylab(?:-launcher)?-(windows|linux)-(amd64|arm64)(\.exe)?$')
-          for path in sorted(root.iterdir()):
-              match = pattern.match(path.name)
-              if not match:
-                  continue
-              digest = hashlib.sha256(path.read_bytes()).hexdigest()
-              assets.append({'name': path.name, 'os': match.group(1), 'arch': match.group(2), 'size': path.stat().st_size, 'sha256': digest})
-          manifest = {'version': version, 'commit': commit, 'build_time': os.environ.get('BUILD_TIME', ''), 'launcher_protocol': 1, 'database_schema': 1, 'assets': assets}
-          (root / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-          PY
+          python scripts/release.py --tag "$RELEASE_TAG"
+          python scripts/release.py --tag "$RELEASE_TAG" --validate-only
 
-      - name: Publish GitHub Release
+      - name: Upload draft, verify, then publish
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python scripts/publish_release.py --tag "$RELEASE_TAG"

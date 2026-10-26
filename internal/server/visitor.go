@@ -88,10 +88,6 @@ func validateVisitor(c *gin.Context, b visitorRequest) bool {
 // Admission precedes decoding, so malformed and oversized bodies consume the
 // same rate and concurrency budget as valid visitor requests.
 func (s *Server) visitorAdmission(c *gin.Context, discovery bool) (domain.Settings, func(), bool) {
-	if s.Maintenance() {
-		fail(c, 503, "maintenance_mode", "系统正在升级维护，请稍后重试")
-		return domain.Settings{}, nil, false
-	}
 	settings, err := s.Store.GetSettings(c.Request.Context())
 	if err != nil {
 		dbError(c, err)

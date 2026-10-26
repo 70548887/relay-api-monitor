@@ -2,13 +2,13 @@
 
 Go + React 的中转 API 监控与模型测试平台。公开页面包含中转 API 监控、鹈鹕作品比较和访客自带 Key 在线测试；管理后台配置平台、分组、模型与自动任务。
 
-当前版本 **1.1.1**。智商测试采用分组状态、主动画和八次真实历史预览，支持实际推理强度配置。手动新增和自动发现的模型均默认关闭自动付费任务；归档对象不再出现在可运行目标中。升级保留账号、加密Key与历史数据。
+当前版本 **1.2.2**，唯一版本来源为根目录 `VERSION`。此版修复在线升级、启动器交接与完整发布包。智商测试采用分组状态、主动画和八次真实历史预览，支持实际推理强度配置。手动新增和自动发现的模型均默认关闭自动付费任务；归档对象不再出现在可运行目标中。升级保留账号、加密Key与历史数据。
 
 后台“在线升级”页面可检查并安装 `70548887/relay-api-monitor` 的 GitHub Release。复制 `config.example.yaml` 为 `config.yaml`，通过 `RELAYLAB_UPDATE_GITHUB_TOKEN` 配置私有仓库读取 Token；不要把 Token、代理凭据或本地配置提交到仓库。完整流程见 [docs/UPDATES.md](docs/UPDATES.md)。
 
 ## 本机启动
 
-开发构建需要 Go 1.26+、Node.js 22.16+；成品启动只需要 `bin/relaylab.exe`。
+开发构建需要 `go.mod` 指定的 Go 工具链、Node.js 22 和 Python 3.11+（发布打包测试）。成品启动使用完整包中的 `bin/relaylab.exe` 与 `bin/relaylab-launcher.exe`，无需这些开发工具。
 
 如果使用已经打包的 Windows 成品，直接运行 `scripts/start.ps1`，跳过下面的构建步骤。项目固定使用 Go 1.26.10 修复版本工具链，Go 会按 `go.mod` 自动获取。
 
@@ -26,7 +26,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\stop.ps1
 ```
 
-`start.ps1` 在后台启动网站与 Worker，保存进程ID和启动时间，用于停止时核对身份。日志位于数据目录。强制停止时，上游已收到但本机未完成的任务可能被标为“结果未知”，恢复后不自动重发。
+`start.ps1` 通过协议 2 启动器管理网站与 Worker，保存进程路径、ID 和启动时间，用于停止时核对身份。显式脚本参数优先于环境变量，环境变量优先于 YAML；未指定 `-Address` / `-DataDir` 时不会覆盖配置。启动器控制端口默认由系统分配，实际地址记录在数据目录 `launcher.json`，与开发端口 42784 独立。日志位于数据目录。停止脚本先发送优雅退出请求，退出未确认时保留记录并报错。
+
+**v1.2.0 / v1.2.1 用户需手动迁移一次完整包**：停止旧程序，备份数据库与 `master.key`，同时替换服务端、启动器和脚本，保留原数据与本地配置后重新启动。旧启动器无法可靠完成自身升级；迁移到协议 2 后再使用在线升级。详见 [升级说明](docs/UPDATES.md) 和 [v1.2.2 发布说明](docs/releases/v1.2.2.md)。
 
 ## 配置流程
 

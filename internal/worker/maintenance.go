@@ -5,11 +5,12 @@ import (
 	"time"
 
 	"relaylab/internal/domain"
+	"relaylab/internal/runtimecontrol"
 )
 
 func (w *Worker) startMaintenance(ctx context.Context, now time.Time) {
 	w.mu.Lock()
-	if w.syncBusy || now.Before(w.nextMaintenance) {
+	if w.syncBusy || now.Before(w.nextMaintenance) || runtimecontrol.Paused(w.maintenanceFile) {
 		w.mu.Unlock()
 		return
 	}
@@ -24,7 +25,7 @@ func (w *Worker) startMaintenance(ctx context.Context, now time.Time) {
 	}()
 }
 func (w *Worker) maintenance(ctx context.Context, now time.Time) {
-	if ctx.Err() != nil {
+	if ctx.Err() != nil || runtimecontrol.Paused(w.maintenanceFile) {
 		return
 	}
 	if !now.Before(w.nextCleanup) {
@@ -47,7 +48,7 @@ func (w *Worker) maintenance(ctx context.Context, now time.Time) {
 		return
 	}
 	for _, c := range channels {
-		if ctx.Err() != nil {
+		if ctx.Err() != nil || runtimecontrol.Paused(w.maintenanceFile) {
 			return
 		}
 		if w.syncRevision[c.ID] != c.Revision {

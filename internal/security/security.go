@@ -72,7 +72,9 @@ func LoadVault(dataDir string, existing bool) (*Vault, error) {
 	if len(key) != 32 {
 		return nil, errors.New("master.key 必须是32字节的原始密钥")
 	}
-	if err := protectSecretFile(path); err != nil { return nil, fmt.Errorf("限制主密钥权限失败: %w",err) }
+	if err := protectSecretFile(path); err != nil {
+		return nil, fmt.Errorf("限制主密钥权限失败: %w", err)
+	}
 	b, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -106,7 +108,7 @@ func ValidateNewDataDirectory(dataDir string) error {
 	if err != nil {
 		return err
 	}
-	allowed := map[string]bool{"relaylab.db": true, "relaylab.db-wal": true, "relaylab.db-shm": true, "serve.out.log": true, "serve.err.log": true, "worker.out.log": true, "worker.err.log": true, "serve.log": true, "worker.log": true, "processes.json": true, "processes.json.tmp": true, "stop.request": true, "launcher.token": true, "launcher.json": true, "launcher.json.tmp": true, "launcher.process.json": true, "launcher.process.json.tmp": true, "launcher.out.log": true, "launcher.err.log": true, "update-state.json": true}
+	allowed := map[string]bool{"relaylab.db": true, "relaylab.db-wal": true, "relaylab.db-shm": true, "serve.out.log": true, "serve.err.log": true, "worker.out.log": true, "worker.err.log": true, "serve.log": true, "worker.log": true, "processes.json": true, "processes.json.tmp": true, "stop.request": true, "launcher.token": true, "launcher.json": true, "launcher.json.tmp": true, "launcher.process.json": true, "launcher.process.json.tmp": true, "launcher.out.log": true, "launcher.err.log": true, "update-state.json": true, "launcher.lock": true, "launcher-update.json": true, "maintenance.request": true, "runtime-serve.json": true, "runtime-worker.json": true, "serve.stop.request": true, "worker.stop.request": true}
 	for _, entry := range entries {
 		if entry.IsDir() || (!allowed[entry.Name()] && !strings.HasPrefix(entry.Name(), ".master-key-")) {
 			return errors.New("新数据目录包含其他文件，请选择空的专用目录")

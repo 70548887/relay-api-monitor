@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"relaylab/internal/update"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -22,7 +23,21 @@ func (s *Server) updatesSnapshot(c *gin.Context) {
 	if !ok {
 		return
 	}
-	c.JSON(http.StatusOK, m.Snapshot())
+	c.JSON(http.StatusOK, s.updateSnapshot(c.Request.Context(), m))
+}
+
+func (s *Server) updateSnapshot(ctx context.Context, m *update.Manager) any {
+	paused, active, _ := s.RuntimeState()
+	counts, _ := s.Store.JobStateCounts(ctx)
+	worker, _ := s.Store.WorkerHealth(ctx)
+	return struct {
+		update.Snapshot
+		LauncherManaged  bool `json:"launcher_managed"`
+		LauncherProtocol int  `json:"launcher_protocol"`
+		AutoRestart      bool `json:"auto_restart"`
+		Maintenance      any  `json:"maintenance"`
+	}{m.Snapshot(), s.launcherManaged, s.launcherProtocol, m.Config().AutoRestart,
+		gin.H{"active": paused, "draining_requests": active, "running_jobs": counts["claimed"] + counts["dispatching"], "worker_online": worker.Online}}
 }
 
 func (s *Server) updatesHistory(c *gin.Context) {
@@ -35,60 +50,77 @@ func (s *Server) updatesHistory(c *gin.Context) {
 }
 
 func (s *Server) updatesCheck(c *gin.Context) {
-	m, ok := s.updateManager(c)
-	if !ok {
-		return
-	}
-	snap, err := m.Check(c.Request.Context())
-	if err != nil && !errors.Is(err, update.ErrNoRelease) {
-		updateError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, snap)
+	s.startUpdateOperation(c, "check")
 }
 
 func (s *Server) updatesDownload(c *gin.Context) {
-	m, ok := s.updateManager(c)
-	if !ok {
-		return
-	}
-	snap, err := m.Download(c.Request.Context())
-	if err != nil {
-		updateError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, snap)
+	s.startUpdateOperation(c, "download")
 }
 
 func (s *Server) updatesApply(c *gin.Context) {
-	m, ok := s.updateManager(c)
-	if !ok {
-		return
-	}
-	snap, err := m.Apply(c.Request.Context())
-	if err != nil {
-		updateError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, snap)
+	s.startUpdateOperation(c, "apply")
 }
 
 func (s *Server) updatesRollback(c *gin.Context) {
+	s.startUpdateOperation(c, "rollback")
+}
+
+// Long downloads are owned by the server lifetime. Browser disconnects do not
+// abandon a verified package or leave an install half-started.
+func (s *Server) startUpdateOperation(c *gin.Context, action string) {
 	m, ok := s.updateManager(c)
 	if !ok {
 		return
 	}
-	snap, err := m.Rollback(c.Request.Context())
-	if err != nil {
-		updateError(c, err)
+	if !m.Config().Enabled {
+		updateError(c, update.ErrDisabled)
 		return
 	}
-	c.JSON(http.StatusOK, snap)
+	snapshot := m.Snapshot()
+	switch snapshot.State {
+	case "accepted", "checking", "downloading", "draining", "stopping", "stopped", "backing_up", "backed_up", "replacing", "starting", "validating", "rolling_back", "recovering", "recovery_required", "pending_restart":
+		fail(c, http.StatusConflict, "update_busy", "已有升级操作正在执行或等待重启")
+		return
+	}
+	if action == "apply" && snapshot.State != "ready" {
+		fail(c, http.StatusConflict, "update_not_ready", "请先下载并校验目标版本")
+		return
+	}
+	if (action == "apply" || action == "rollback") && !s.launcherManaged {
+		fail(c, http.StatusConflict, "launcher_required", "需要协议 2 的启动器；旧版请先使用完整安装包迁移")
+		return
+	}
+	if !s.updateBusy.CompareAndSwap(false, true) {
+		fail(c, 409, "update_busy", "已有升级操作正在执行")
+		return
+	}
+	parent := s.updateContext
+	if parent == nil {
+		parent = context.Background()
+	}
+	go func() {
+		defer s.updateBusy.Store(false)
+		ctx, cancel := context.WithTimeout(parent, 15*time.Minute)
+		defer cancel()
+		switch action {
+		case "check":
+			_, _ = m.Check(ctx)
+		case "download":
+			_, _ = m.Download(ctx)
+		case "apply":
+			_, _ = m.Apply(ctx)
+		case "rollback":
+			_, _ = m.Rollback(ctx)
+		}
+	}()
+	c.JSON(http.StatusAccepted, s.updateSnapshot(c.Request.Context(), m))
 }
 
 func updateError(c *gin.Context, err error) {
 	status, code, message := http.StatusBadGateway, "update_failed", "在线升级失败"
 	switch {
+	case errors.Is(err, update.ErrBusy):
+		status, code, message = http.StatusConflict, "update_busy", "已有升级操作正在执行"
 	case errors.Is(err, update.ErrDisabled):
 		status, code, message = http.StatusNotImplemented, "update_disabled", "在线升级未启用"
 	case errors.Is(err, update.ErrApplyUnavailable):

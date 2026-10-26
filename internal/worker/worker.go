@@ -5,12 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"relaylab/internal/domain"
+	"relaylab/internal/runtimecontrol"
 	"relaylab/internal/security"
 	"relaylab/internal/store"
 	"relaylab/internal/upstream"
@@ -40,12 +40,24 @@ type Worker struct {
 	nextCleanup         time.Time
 	nextMaintenance     time.Time
 	maintenanceFile     string
+	ticking             int
+	ready               atomic.Bool
 }
 
 // SetMaintenanceFile connects the worker to the launcher maintenance fence.
 // While the fence exists, heartbeats and leases continue, but no new durable
 // jobs, schedules, discovery calls or cleanup writes are started.
 func (w *Worker) SetMaintenanceFile(path string) { w.maintenanceFile = path }
+
+func (w *Worker) RuntimeState() (bool, int, bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	active := len(w.active) + w.ticking
+	if w.syncBusy {
+		active++
+	}
+	return runtimecontrol.Paused(w.maintenanceFile), active, w.ready.Load()
+}
 
 func New(st *store.Store, vault *security.Vault, client *upstream.Client) *Worker {
 	if client == nil {
@@ -84,6 +96,8 @@ func (w *Worker) Run(ctx context.Context) error {
 	if !acquired {
 		return ErrWorkerActive
 	}
+	w.ready.Store(true)
+	defer w.ready.Store(false)
 	for {
 		select {
 		case <-w.fatal:
@@ -134,6 +148,10 @@ func (w *Worker) Run(ctx context.Context) error {
 }
 
 func (w *Worker) tick(ctx context.Context, now time.Time) error {
+	w.mu.Lock()
+	w.ticking++
+	w.mu.Unlock()
+	defer func() { w.mu.Lock(); w.ticking--; w.mu.Unlock() }()
 	if w.running.Load() {
 		if err := w.st.CheckWorkerLease(ctx, w.owner); err != nil {
 			return fmt.Errorf("%w: %v", ErrLeaseLost, err)
@@ -144,12 +162,8 @@ func (w *Worker) tick(ctx context.Context, now time.Time) error {
 		return err
 	}
 	cfg = normalized(cfg)
-	if w.maintenanceFile != "" {
-		if _, statErr := os.Stat(w.maintenanceFile); statErr == nil {
-			return nil
-		} else if !os.IsNotExist(statErr) {
-			return statErr
-		}
+	if runtimecontrol.Paused(w.maintenanceFile) {
+		return nil
 	}
 	if err = w.st.RecoverJobs(ctx, now); err != nil {
 		return err
@@ -173,6 +187,10 @@ func (w *Worker) admit(ctx context.Context, kind string, cfg domain.Settings) er
 	}
 	for {
 		w.mu.Lock()
+		if runtimecontrol.Paused(w.maintenanceFile) {
+			w.mu.Unlock()
+			return nil
+		}
 		kindActive := 0
 		channelActive := map[string]int{}
 		for id, n := range w.maintenanceChannels {

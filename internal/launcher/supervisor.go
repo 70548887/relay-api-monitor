@@ -1,19 +1,15 @@
-// Package launcher manages the Relay Lab web and worker child processes.
-//
-// The launcher is deliberately independent from the web server.  It owns the
-// process lifecycle and exposes a small, loopback-only, token-authenticated
-// control API that an update manager can use while replacing binaries.
+// Package launcher owns process lifecycle and the durable update journal.
+// It never opens a live database. Backup and restore are delegated to the
+// verified executable after every child has closed.
 package launcher
 
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -25,6 +21,7 @@ import (
 	"time"
 )
 
+const Protocol = 2
 const (
 	StateStopped  = "stopped"
 	StateStarting = "starting"
@@ -42,21 +39,15 @@ var (
 )
 
 type Options struct {
-	RelayLabPath   string
-	DataDir        string
-	Address        string
-	ControlAddress string
-	ControlToken   string
-	ConfigPath     string
-	WorkingDir     string
-	GracePeriod    time.Duration
+	RelayLabPath, DataDir, Address, ControlAddress, ControlToken, ConfigPath, WorkingDir, BackupDir, LauncherVersion string
+	GracePeriod, StartupTimeout, DrainTimeout                                                                        time.Duration
 }
 
 func (o Options) withDefaults() (Options, error) {
 	if o.RelayLabPath == "" {
-		exe, err := os.Executable()
-		if err != nil {
-			return o, err
+		exe, e := os.Executable()
+		if e != nil {
+			return o, e
 		}
 		name := "relaylab"
 		if runtime.GOOS == "windows" {
@@ -64,734 +55,729 @@ func (o Options) withDefaults() (Options, error) {
 		}
 		o.RelayLabPath = filepath.Join(filepath.Dir(exe), name)
 	}
+	var e error
+	if o.RelayLabPath, e = filepath.Abs(o.RelayLabPath); e != nil {
+		return o, e
+	}
 	if o.WorkingDir == "" {
 		o.WorkingDir = filepath.Dir(o.RelayLabPath)
 	}
+	if o.WorkingDir, e = filepath.Abs(o.WorkingDir); e != nil {
+		return o, e
+	}
 	if o.DataDir == "" {
 		o.DataDir = filepath.Join(o.WorkingDir, "data")
+	}
+	if o.DataDir, e = filepath.Abs(o.DataDir); e != nil {
+		return o, e
+	}
+	if o.BackupDir == "" {
+		o.BackupDir = filepath.Join(o.DataDir, "backups")
+	}
+	if !filepath.IsAbs(o.BackupDir) {
+		o.BackupDir = filepath.Join(o.WorkingDir, o.BackupDir)
+	}
+	if o.BackupDir, e = filepath.Abs(o.BackupDir); e != nil {
+		return o, e
 	}
 	if o.Address == "" {
 		o.Address = "127.0.0.1:42783"
 	}
 	if o.ControlAddress == "" {
-		o.ControlAddress = "127.0.0.1:42784"
+		o.ControlAddress = "127.0.0.1:0"
+	}
+	if o.LauncherVersion == "" {
+		o.LauncherVersion = "dev"
 	}
 	if o.GracePeriod <= 0 {
-		o.GracePeriod = 20 * time.Second
+		o.GracePeriod = 30 * time.Second
 	}
-	for k, v := range map[string]string{"relaylab": o.RelayLabPath, "data": o.DataDir, "working": o.WorkingDir} {
-		if v == "" {
-			return o, fmt.Errorf("launcher: %s path is empty", k)
-		}
+	if o.StartupTimeout <= 0 {
+		o.StartupTimeout = 30 * time.Second
 	}
-	host, _, err := net.SplitHostPort(o.ControlAddress)
-	if err != nil {
-		return o, fmt.Errorf("launcher: invalid control address: %w", err)
+	if o.DrainTimeout <= 0 || o.DrainTimeout > 660*time.Second {
+		o.DrainTimeout = 660 * time.Second
 	}
-	if host != "localhost" {
-		ip := net.ParseIP(host)
-		if ip == nil || !ip.IsLoopback() {
-			return o, ErrNonLoopback
-		}
+	host, _, e := net.SplitHostPort(o.ControlAddress)
+	if e != nil {
+		return o, fmt.Errorf("launcher: invalid control address: %w", e)
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		return o, ErrNonLoopback
 	}
 	return o, nil
 }
 
+type BinaryMetadata struct {
+	Version           string `json:"version"`
+	Commit            string `json:"commit"`
+	BuildTime         string `json:"build_time"`
+	OS                string `json:"os"`
+	Arch              string `json:"arch"`
+	LauncherProtocol  int    `json:"launcher_protocol"`
+	DatabaseSchema    int    `json:"database_schema"`
+	MinDatabaseSchema int    `json:"min_database_schema"`
+}
+type RuntimeReport struct {
+	PID              int       `json:"pid"`
+	InstanceID       string    `json:"instance_id"`
+	Role             string    `json:"role"`
+	Version          string    `json:"version"`
+	Commit           string    `json:"commit"`
+	LauncherProtocol int       `json:"launcher_protocol"`
+	DatabaseSchema   int       `json:"database_schema"`
+	Maintenance      bool      `json:"maintenance"`
+	Active           int       `json:"active"`
+	Ready            bool      `json:"ready"`
+	HeartbeatAt      time.Time `json:"heartbeat_at"`
+}
 type ChildStatus struct {
 	PID       int       `json:"pid"`
 	StartedAt time.Time `json:"started_at"`
 	Running   bool      `json:"running"`
 }
-
 type Status struct {
-	State          string      `json:"state"`
-	ControlAddress string      `json:"control_address"`
-	DataDir        string      `json:"data_dir"`
-	RelayLabPath   string      `json:"relaylab_path"`
-	Address        string      `json:"address"`
-	StartedAt      time.Time   `json:"started_at,omitempty"`
-	UpdatedAt      time.Time   `json:"updated_at"`
-	LastError      string      `json:"last_error,omitempty"`
-	Serve          ChildStatus `json:"serve"`
-	Worker         ChildStatus `json:"worker"`
-	Maintenance    bool        `json:"maintenance"`
+	Protocol       int          `json:"protocol"`
+	PID            int          `json:"pid"`
+	Version        string       `json:"version"`
+	InstanceID     string       `json:"instance_id"`
+	State          string       `json:"state"`
+	ControlAddress string       `json:"control_address"`
+	DataDir        string       `json:"data_dir"`
+	RelayLabPath   string       `json:"relaylab_path"`
+	Address        string       `json:"address"`
+	StartedAt      time.Time    `json:"started_at,omitempty"`
+	UpdatedAt      time.Time    `json:"updated_at"`
+	LastError      string       `json:"last_error,omitempty"`
+	Serve          ChildStatus  `json:"serve"`
+	Worker         ChildStatus  `json:"worker"`
+	Maintenance    bool         `json:"maintenance"`
+	Transaction    *Transaction `json:"transaction,omitempty"`
+	Operation      *Transaction `json:"operation,omitempty"`
 }
-
-type processExit struct {
-	name string
-	err  error
+type child struct {
+	role     string
+	cmd      *exec.Cmd
+	done     chan struct{}
+	err      error // written before closing done; read only after receiving done
+	started  time.Time
+	instance string
+	metadata BinaryMetadata
 }
-
 type Supervisor struct {
-	opts Options
-
-	mu          sync.Mutex
-	state       string
-	lastError   error
-	startedAt   time.Time
-	maintenance bool
-	serve       *exec.Cmd
-	worker      *exec.Cmd
-	exits       chan processExit
-	server      *http.Server
-	serverErr   chan error
-	closed      chan struct{}
-	closeOnce   sync.Once
-	replaceMu   sync.Mutex
+	opts          Options
+	mu            sync.Mutex
+	opMu          sync.Mutex // serializes every lifecycle operation and recovery
+	transactionMu sync.Mutex // reserves an async operation before returning 202
+	state         string
+	lastError     error
+	startedAt     time.Time
+	maintenance   bool
+	instance      string
+	serve, worker *child
+	server        *http.Server
+	serverErr     chan error
+	events        chan *child
+	lifetime      context.Context
+	cancel        context.CancelFunc
+	lock          *os.File
+	txn           *Transaction
+	closed        bool
 }
 
 func New(opts Options) (*Supervisor, error) {
-	var err error
-	if opts, err = opts.withDefaults(); err != nil {
-		return nil, err
+	var e error
+	if opts, e = opts.withDefaults(); e != nil {
+		return nil, e
 	}
-	if err = os.MkdirAll(opts.DataDir, 0700); err != nil {
-		return nil, err
+	if e = os.MkdirAll(opts.DataDir, 0700); e != nil {
+		return nil, e
 	}
-	if _, err = os.Stat(opts.RelayLabPath); err != nil {
-		return nil, fmt.Errorf("launcher: relaylab binary: %w", err)
+	if opts.DataDir, e = filepath.EvalSymlinks(opts.DataDir); e != nil {
+		return nil, e
 	}
+	if _, e = os.Stat(opts.RelayLabPath); e != nil {
+		return nil, fmt.Errorf("launcher: executable: %w", e)
+	}
+	lock, e := acquireLock(filepath.Join(opts.DataDir, "launcher.lock"))
+	if e != nil {
+		return nil, e
+	}
+	fail := func(err error) (*Supervisor, error) { _ = releaseLock(lock); return nil, err }
 	if opts.ControlToken == "" {
-		opts.ControlToken, err = randomToken()
-		if err != nil {
-			return nil, err
+		opts.ControlToken, e = randomToken()
+		if e != nil {
+			return fail(e)
 		}
 	}
-	return &Supervisor{opts: opts, state: StateStopped, exits: make(chan processExit, 4), serverErr: make(chan error, 1), closed: make(chan struct{})}, nil
+	instance, e := randomToken()
+	if e != nil {
+		return fail(e)
+	}
+	lifetime, cancel := context.WithCancel(context.Background())
+	s := &Supervisor{opts: opts, state: StateStopped, instance: instance, lock: lock, lifetime: lifetime, cancel: cancel, events: make(chan *child, 16), serverErr: make(chan error, 1)}
+	if b, err := os.ReadFile(s.journalPath()); err == nil {
+		var txn Transaction
+		if err = json.Unmarshal(b, &txn); err != nil {
+			cancel()
+			return fail(fmt.Errorf("launcher: invalid update journal: %w", err))
+		}
+		s.txn = &txn
+	} else if !os.IsNotExist(err) {
+		cancel()
+		return fail(err)
+	}
+	_, e = os.Stat(filepath.Join(opts.DataDir, "maintenance.request"))
+	s.maintenance = e == nil
+	return s, nil
 }
-
 func randomToken() (string, error) {
 	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
+	if _, e := rand.Read(b); e != nil {
+		return "", e
 	}
 	return hex.EncodeToString(b), nil
 }
-
-func (s *Supervisor) Options() Options { return s.opts }
+func (s *Supervisor) Options() Options { s.mu.Lock(); defer s.mu.Unlock(); return s.opts }
 func (s *Supervisor) Token() string    { return s.opts.ControlToken }
-
 func (s *Supervisor) Status() Status {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	status := Status{State: s.state, ControlAddress: s.opts.ControlAddress, DataDir: s.opts.DataDir, RelayLabPath: s.opts.RelayLabPath, Address: s.opts.Address, UpdatedAt: time.Now().UTC(), StartedAt: s.startedAt, Maintenance: s.maintenance}
+	status := Status{Protocol: Protocol, PID: os.Getpid(), Version: s.opts.LauncherVersion, InstanceID: s.instance, State: s.state, ControlAddress: s.opts.ControlAddress, DataDir: s.opts.DataDir, RelayLabPath: s.opts.RelayLabPath, Address: s.opts.Address, StartedAt: s.startedAt, UpdatedAt: time.Now().UTC(), Maintenance: s.maintenance}
 	if s.lastError != nil {
 		status.LastError = s.lastError.Error()
 	}
-	if s.serve != nil {
-		status.Serve = ChildStatus{PID: s.serve.Process.Pid, StartedAt: s.startedAt, Running: s.serve.ProcessState == nil}
+	for _, c := range []*child{s.serve, s.worker} {
+		if c == nil {
+			continue
+		}
+		running := true
+		select {
+		case <-c.done:
+			running = false
+		default:
+		}
+		cs := ChildStatus{PID: c.cmd.Process.Pid, StartedAt: c.started, Running: running}
+		if c.role == "serve" {
+			status.Serve = cs
+		} else {
+			status.Worker = cs
+		}
 	}
-	if s.worker != nil {
-		status.Worker = ChildStatus{PID: s.worker.Process.Pid, StartedAt: s.startedAt, Running: s.worker.ProcessState == nil}
+	if s.txn != nil {
+		clone := *s.txn
+		clone.History = append([]TransactionEvent(nil), s.txn.History...)
+		status.Transaction = &clone
+		status.Operation = &clone
 	}
 	return status
 }
-
-// Serve starts the authenticated control endpoint and child processes. It
-// returns when the context is cancelled or a child exits unexpectedly.
-func (s *Supervisor) Serve(ctx context.Context) error {
-	if err := s.startControl(); err != nil {
-		return err
+func (s *Supervisor) setState(state string, err error) {
+	s.mu.Lock()
+	s.state = state
+	s.lastError = err
+	s.mu.Unlock()
+	_ = s.WriteStateFile()
+}
+func (s *Supervisor) Serve(ctx context.Context) (result error) {
+	if e := s.startControl(); e != nil {
+		_ = s.Close()
+		return e
 	}
-	defer s.closeControl()
-	if err := s.Start(ctx); err != nil {
-		return err
+	defer func() { result = errors.Join(result, s.Close()) }()
+	if e := s.Recover(ctx); e != nil {
+		return e
+	}
+	if s.Status().Serve.PID == 0 {
+		if e := s.Start(ctx); e != nil {
+			return e
+		}
 	}
 	for {
 		select {
 		case <-ctx.Done():
-			stopCtx, cancel := context.WithTimeout(context.Background(), s.opts.GracePeriod)
-			err := s.Stop(stopCtx)
-			cancel()
-			if err != nil {
-				return err
-			}
 			return nil
-		case e := <-s.exits:
-			s.mu.Lock()
-			stillRunning := (e.name == "serve" && s.serve != nil) || (e.name == "worker" && s.worker != nil)
-			s.mu.Unlock()
-			if stillRunning {
-				s.mu.Lock()
-				s.state, s.lastError = StateFailed, e.err
-				s.mu.Unlock()
-				_ = s.Stop(context.Background())
-				if e.err != nil {
-					return fmt.Errorf("launcher: %s exited: %w", e.name, e.err)
-				}
-				return fmt.Errorf("launcher: %s exited", e.name)
+		case <-s.lifetime.Done():
+			return nil
+		case e := <-s.serverErr:
+			if e != nil && !errors.Is(e, http.ErrServerClosed) {
+				return e
 			}
-		case err := <-s.serverErr:
-			if err != nil && !errors.Is(err, http.ErrServerClosed) {
-				return err
+		case c := <-s.events:
+			s.mu.Lock()
+			current := s.serve == c || s.worker == c
+			state := s.state
+			s.mu.Unlock()
+			if current && (state == StateRunning || state == StateDraining) {
+				e := fmt.Errorf("launcher: %s PID %d exited unexpectedly: %v", c.role, c.cmd.Process.Pid, c.err)
+				s.setState(StateFailed, e)
+				return e
 			}
 		}
 	}
 }
-
-func (s *Supervisor) startControl() error {
-	ln, err := net.Listen("tcp", s.opts.ControlAddress)
-	if err != nil {
-		return err
-	}
-	server := &http.Server{Handler: s.controlHandler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Minute, IdleTimeout: 30 * time.Second}
+func (s *Supervisor) Close() error {
+	s.cancel()
+	s.transactionMu.Lock()
+	defer s.transactionMu.Unlock()
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
 	s.mu.Lock()
-	s.server = server
+	if s.closed {
+		s.mu.Unlock()
+		return nil
+	}
+	server := s.server
 	s.mu.Unlock()
-	go func() { s.serverErr <- server.Serve(ln) }()
+	ctx, cancel := context.WithTimeout(context.Background(), s.opts.DrainTimeout+2*s.opts.GracePeriod)
+	defer cancel()
+	e := s.stopLocked(ctx)
+	if e != nil {
+		s.setState(StateFailed, e)
+		return e
+	} // retain both the control endpoint and ownership if a child might still write
+	if server != nil {
+		shutdown, done := context.WithTimeout(context.Background(), 2*time.Second)
+		_ = server.Shutdown(shutdown)
+		done()
+	}
+	s.mu.Lock()
+	s.closed = true
+	lock := s.lock
+	s.lock = nil
+	s.mu.Unlock()
+	_ = s.WriteStateFile()
+	if lock != nil {
+		return releaseLock(lock)
+	}
 	return nil
 }
-
-func (s *Supervisor) closeControl() {
-	s.closeOnce.Do(func() {
-		s.mu.Lock()
-		server := s.server
-		s.mu.Unlock()
-		if server != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			_ = server.Shutdown(ctx)
-			cancel()
-		}
-		close(s.closed)
-	})
-}
-
 func (s *Supervisor) Start(ctx context.Context) error {
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
+	return s.startLocked(ctx)
+}
+func (s *Supervisor) startLocked(ctx context.Context) error {
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return errors.New("launcher: closed")
+	}
 	if s.serve != nil || s.worker != nil {
 		s.mu.Unlock()
 		return ErrAlreadyRunning
 	}
-	s.state, s.lastError = StateStarting, nil
+	s.mu.Unlock()
+	if e := s.quiesceOrphans(ctx); e != nil {
+		return e
+	}
+	metadata, e := readBinaryMetadata(ctx, s.opts.RelayLabPath)
+	if e != nil {
+		return s.failStart(e)
+	}
+	for _, name := range []string{"stop.request", "serve.stop.request", "worker.stop.request"} {
+		if e := removeIfExists(filepath.Join(s.opts.DataDir, name)); e != nil {
+			return s.failStart(e)
+		}
+	}
+	s.mu.Lock()
 	s.startedAt = time.Now().UTC()
 	s.mu.Unlock()
-	if err := os.Remove(filepath.Join(s.opts.DataDir, "stop.request")); err != nil && !os.IsNotExist(err) {
-		return s.failStart(err)
+	s.setState(StateStarting, nil)
+	ready, cancel := context.WithTimeout(ctx, s.opts.StartupTimeout)
+	defer cancel()
+	for _, role := range []string{"serve", "worker"} {
+		c, e := s.startChild(role, metadata)
+		if e != nil {
+			_ = s.stopStartupChildren()
+			return s.failStart(e)
+		}
+		s.mu.Lock()
+		if role == "serve" {
+			s.serve = c
+		} else {
+			s.worker = c
+		}
+		s.mu.Unlock()
+		if role == "serve" {
+			// The HTTP child owns first-run database/key initialization. Its
+			// exact ready report must exist before a worker may open that data.
+			if e = s.waitReports(ready, false); e != nil {
+				if stopErr := s.stopStartupChildren(); stopErr != nil {
+					e = errors.Join(e, stopErr)
+				}
+				return s.failStart(e)
+			}
+		}
 	}
-	if !s.isMaintenance() {
-		_ = os.Remove(filepath.Join(s.opts.DataDir, "maintenance.request"))
-	}
-	serve, err := s.startChild("serve")
-	if err != nil {
-		return s.failStart(err)
+	e = s.waitReports(ready, false)
+	if e != nil {
+		if stopErr := s.stopStartupChildren(); stopErr != nil {
+			e = errors.Join(e, stopErr)
+		}
+		return s.failStart(e)
 	}
 	s.mu.Lock()
-	s.serve = serve
+	maintenance := s.maintenance
 	s.mu.Unlock()
-	if err := waitHealth(ctx, s.opts.Address, 30*time.Second); err != nil {
-		_ = s.stopProcess(serve)
-		s.mu.Lock()
-		s.serve = nil
-		s.mu.Unlock()
-		return s.failStart(err)
+	if maintenance {
+		s.setState(StateDraining, nil)
+	} else {
+		s.setState(StateRunning, nil)
 	}
-	worker, err := s.startChild("worker")
-	if err != nil {
-		_ = s.stopProcess(serve)
-		s.mu.Lock()
-		s.serve = nil
-		s.mu.Unlock()
-		return s.failStart(err)
-	}
-	s.mu.Lock()
-	s.worker = worker
-	s.state = StateRunning
-	s.mu.Unlock()
 	return nil
 }
-
-func (s *Supervisor) failStart(err error) error {
-	s.mu.Lock()
-	s.state, s.lastError = StateFailed, err
-	s.mu.Unlock()
-	return err
-}
-
-func (s *Supervisor) startChild(name string) (*exec.Cmd, error) {
-	args := []string{name, "--addr", s.opts.Address, "--data-dir", s.opts.DataDir}
+func (s *Supervisor) failStart(e error) error { s.setState(StateFailed, e); return e }
+func (s *Supervisor) startChild(role string, m BinaryMetadata) (*child, error) {
+	args := []string{role, "--addr", s.opts.Address, "--data-dir", s.opts.DataDir}
+	if s.opts.ConfigPath != "" {
+		args = append(args, "--config", s.opts.ConfigPath)
+	}
 	cmd := exec.Command(s.opts.RelayLabPath, args...)
 	cmd.Dir = s.opts.WorkingDir
-	cmd.Env = append(os.Environ(), "RELAYLAB_LAUNCHER=1")
-	cmd.Env = append(cmd.Env, "RELAYLAB_LAUNCHER_CONTROL_ADDR="+s.opts.ControlAddress)
+	env := make([]string, 0, len(os.Environ())+6)
+	for _, v := range os.Environ() {
+		key, _, _ := strings.Cut(v, "=")
+		if key != "RELAYLAB_LAUNCHER" && key != "RELAYLAB_LAUNCHER_INSTANCE" && key != "RELAYLAB_LAUNCHER_CONTROL_ADDR" && key != "RELAYLAB_LAUNCHER_TOKEN" && key != "RELAYLAB_CONFIG" {
+			env = append(env, v)
+		}
+	}
+	cmd.Env = append(env, "RELAYLAB_LAUNCHER=1", "RELAYLAB_LAUNCHER_INSTANCE="+s.instance, "RELAYLAB_LAUNCHER_CONTROL_ADDR="+s.opts.ControlAddress, "RELAYLAB_LAUNCHER_TOKEN="+s.opts.ControlToken)
 	if s.opts.ConfigPath != "" {
 		cmd.Env = append(cmd.Env, "RELAYLAB_CONFIG="+s.opts.ConfigPath)
 	}
-	if err := os.MkdirAll(s.opts.DataDir, 0700); err != nil {
-		return nil, err
+	f, e := os.OpenFile(filepath.Join(s.opts.DataDir, role+".log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if e != nil {
+		return nil, e
 	}
-	logPath := filepath.Join(s.opts.DataDir, name+".log")
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
-	if err != nil {
-		return nil, err
-	}
-	cmd.Stdout, cmd.Stderr = f, f
-	if err = cmd.Start(); err != nil {
+	cmd.Stdout = f
+	cmd.Stderr = f
+	if e = cmd.Start(); e != nil {
 		_ = f.Close()
-		return nil, err
+		return nil, e
 	}
+	c := &child{role: role, cmd: cmd, done: make(chan struct{}), started: time.Now().UTC(), instance: s.instance, metadata: m}
 	go func() {
-		err := cmd.Wait()
+		c.err = cmd.Wait()
 		_ = f.Close()
-		s.exits <- processExit{name: name, err: err}
-	}()
-	return cmd, nil
-}
-
-func waitHealth(ctx context.Context, address string, timeout time.Duration) error {
-	if timeout <= 0 {
-		timeout = 30 * time.Second
-	}
-	deadline := time.Now().Add(timeout)
-	client := &http.Client{Timeout: time.Second}
-	for time.Now().Before(deadline) {
-		if ctx.Err() != nil {
-			return ctx.Err()
+		close(c.done)
+		select {
+		case s.events <- c:
+		default:
 		}
-		resp, err := client.Get("http://" + address + "/healthz")
-		if err == nil {
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-			_ = resp.Body.Close()
-			if resp.StatusCode == http.StatusOK && strings.Contains(string(body), `"status":"ok"`) {
-				return nil
+	}()
+	return c, nil
+}
+func (s *Supervisor) children() []*child {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return []*child{s.worker, s.serve}
+}
+func (s *Supervisor) readReport(c *child) (RuntimeReport, error) {
+	var r RuntimeReport
+	b, e := os.ReadFile(filepath.Join(s.opts.DataDir, "runtime-"+c.role+".json"))
+	if e != nil {
+		return r, e
+	}
+	if len(b) > 16384 {
+		return r, errors.New("launcher: oversized runtime report")
+	}
+	if e = json.Unmarshal(b, &r); e != nil {
+		return r, e
+	}
+	if r.PID != c.cmd.Process.Pid || r.InstanceID != c.instance || r.Role != c.role || r.Version != c.metadata.Version || r.Commit != c.metadata.Commit || r.LauncherProtocol != Protocol || r.DatabaseSchema != c.metadata.DatabaseSchema {
+		return r, fmt.Errorf("launcher: %s runtime identity/version/schema mismatch", c.role)
+	}
+	if age := time.Since(r.HeartbeatAt); age > 3*time.Second || age < -time.Second || r.HeartbeatAt.Before(c.started.Add(-time.Second)) {
+		return r, fmt.Errorf("launcher: %s heartbeat stale", c.role)
+	}
+	return r, nil
+}
+func (s *Supervisor) waitReports(ctx context.Context, drain bool) error {
+	tick := time.NewTicker(50 * time.Millisecond)
+	defer tick.Stop()
+	var last error
+	for {
+		ready := true
+		for _, c := range s.children() {
+			if c == nil {
+				continue
+			}
+			select {
+			case <-c.done:
+				if drain {
+					continue
+				}
+				return fmt.Errorf("launcher: %s exited before ready: %v", c.role, c.err)
+			default:
+			}
+			r, e := s.readReport(c)
+			if e != nil {
+				ready = false
+				last = e
+				continue
+			}
+			if !r.Ready || (drain && (!r.Maintenance || r.Active != 0)) {
+				ready = false
+				last = fmt.Errorf("launcher: %s ready=%t maintenance=%t active=%d", c.role, r.Ready, r.Maintenance, r.Active)
+			}
+			if !drain {
+				s.mu.Lock()
+				maintenance := s.maintenance
+				s.mu.Unlock()
+				if maintenance && !r.Maintenance {
+					ready = false
+					last = fmt.Errorf("launcher: %s did not enter maintenance", c.role)
+				}
 			}
 		}
-		time.Sleep(200 * time.Millisecond)
-	}
-	return fmt.Errorf("launcher: website health check timed out at %s", address)
-}
-
-func (s *Supervisor) Stop(ctx context.Context) error {
-	s.mu.Lock()
-	serve, worker := s.serve, s.worker
-	if serve == nil && worker == nil {
-		s.state = StateStopped
-		s.mu.Unlock()
-		return nil
-	}
-	s.state = StateStopping
-	s.mu.Unlock()
-	_ = os.WriteFile(filepath.Join(s.opts.DataDir, "stop.request"), []byte(time.Now().UTC().Format(time.RFC3339Nano)), 0600)
-	for _, p := range []*exec.Cmd{worker, serve} {
-		if p == nil {
-			continue
+		if ready {
+			return nil
 		}
-		if err := s.waitProcess(ctx, p); err != nil {
-			_ = s.stopProcess(p)
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("launcher: reports timed out: %w (%v)", ctx.Err(), last)
+		case <-tick.C:
 		}
 	}
+}
+func (s *Supervisor) Drain() error { s.opMu.Lock(); defer s.opMu.Unlock(); return s.drainLocked() }
+func (s *Supervisor) drainLocked() error {
+	if e := atomicWrite(filepath.Join(s.opts.DataDir, "maintenance.request"), []byte("maintenance\n"), 0600); e != nil {
+		return e
+	}
 	s.mu.Lock()
-	s.serve, s.worker = nil, nil
-	s.state = StateStopped
+	s.maintenance = true
+	if s.serve != nil || s.worker != nil {
+		s.state = StateDraining
+	}
 	s.mu.Unlock()
-	return nil
+	return s.WriteStateFile()
 }
-
-func (s *Supervisor) waitProcess(ctx context.Context, cmd *exec.Cmd) error {
-	if cmd.ProcessState != nil {
-		return nil
+func (s *Supervisor) Resume() error { s.opMu.Lock(); defer s.opMu.Unlock(); return s.resumeLocked() }
+func (s *Supervisor) resumeLocked() error {
+	if e := removeIfExists(filepath.Join(s.opts.DataDir, "maintenance.request")); e != nil {
+		return e
 	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case e := <-s.exits:
-		if e.err != nil && !errors.Is(e.err, os.ErrProcessDone) {
-			return e.err
-		}
-		return nil
-	case <-time.After(s.opts.GracePeriod):
-		return context.DeadlineExceeded
-	}
-}
-
-func (s *Supervisor) stopProcess(cmd *exec.Cmd) error {
-	if cmd == nil || cmd.Process == nil || cmd.ProcessState != nil {
-		return nil
-	}
-	return cmd.Process.Kill()
-}
-
-func (s *Supervisor) Drain() error {
-	s.mu.Lock()
-	if s.state == StateStopped {
-		s.mu.Unlock()
-		return ErrNotRunning
-	}
-	s.maintenance, s.state = true, StateDraining
-	s.mu.Unlock()
-	return os.WriteFile(filepath.Join(s.opts.DataDir, "maintenance.request"), []byte("draining\n"), 0600)
-}
-
-func (s *Supervisor) Resume() error {
 	s.mu.Lock()
 	s.maintenance = false
-	if s.state == StateDraining {
+	if s.serve != nil && s.worker != nil {
 		s.state = StateRunning
 	}
 	s.mu.Unlock()
-	return os.Remove(filepath.Join(s.opts.DataDir, "maintenance.request"))
+	return s.WriteStateFile()
 }
-
-func (s *Supervisor) isMaintenance() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.maintenance
+func (s *Supervisor) Stop(ctx context.Context) error {
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
+	return s.stopLocked(ctx)
 }
-
-func (s *Supervisor) Restart(ctx context.Context) error {
-	if err := s.Drain(); err != nil && !errors.Is(err, ErrNotRunning) {
-		return err
-	}
-	if err := s.Stop(ctx); err != nil {
-		return err
-	}
-	return s.Start(ctx)
-}
-
-// ReplaceBinary performs the launcher handoff for an already downloaded and
-// verified Relay Lab executable. The old executable is copied to backupDir,
-// then the replacement is atomically moved into place while both children are
-// stopped. If the new process does not become healthy, the backup is restored
-// and the old version is started again.
-func (s *Supervisor) ReplaceBinary(ctx context.Context, stagedPath, expectedSHA, backupDir string) error {
-	if stagedPath == "" {
-		return errors.New("launcher: staged binary is required")
-	}
-	if _, err := os.Stat(stagedPath); err != nil {
-		return err
-	}
-	if expectedSHA != "" {
-		got, _, err := SHA256File(stagedPath)
-		if err != nil {
-			return err
-		}
-		if !strings.EqualFold(got, expectedSHA) {
-			return errors.New("launcher: staged binary SHA-256 mismatch")
-		}
-	}
-	if backupDir == "" {
-		backupDir = filepath.Join(s.opts.DataDir, "backups", "update")
-	}
-	if err := os.MkdirAll(backupDir, 0700); err != nil {
-		return err
-	}
-	if err := s.Drain(); err != nil && !errors.Is(err, ErrNotRunning) {
-		return err
-	}
-	if err := s.Stop(ctx); err != nil {
-		return err
-	}
-	oldPath := s.opts.RelayLabPath
-	backupPath := filepath.Join(backupDir, "relaylab-"+time.Now().UTC().Format("20060102-150405.000000000")+filepath.Ext(oldPath))
-	if err := copyFile(oldPath, backupPath); err != nil {
-		return err
-	}
-	if err := replaceFile(stagedPath, oldPath); err != nil {
-		return fmt.Errorf("launcher: replace binary: %w", err)
-	}
-	if err := s.Start(ctx); err == nil {
-		_ = s.Resume()
+func (s *Supervisor) stopLocked(ctx context.Context) error {
+	children := s.children()
+	if children[0] == nil && children[1] == nil {
+		s.setState(StateStopped, nil)
 		return nil
-	} else {
-		_ = s.Stop(context.Background())
-		if restoreErr := replaceFile(backupPath, oldPath); restoreErr != nil {
-			return fmt.Errorf("launcher: new binary failed (%v), restore failed: %w", err, restoreErr)
-		}
-		if startErr := s.Start(ctx); startErr != nil {
-			return fmt.Errorf("launcher: new binary failed (%v), old binary restart failed: %w", err, startErr)
-		}
-		_ = s.Resume()
-		return fmt.Errorf("launcher: new binary failed and old version restored: %w", err)
 	}
-}
-
-// RollbackLatest restores the newest executable backup created by a previous
-// replacement. It keeps the current data directory intact; callers must only
-// expose this operation when the target binary accepts the current schema.
-func (s *Supervisor) RollbackLatest(ctx context.Context, backupDir string) error {
-	if backupDir == "" {
-		backupDir = filepath.Join(s.opts.DataDir, "backups", "update")
+	if e := s.drainLocked(); e != nil {
+		return e
 	}
-	entries, err := os.ReadDir(backupDir)
-	if err != nil {
-		return err
+	drain, cancel := context.WithTimeout(ctx, s.opts.DrainTimeout)
+	e := s.waitReports(drain, true)
+	cancel()
+	if e != nil {
+		return e
 	}
-	var chosen string
-	var chosenTime time.Time
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "relaylab-") {
+	s.setState(StateStopping, nil)
+	// Per-child completion avoids consuming another process's exit or an old generation's event.
+	for _, c := range children {
+		if c == nil {
 			continue
 		}
-		info, statErr := entry.Info()
-		if statErr != nil || (chosen != "" && !info.ModTime().After(chosenTime)) {
+		if e := atomicWrite(filepath.Join(s.opts.DataDir, c.role+".stop.request"), []byte("stop\n"), 0600); e != nil {
+			return e
+		}
+		if e := s.waitChild(ctx, c); e != nil {
+			return e
+		}
+		s.mu.Lock()
+		if s.worker == c {
+			s.worker = nil
+		}
+		if s.serve == c {
+			s.serve = nil
+		}
+		s.mu.Unlock()
+	}
+	s.setState(StateStopped, nil)
+	return nil
+}
+func (s *Supervisor) waitChild(ctx context.Context, c *child) error {
+	deadline, cancel := context.WithTimeout(ctx, s.opts.GracePeriod)
+	defer cancel()
+	select {
+	case <-c.done:
+		return nil
+	case <-deadline.Done():
+		return fmt.Errorf("launcher: %s PID %d has not closed; no replacement performed: %w", c.role, c.cmd.Process.Pid, deadline.Err())
+	}
+}
+func (s *Supervisor) stopStartupChildren() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*s.opts.GracePeriod)
+	defer cancel()
+	if e := atomicWrite(filepath.Join(s.opts.DataDir, "stop.request"), []byte("startup failed\n"), 0600); e != nil {
+		return e
+	}
+	var result error
+	for _, c := range s.children() {
+		if c == nil {
 			continue
 		}
-		chosen = filepath.Join(backupDir, entry.Name())
-		chosenTime = info.ModTime()
-	}
-	if chosen == "" {
-		return errors.New("launcher: no executable backup is available")
-	}
-	if err := s.Drain(); err != nil && !errors.Is(err, ErrNotRunning) {
-		return err
-	}
-	if err := s.Stop(ctx); err != nil {
-		return err
-	}
-	if err := replaceFile(chosen, s.opts.RelayLabPath); err != nil {
-		return fmt.Errorf("launcher: restore backup: %w", err)
-	}
-	if err := s.Start(ctx); err != nil {
-		return err
-	}
-	_ = s.Resume()
-	return nil
-}
-
-func copyFile(source, destination string) error {
-	in, err := os.Open(source)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	tmp := destination + ".tmp"
-	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0700)
-	if err != nil {
-		return err
-	}
-	if _, err = io.Copy(out, in); err == nil {
-		err = out.Sync()
-	}
-	if closeErr := out.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err = os.Rename(tmp, destination); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return nil
-}
-
-func replaceFile(source, destination string) error {
-	tmp := destination + ".incoming.tmp"
-	if err := copyFile(source, tmp); err != nil {
-		return err
-	}
-	if err := os.Remove(destination); err != nil && !os.IsNotExist(err) {
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err := os.Rename(tmp, destination); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return nil
-}
-
-func (s *Supervisor) controlHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
-	})
-	mux.HandleFunc("/status", s.handleControl(func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, s.Status()) }))
-	mux.HandleFunc("/control/start", s.handleControl(func(w http.ResponseWriter, r *http.Request) {
-		err := s.Start(r.Context())
-		writeControlResult(w, err, s.Status())
-	}))
-	mux.HandleFunc("/control/stop", s.handleControl(func(w http.ResponseWriter, r *http.Request) {
-		err := s.Stop(r.Context())
-		writeControlResult(w, err, s.Status())
-	}))
-	mux.HandleFunc("/control/restart", s.handleControl(func(w http.ResponseWriter, r *http.Request) {
-		err := s.Restart(r.Context())
-		writeControlResult(w, err, s.Status())
-	}))
-	mux.HandleFunc("/control/drain", s.handleControl(func(w http.ResponseWriter, r *http.Request) { err := s.Drain(); writeControlResult(w, err, s.Status()) }))
-	mux.HandleFunc("/control/resume", s.handleControl(func(w http.ResponseWriter, r *http.Request) {
-		err := s.Resume()
-		writeControlResult(w, err, s.Status())
-	}))
-	mux.HandleFunc("/control/replace", s.handleControl(s.handleReplace))
-	mux.HandleFunc("/control/rollback", s.handleControl(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.Header().Set("Allow", http.MethodPost)
-			writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method_not_allowed"})
-			return
+		if e := s.waitChild(ctx, c); e != nil {
+			result = errors.Join(result, e)
+			continue
 		}
-		if !s.replaceMu.TryLock() {
-			writeJSON(w, http.StatusConflict, map[string]any{"error": "replacement_in_progress", "status": s.Status()})
-			return
+		s.mu.Lock()
+		if s.worker == c {
+			s.worker = nil
 		}
-		go func() {
-			defer s.replaceMu.Unlock()
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-			defer cancel()
-			if err := s.RollbackLatest(ctx, filepath.Join(s.opts.DataDir, "backups", "update")); err != nil {
-				s.mu.Lock()
-				s.lastError = err
-				s.mu.Unlock()
+		if s.serve == c {
+			s.serve = nil
+		}
+		s.mu.Unlock()
+	}
+	return result
+}
+func (s *Supervisor) Restart(ctx context.Context) error {
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
+	if e := s.stopLocked(ctx); e != nil {
+		return e
+	}
+	if e := s.startLocked(ctx); e != nil {
+		return e
+	}
+	return s.resumeLocked()
+}
+
+// Recovery fences and closes children surviving a previous launcher. It never
+// kills by a stale PID: an ambiguous process leaves the fence in place.
+func (s *Supervisor) quiesceOrphans(ctx context.Context) error {
+	var live []RuntimeReport
+	for _, role := range []string{"worker", "serve"} {
+		managedRole := false
+		for _, c := range s.children() {
+			if c != nil && c.role == role {
+				managedRole = true
 			}
-			_ = s.WriteStateFile()
-		}()
-		writeJSON(w, http.StatusAccepted, map[string]any{"accepted": true, "status": s.Status()})
-	}))
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !isLoopbackRequest(r) {
-			writeJSON(w, http.StatusForbidden, map[string]any{"error": "loopback_required"})
-			return
 		}
-		mux.ServeHTTP(w, r)
-	})
-}
-
-type replaceRequest struct {
-	StagedPath string `json:"staged_path"`
-	SHA256     string `json:"sha256"`
-	BackupDir  string `json:"backup_dir"`
-}
-
-func (s *Supervisor) handleReplace(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method_not_allowed"})
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
-	var req replaceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.StagedPath) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
-		return
-	}
-	staged, err := filepath.Abs(req.StagedPath)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_path"})
-		return
-	}
-	stagedCheck, _ := filepath.EvalSymlinks(staged)
-	if stagedCheck == "" {
-		stagedCheck = staged
-	}
-	updatesRoot, _ := filepath.Abs(filepath.Join(s.opts.DataDir, "updates"))
-	updatesCheck, _ := filepath.EvalSymlinks(updatesRoot)
-	if updatesCheck == "" {
-		updatesCheck = updatesRoot
-	}
-	rel, relErr := filepath.Rel(updatesCheck, stagedCheck)
-	if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || filepath.IsAbs(rel) {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "staged_path_outside_updates"})
-		return
-	}
-	if !s.replaceMu.TryLock() {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": "replacement_in_progress", "status": s.Status()})
-		return
-	}
-	go func() {
-		defer s.replaceMu.Unlock()
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-		defer cancel()
-		if err := s.ReplaceBinary(ctx, staged, req.SHA256, req.BackupDir); err != nil {
-			s.mu.Lock()
-			s.lastError = err
-			s.mu.Unlock()
+		if managedRole {
+			continue
+		} // managed identities are validated/retried by waitReports
+		var r RuntimeReport
+		b, e := os.ReadFile(filepath.Join(s.opts.DataDir, "runtime-"+role+".json"))
+		if os.IsNotExist(e) {
+			continue
 		}
-		_ = s.WriteStateFile()
-	}()
-	writeJSON(w, http.StatusAccepted, map[string]any{"accepted": true, "status": s.Status()})
-}
-
-func (s *Supervisor) handleControl(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodPost {
-			w.Header().Set("Allow", "GET, POST")
-			writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method_not_allowed"})
-			return
+		if e != nil {
+			return e
 		}
-		if !s.authorized(r) {
-			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
-			return
+		if e = json.Unmarshal(b, &r); e != nil {
+			return fmt.Errorf("launcher: invalid orphan report: %w", e)
 		}
-		next(w, r)
+		managed := false
+		for _, c := range s.children() {
+			if c != nil && c.role == role && c.cmd.Process.Pid == r.PID && c.instance == r.InstanceID {
+				managed = true
+			}
+		}
+		if managed {
+			continue
+		}
+		if r.PID > 0 && processAlive(r.PID) {
+			if r.Role != role || r.LauncherProtocol != Protocol || r.InstanceID == "" {
+				return errors.New("launcher: existing process has no trustworthy protocol-2 identity")
+			}
+			live = append(live, r)
+		}
 	}
-}
-
-func (s *Supervisor) authorized(r *http.Request) bool {
-	provided := r.Header.Get("X-RelayLab-Launcher-Token")
-	if provided == "" {
-		provided = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if len(live) == 0 {
+		return nil
 	}
-	return provided != "" && provided == s.opts.ControlToken
-}
-
-func isLoopbackRequest(r *http.Request) bool {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
+	if e := s.drainLocked(); e != nil {
+		return e
 	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
-}
-
-func writeControlResult(w http.ResponseWriter, err error, status Status) {
-	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "status": status})
-		return
+	drain, cancel := context.WithTimeout(ctx, s.opts.DrainTimeout)
+	defer cancel()
+	for _, old := range live {
+		for processAlive(old.PID) {
+			var r RuntimeReport
+			b, e := os.ReadFile(filepath.Join(s.opts.DataDir, "runtime-"+old.Role+".json"))
+			if e == nil && json.Unmarshal(b, &r) == nil && r.PID == old.PID && r.InstanceID == old.InstanceID && r.Maintenance && r.Active == 0 && time.Since(r.HeartbeatAt) < 3*time.Second {
+				break
+			}
+			select {
+			case <-drain.Done():
+				return fmt.Errorf("launcher: orphan %s did not drain: %w", old.Role, drain.Err())
+			case <-time.After(50 * time.Millisecond):
+			}
+		}
 	}
-	writeJSON(w, http.StatusOK, status)
+	for _, old := range live {
+		if e := atomicWrite(filepath.Join(s.opts.DataDir, old.Role+".stop.request"), []byte("recovery\n"), 0600); e != nil {
+			return e
+		}
+		closeCtx, done := context.WithTimeout(ctx, s.opts.GracePeriod)
+		for processAlive(old.PID) {
+			select {
+			case <-closeCtx.Done():
+				done()
+				return fmt.Errorf("launcher: orphan PID %d did not close", old.PID)
+			case <-time.After(50 * time.Millisecond):
+			}
+		}
+		done()
+	}
+	return nil
 }
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+func readBinaryMetadata(ctx context.Context, path string) (BinaryMetadata, error) {
+	var m BinaryMetadata
+	probe, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(probe, path, "version", "--json")
+	out, e := cmd.Output()
+	if e != nil {
+		return m, fmt.Errorf("launcher: version probe: %w", e)
+	}
+	if len(out) > 16384 {
+		return m, errors.New("launcher: oversized binary metadata")
+	}
+	if e = json.Unmarshal(out, &m); e != nil {
+		return m, fmt.Errorf("launcher: binary requires manual protocol-2 bootstrap: %w", e)
+	}
+	if m.LauncherProtocol != Protocol || m.Version == "" || m.Commit == "" || m.OS != runtime.GOOS || m.Arch != runtime.GOARCH || m.DatabaseSchema < 1 || m.MinDatabaseSchema < 1 || m.MinDatabaseSchema > m.DatabaseSchema {
+		return m, errors.New("launcher: incompatible binary metadata; protocol-2 bootstrap required")
+	}
+	return m, nil
 }
-
-// WriteTokenFile writes the control token for local scripts. The file is
-// intentionally outside the web API and is created with owner-only mode.
+func removeIfExists(path string) error {
+	e := os.Remove(path)
+	if os.IsNotExist(e) {
+		return nil
+	}
+	return e
+}
 func (s *Supervisor) WriteTokenFile() (string, error) {
 	path := filepath.Join(s.opts.DataDir, "launcher.token")
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(s.opts.ControlToken+"\n"), 0600); err != nil {
-		return "", err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return "", err
+	if e := atomicWrite(path, []byte(s.opts.ControlToken+"\n"), 0600); e != nil {
+		return "", e
 	}
 	return path, nil
 }
-
 func (s *Supervisor) WriteStateFile() error {
-	path := filepath.Join(s.opts.DataDir, "launcher.json")
-	tmp := path + ".tmp"
-	b, err := json.MarshalIndent(s.Status(), "", "  ")
-	if err != nil {
-		return err
+	b, e := json.MarshalIndent(s.Status(), "", "  ")
+	if e != nil {
+		return e
 	}
-	if err = os.WriteFile(tmp, append(b, '\n'), 0600); err != nil {
-		return err
-	}
-	if err = os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return nil
-}
-
-// SHA256File is shared by update code and launcher clients when validating a
-// downloaded replacement before handing it to a supervisor.
-func SHA256File(path string) (string, int64, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", 0, err
-	}
-	defer f.Close()
-	h := sha256.New()
-	n, err := io.Copy(h, f)
-	if err != nil {
-		return "", n, err
-	}
-	return hex.EncodeToString(h.Sum(nil)), n, nil
+	return atomicWrite(filepath.Join(s.opts.DataDir, "launcher.json"), append(b, '\n'), 0600)
 }
