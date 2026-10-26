@@ -28,38 +28,70 @@ type Platform struct {
 }
 
 type Channel struct {
-	ID                        string     `json:"id"`
-	PlatformID                string     `json:"platform_id"`
-	Name                      string     `json:"name"`
-	BaseURL                   string     `json:"base_url"`
-	EncryptedKey              string     `json:"-"`
-	KeyMask                   string     `json:"key_mask"`
-	DiscoveryProtocol         string     `json:"discovery_protocol"`
-	Protocol                  string     `json:"protocol"`
-	ModelsPath                string     `json:"models_path"`
-	GeneratePath              string     `json:"generate_path"`
-	AnthropicVersion          string     `json:"anthropic_version"`
-	ChatTokenField            string     `json:"chat_token_field"`
-	ReasoningEffort           string     `json:"reasoning_effort"`
-	ThinkingMode              string     `json:"thinking_mode"`
-	ThinkingBudget            int        `json:"thinking_budget"`
-	IntelligenceModelID       string     `json:"intelligence_model_id"`
-	GroupProvider             string     `json:"group_provider"`
-	GroupPath                 string     `json:"group_path"`
-	GroupField                string     `json:"group_field"`
-	VerifiedGroup             string     `json:"verified_group"`
-	GroupVerificationStatus   string     `json:"group_verification_status"`
-	GroupVerifiedAt           *time.Time `json:"group_verified_at"`
-	GroupVerificationError    string     `json:"group_verification_error"`
-	GroupVerificationRevision int        `json:"group_verification_revision"`
-	Enabled                   bool       `json:"enabled"`
-	Public                    bool       `json:"public"`
-	Archived                  bool       `json:"archived"`
-	Sort                      int        `json:"sort"`
-	Revision                  int        `json:"revision"`
-	LastSyncAt                *time.Time `json:"last_sync_at"`
-	SyncError                 string     `json:"sync_error"`
-	CreatedAt                 time.Time  `json:"created_at"`
+	ID                        string                `json:"id"`
+	PlatformID                string                `json:"platform_id"`
+	Name                      string                `json:"name"`
+	BaseURL                   string                `json:"base_url"`
+	EncryptedKey              string                `json:"-"`
+	KeyMask                   string                `json:"key_mask"`
+	DiscoveryProtocol         string                `json:"discovery_protocol"`
+	Protocol                  string                `json:"protocol"`
+	ModelsPath                string                `json:"models_path"`
+	GeneratePath              string                `json:"generate_path"`
+	AnthropicVersion          string                `json:"anthropic_version"`
+	ChatTokenField            string                `json:"chat_token_field"`
+	ReasoningEffort           string                `json:"reasoning_effort"`
+	ThinkingMode              string                `json:"thinking_mode"`
+	ThinkingBudget            int                   `json:"thinking_budget"`
+	IntelligenceModelID       string                `json:"intelligence_model_id"`
+	IntelligenceSchedule      *IntelligenceSchedule `json:"intelligence_schedule,omitempty"`
+	GroupProvider             string                `json:"group_provider"`
+	GroupPath                 string                `json:"group_path"`
+	GroupField                string                `json:"group_field"`
+	VerifiedGroup             string                `json:"verified_group"`
+	GroupVerificationStatus   string                `json:"group_verification_status"`
+	GroupVerifiedAt           *time.Time            `json:"group_verified_at"`
+	GroupVerificationError    string                `json:"group_verification_error"`
+	GroupVerificationRevision int                   `json:"group_verification_revision"`
+	Enabled                   bool                  `json:"enabled"`
+	Public                    bool                  `json:"public"`
+	Archived                  bool                  `json:"archived"`
+	Sort                      int                   `json:"sort"`
+	Revision                  int                   `json:"revision"`
+	LastSyncAt                *time.Time            `json:"last_sync_at"`
+	SyncError                 string                `json:"sync_error"`
+	CreatedAt                 time.Time             `json:"created_at"`
+}
+
+// Nil preserves installations using per-model schedules. A saved group plan
+// explicitly owns artifact scheduling, including an explicit disabled state.
+type IntelligenceSchedule struct {
+	Enabled         bool     `json:"enabled"`
+	ModelID         string   `json:"model_id"`
+	TemplateIDs     []string `json:"template_ids"`
+	IntervalSeconds int      `json:"interval_seconds"`
+}
+
+func (c Channel) ScheduledArtifactEnabled(m Model, template string) bool {
+	if plan := c.IntelligenceSchedule; plan != nil {
+		if !plan.Enabled || plan.ModelID != m.ID {
+			return false
+		}
+		for _, id := range plan.TemplateIDs {
+			if id == template {
+				return true
+			}
+		}
+		return false
+	}
+	return (c.IntelligenceModelID == "" || c.IntelligenceModelID == m.ID) && ((template == "cn_html" && m.ArtifactChinese) || (template == "en_svg" && m.ArtifactEnglish))
+}
+
+func (c Channel) ArtifactInterval(m Model) int {
+	if plan := c.IntelligenceSchedule; plan != nil && plan.IntervalSeconds > 0 {
+		return plan.IntervalSeconds
+	}
+	return m.ArtifactIntervalSeconds
 }
 
 type Model struct {
@@ -154,9 +186,11 @@ type Job struct {
 }
 
 type Usage struct {
-	InputTokens  *int64 `json:"input_tokens"`
-	OutputTokens *int64 `json:"output_tokens"`
-	TotalTokens  *int64 `json:"total_tokens"`
+	InputTokens              *int64 `json:"input_tokens"`
+	OutputTokens             *int64 `json:"output_tokens"`
+	TotalTokens              *int64 `json:"total_tokens"`
+	CachedInputTokens        *int64 `json:"cached_input_tokens,omitempty"`
+	CacheCreationInputTokens *int64 `json:"cache_creation_input_tokens,omitempty"`
 }
 
 type ProbeResult struct {

@@ -9,6 +9,23 @@ import { time } from '../lib';
 
 const activeStates = new Set(['checking', 'downloading', 'draining', 'stopping', 'stopped', 'backing_up', 'backed_up', 'replacing', 'starting', 'validating', 'rolling_back', 'recovering']);
 const normalizeVersion = (value?: string) => (value || '').replace(/^v/, '');
+function versionAhead(current?: string, latest?: string) {
+  const a = normalizeVersion(current).match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+  const b = normalizeVersion(latest).match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+  if (!a || !b) return false;
+  for (let i=1; i<=3; i++) {
+    const left=BigInt(a[i]);const right=BigInt(b[i]);
+    if(left!==right)return left>right;
+  }
+  return false;
+}
+export function updateErrorHint(operation?: UpdateOperation | null) {
+  if (!operation) return '';
+  if (operation.error_code === 'github_connection_closed' || /\bEOF\b|connection reset|forcibly closed/i.test(operation.message || '')) return '连接 GitHub 时被提前断开，尚不能确认更新信息。请检查本机代理或在 config.yaml 中配置 update.proxy（或 RELAYLAB_UPDATE_PROXY），再点击“检查更新”。';
+  if (operation.error_code === 'proxy_error') return '升级代理连接失败，请检查 update.proxy 的地址、端口和认证信息。';
+  if (operation.error_code === 'timeout') return '连接 GitHub 超时，请检查网络和升级代理后重试。';
+  return '';
+}
 function bytes(value?: number) {
   if (value === undefined || value < 0) return '—';
   if (value < 1024) return `${value} B`;
@@ -37,6 +54,8 @@ export function UpdatesPage() {
   const info = data?.latest;
   const release = data?.release;
   const latestVersion = info?.latest_version || release?.tag_name || '';
+  const olderRelease = info?.available === false && versionAhead(current?.version, latestVersion);
+  const errorHint = updateErrorHint(operation);
   const latestBody = info?.notes || release?.body || '';
   const latestURL = info?.release_url || release?.url;
   const enabled = data?.enabled === true;
@@ -101,7 +120,7 @@ export function UpdatesPage() {
           <Descriptions size="small" column={1} bordered>
             <Descriptions.Item label="版本"><Tag color="cyan">{latestVersion}</Tag>{release?.name && <span className="muted">{release.name}</span>}</Descriptions.Item>
             <Descriptions.Item label="发布时间">{info.published_at ? time(info.published_at) : '—'}</Descriptions.Item>
-            <Descriptions.Item label="兼容性">{info.compatible ? <Tag color="success">兼容当前平台</Tag> : <Tag color="error">当前平台不兼容</Tag>}{!info.available && <Tag>当前已是最新版本</Tag>}</Descriptions.Item>
+            <Descriptions.Item label="兼容性">{info.compatible ? <Tag color="success">兼容当前平台</Tag> : <Tag color="error">当前平台不兼容</Tag>}{!info.available && <Tag>{olderRelease?'本机版本高于发布版，无需升级':'当前已是最新版本'}</Tag>}</Descriptions.Item>
           </Descriptions>
           {latestBody && <pre className="update-release-notes">{latestBody}</pre>}
           <div className="update-actions"><Button icon={<DownloadOutlined aria-hidden="true"/>} disabled={!canDownload || action.isPending} onClick={()=>run('/admin/updates/download','下载请求已受理，正在下载并校验')}>下载并校验</Button>
@@ -114,6 +133,7 @@ export function UpdatesPage() {
           <Progress percent={Math.max(0,Math.min(100,operation.progress || 0))} status={state==='failed'?'exception':confirmedSuccess?'success':busy||state==='succeeded'?'active':'normal'}/>
           <div className="update-operation-meta"><span>操作 ID <code>{operation.id || '—'}</code></span><span>目标版本 <strong>{operation.version || latestVersion || '—'}</strong></span></div>
           {(operation.error_code || state==='failed' || state==='rolled_back') && <Alert showIcon type={state==='rolled_back'?'warning':'error'} message={operation.error_code || (state==='rolled_back'?'升级已回滚':'升级失败')} description={operation.message}/>}
+          {state==='failed' && errorHint && <Alert showIcon type="warning" message="GitHub 连接未完成" description={errorHint}/>}
           {(operation.total_bytes !== undefined || operation.bytes_downloaded !== undefined) && <div className="update-maintenance-detail"><span>已下载：{bytes(operation.bytes_downloaded)} / {bytes(operation.total_bytes)}</span>{operation.bytes_per_second !== undefined && <span>下载速度：{bytes(operation.bytes_per_second)}/s</span>}{operation.eta_seconds !== undefined && <span>预计剩余：{Math.max(0,Math.ceil(operation.eta_seconds))} 秒</span>}</div>}
           <div className="update-maintenance-detail"><span>文件：{info?.asset_name || '—'}</span><span>文件大小：{bytes(info?.asset_size)}</span><span>SHA-256：{info?.sha256 || '未提供'}</span></div>
         </> : <div className="update-empty">暂无升级操作。</div>}

@@ -31,6 +31,15 @@ beforeEach(()=>{
 afterEach(()=>{cleanup();clients.splice(0).forEach(client=>client.clear());vi.restoreAllMocks();vi.unstubAllGlobals();});
 
 describe('online updates page',()=>{
+  it('explains persisted EOF failures and a local version ahead of the release',async()=>{
+    const data=fixture();data.current.version='1.3.0';data.latest!.available=false;
+    data.state='failed';data.operation={id:'eof',state:'failed',error_code:'github_http_error',message:'Get https://api.github.com: EOF'};
+    show(data);
+    expect(await screen.findByText('GitHub 连接未完成')).toBeInTheDocument();
+    expect(screen.getByText(/连接 GitHub 时被提前断开/)).toBeInTheDocument();
+    expect(screen.getByText('本机版本高于发布版，无需升级')).toBeInTheDocument();
+    expect(screen.getByRole('button',{name:'安装升级'})).toBeDisabled();
+  });
   it.each([
     {kind:'check',label:'检查更新',active:'checking' as const,terminal:'available' as const},
     {kind:'download',label:'下载并校验',active:'downloading' as const,terminal:'ready' as const},

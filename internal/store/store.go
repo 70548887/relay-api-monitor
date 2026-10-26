@@ -346,6 +346,9 @@ func saveChannelConfiguration(ctx context.Context, tx queryer, v domain.Channel)
 	old, e := channel(ctx, tx, v.ID)
 	if e == nil {
 		v.Revision = old.Revision + 1
+		// Group scheduling is edited by its dedicated atomic operation. A
+		// stale general configuration form must not overwrite a newer plan.
+		v.IntelligenceSchedule = old.IntelligenceSchedule
 		if v.EncryptedKey == "" {
 			v.EncryptedKey = old.EncryptedKey
 		}
@@ -574,8 +577,17 @@ func (s *Store) GetAdminByUsername(ctx context.Context, v string) (*domain.Admin
 func (s *Store) GetAdminByID(ctx context.Context, v string) (*domain.Admin, error) {
 	return admin(ctx, s.DB, "id", v)
 }
-func (s *Store) UpdatePassword(ctx context.Context, id, hash string) error {
+func (s *Store) UpdatePassword(ctx context.Context, id, hash string, expectedHash ...string) error {
 	return s.transaction(ctx, func(tx *sql.Tx) error {
+		if len(expectedHash) > 0 {
+			current, err := admin(ctx, tx, "id", id)
+			if err != nil {
+				return err
+			}
+			if current.Disabled || current.PasswordHash != expectedHash[0] {
+				return ErrConflict
+			}
+		}
 		if e := affected(tx.ExecContext(ctx, "UPDATE admins SET password_hash=? WHERE id=?", hash, id)); e != nil {
 			return e
 		}

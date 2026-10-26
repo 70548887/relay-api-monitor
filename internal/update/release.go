@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -272,7 +274,22 @@ func (m *Manager) request(ctx context.Context, rawURL, accept string) (*http.Res
 	if m.cfg.GitHubToken != "" && (u.Hostname() == "api.github.com" || m.isTestURL(u)) {
 		req.Header.Set("Authorization", "Bearer "+m.cfg.GitHubToken)
 	}
-	resp, err := m.client.Do(req)
+	// Only read-only GitHub GET requests are retried, before a response is
+	// accepted. This path is never shared with model generation requests.
+	var resp *http.Response
+	for attempt := 0; attempt < 3; attempt++ {
+		resp, err = m.client.Do(req.Clone(ctx))
+		if err == nil || ctx.Err() != nil || !retryableGitHubTransport(err) || attempt == 2 {
+			break
+		}
+		timer := time.NewTimer(time.Duration(attempt+1) * 250 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, m.safeError(ctx.Err())
+		case <-timer.C:
+		}
+	}
 	if err != nil {
 		return nil, m.safeError(err)
 	}
@@ -282,6 +299,14 @@ func (m *Manager) request(ctx context.Context, rawURL, accept string) (*http.Res
 		return nil, fmt.Errorf("update: GitHub returned HTTP %d", resp.StatusCode)
 	}
 	return resp, nil
+}
+
+func retryableGitHubTransport(err error) bool {
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNABORTED) || errors.Is(err, syscall.EPIPE) {
+		return true
+	}
+	var networkError net.Error
+	return errors.As(err, &networkError) && networkError.Timeout()
 }
 func (m *Manager) checkRedirect(req *http.Request, via []*http.Request) error {
 	if !m.allowedURL(req.URL) {

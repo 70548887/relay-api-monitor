@@ -4,6 +4,10 @@ export function sameQuestion(first?:Artifact,second?:Artifact){
  return !!first&&!!second&&!!first.prompt&&first.template_id===second.template_id&&first.template_version===second.template_version&&first.prompt===second.prompt;
 }
 export function reasoningLabel(effort?:string){return !effort||effort==='default'?'上游默认':effort}
+export function requestContextLabel(parameters?:string|Record<string,unknown>){
+ if(parameters==='independent')return '独立请求（无历史）';
+ try{const value=typeof parameters==='string'?JSON.parse(parameters):parameters;return value?.context_policy==='independent'?'独立请求（无历史）':'未记录'}catch{return '未记录'}
+}
 export function thinkingLabel(mode?:string,budget?:number){return !mode||mode==='default'?'上游默认':mode==='enabled'?`enabled · ${budget||0} tokens`:mode}
 export function verificationLabel(v?:GroupVerification){
  if(v?.status==='verified'&&v.group&&v.group!=='auto')return `令牌绑定组：${v.group}`;

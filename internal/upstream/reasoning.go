@@ -50,7 +50,7 @@ func ValidateReasoning(p, effort, thinkingMode string, budget, maxTokens int) er
 	}
 	if p == "chat" || p == "responses" {
 		switch effort {
-		case "", "none", "minimal", "low", "medium", "high", "xhigh":
+		case "", "none", "minimal", "low", "medium", "high", "xhigh", "max":
 		default:
 			return invalid("Unsupported reasoning effort for the selected OpenAI protocol")
 		}
@@ -60,7 +60,7 @@ func ValidateReasoning(p, effort, thinkingMode string, budget, maxTokens int) er
 		return nil
 	}
 	switch effort {
-	case "", "low", "medium", "high", "max":
+	case "", "low", "medium", "high", "xhigh", "max":
 	default:
 		return invalid("Unsupported reasoning effort for the Anthropic protocol")
 	}

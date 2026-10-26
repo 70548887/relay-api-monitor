@@ -19,6 +19,9 @@ func TestReasoningWireSnapshots(t *testing.T) {
 		name, protocol, effort, mode, response, path, want string
 		budget                                             int
 	}{
+		{"chat max", "chat", "max", "", `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`, "/v1/chat/completions", `{"model":"requested","stream":true,"messages":[{"role":"user","content":"hello"}],"max_completion_tokens":4096,"stream_options":{"include_usage":true},"reasoning_effort":"max"}`, 0},
+		{"responses max", "responses", "max", "", `{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}]}`, "/v1/responses", `{"model":"requested","stream":true,"input":"hello","max_output_tokens":4096,"reasoning":{"effort":"max"}}`, 0},
+		{"claude adaptive xhigh", "anthropic", "xhigh", "adaptive", `{"type":"message","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}`, "/v1/messages", `{"model":"requested","stream":true,"messages":[{"role":"user","content":"hello"}],"max_tokens":4096,"output_config":{"effort":"xhigh"},"thinking":{"type":"adaptive"}}`, 0},
 		{"chat high", "chat", "high", "", `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`, "/v1/chat/completions", `{"model":"requested","stream":true,"messages":[{"role":"user","content":"hello"}],"max_completion_tokens":4096,"stream_options":{"include_usage":true},"reasoning_effort":"high"}`, 0},
 		{"responses xhigh", "responses", "xhigh", "", `{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}]}`, "/v1/responses", `{"model":"requested","stream":true,"input":"hello","max_output_tokens":4096,"reasoning":{"effort":"xhigh"}}`, 0},
 		{"claude adaptive high", "anthropic", "high", "adaptive", `{"type":"message","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}`, "/v1/messages", `{"model":"requested","stream":true,"messages":[{"role":"user","content":"hello"}],"max_tokens":4096,"output_config":{"effort":"high"},"thinking":{"type":"adaptive"}}`, 0},
@@ -70,8 +73,8 @@ func TestInvalidReasoningRejectedBeforeDispatch(t *testing.T) {
 		protocol, effort, mode string
 		budget, max            int
 	}{
-		{"chat", "max", "", 0, 4096}, {"responses", "adaptive", "", 0, 4096}, {"chat", "high", "enabled", 1024, 4096},
-		{"anthropic", "xhigh", "", 0, 4096}, {"anthropic", "high", "disabled", 0, 4096}, {"anthropic", "high", "enabled", 1023, 4096},
+		{"chat", "ultra", "", 0, 4096}, {"responses", "adaptive", "", 0, 4096}, {"chat", "high", "enabled", 1024, 4096},
+		{"anthropic", "minimal", "", 0, 4096}, {"anthropic", "high", "disabled", 0, 4096}, {"anthropic", "high", "enabled", 1023, 4096},
 		{"anthropic", "high", "enabled", 4096, 4096}, {"anthropic", "high", "adaptive", 1024, 4096}, {"anthropic", "high", "", -1, 4096},
 	} {
 		_, err := NewTestClient(server.Client()).Generate(context.Background(), Request{Config: Config{BaseURL: server.URL, Protocol: tc.protocol}, Model: "m", Prompt: "p", MaxTokens: tc.max, ReasoningEffort: tc.effort, ThinkingMode: tc.mode, ThinkingBudget: tc.budget}, nil)

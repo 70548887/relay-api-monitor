@@ -201,7 +201,7 @@ func TestVisitorReasoningValidationAndActualMetadata(t *testing.T) {
 		return visitorResponse(`{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`, "application/json"), nil
 	}))
 	body := visitorBody()
-	body["reasoning_effort"] = "max"
+	body["reasoning_effort"] = "ultra"
 	w := visitorPOSTWithMember(t, s, "/api/v1/test/generate", body, "", cookie, csrf)
 	if w.Code != 400 || !strings.Contains(w.Body.String(), "invalid_reasoning") || calls != 0 {
 		t.Fatalf("validation %d %s calls=%d", w.Code, w.Body.String(), calls)
@@ -292,7 +292,7 @@ func TestAdminGroupVerificationTrustAndStaleProtection(t *testing.T) {
 	if stored.VerifiedGroup != "" {
 		t.Fatal("stale result stored")
 	}
-	for _, update := range []func(*domain.Channel){func(v *domain.Channel) { v.ReasoningEffort = "max" }, func(v *domain.Channel) { v.IntelligenceModelID = "nonexistent" }, func(v *domain.Channel) { v.GroupProvider, v.GroupPath = "custom", "https://alternate.example/self" }} {
+	for _, update := range []func(*domain.Channel){func(v *domain.Channel) { v.ReasoningEffort = "ultra" }, func(v *domain.Channel) { v.IntelligenceModelID = "nonexistent" }, func(v *domain.Channel) { v.GroupProvider, v.GroupPath = "custom", "https://alternate.example/self" }} {
 		invalid := *stored
 		update(&invalid)
 		w = request(t, handler, "PUT", "/api/v1/admin/channels/ch", invalid, cookie, csrf)
@@ -300,7 +300,7 @@ func TestAdminGroupVerificationTrustAndStaleProtection(t *testing.T) {
 			t.Fatalf("invalid channel accepted %d %s", w.Code, w.Body.String())
 		}
 	}
-	for i, model := range []domain.Model{{ChannelID: ch.ID, UpstreamID: "bad-openai", ReasoningEffort: "max"}, {ChannelID: ch.ID, UpstreamID: "bad-thinking", Protocol: "anthropic", ThinkingMode: "enabled", ThinkingBudget: 1023, MaxTokens: 4096}} {
+	for i, model := range []domain.Model{{ChannelID: ch.ID, UpstreamID: "bad-openai", ReasoningEffort: "ultra"}, {ChannelID: ch.ID, UpstreamID: "bad-thinking", Protocol: "anthropic", ThinkingMode: "enabled", ThinkingBudget: 1023, MaxTokens: 4096}} {
 		w = request(t, handler, "POST", "/api/v1/admin/models", model, cookie, csrf)
 		if w.Code != 400 || !strings.Contains(w.Body.String(), "invalid_reasoning") {
 			t.Fatalf("invalid model %d accepted %d %s", i, w.Code, w.Body.String())

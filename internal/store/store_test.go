@@ -384,10 +384,17 @@ func TestSchedulesCoalesceMissedTicksAndReconcileFlags(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	waitingSibling := 0
 	for _, v := range all {
 		if !v.NextRunAt.After(now) {
-			t.Fatal("historical backlog retained")
+			if v.Kind != "artifact" {
+				t.Fatal("historical probe backlog retained")
+			}
+			waitingSibling++
 		}
+	}
+	if waitingSibling != 1 {
+		t.Fatalf("expected one deferred template, got %d", waitingSibling)
 	}
 	m.Archived = true
 	if e = s.SaveModel(ctx, m); e != nil {

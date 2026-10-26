@@ -8,6 +8,24 @@ import (
 	"time"
 )
 
+func TestUpstreamDNSYAMLInterpolationAndEnvironment(t *testing.T) {
+	t.Setenv("TEST_DOH", "https://1.1.1.1/dns-query")
+	t.Setenv("RELAYLAB_UPSTREAM_DNS_OVER_HTTPS", "")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("upstream:\n  dns_over_https: ${TEST_DOH}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil || cfg.Upstream.DNSOverHTTPS != "https://1.1.1.1/dns-query" {
+		t.Fatalf("%+v %v", cfg.Upstream, err)
+	}
+	t.Setenv("RELAYLAB_UPSTREAM_DNS_OVER_HTTPS", "https://resolver.example/dns-query")
+	cfg, err = Load(path)
+	if err != nil || cfg.Upstream.DNSOverHTTPS != "https://resolver.example/dns-query" {
+		t.Fatalf("%+v %v", cfg.Upstream, err)
+	}
+}
+
 func TestLoadYAMLAndEnvironmentOverrides(t *testing.T) {
 	t.Setenv("RELAYLAB_DATA_DIR", "")
 	t.Setenv("RELAYLAB_ADDR", "")

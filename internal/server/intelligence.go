@@ -154,6 +154,11 @@ func (s *Server) intelligence(c *gin.Context) {
 				selected = candidate
 			}
 		}
+		if modelID == "" && ch.IntelligenceSchedule != nil && ch.IntelligenceSchedule.ModelID != "" {
+			if candidate, ok := catalog.modelByID[ch.IntelligenceSchedule.ModelID]; ok && candidate.ChannelID == ch.ID {
+				selected = candidate
+			}
+		}
 		if selected.ID == "" {
 			for _, candidate := range candidates {
 				enabled := (templateID == "cn_html" && candidate.ArtifactChinese) || (templateID == "en_svg" && candidate.ArtifactEnglish)
@@ -166,7 +171,7 @@ func (s *Server) intelligence(c *gin.Context) {
 		if selected.ID == "" && len(candidates) > 0 {
 			selected = candidates[0]
 		}
-		interval := selected.ArtifactIntervalSeconds
+		interval := ch.ArtifactInterval(selected)
 		if interval <= 0 {
 			interval = settings.ArtifactIntervalSeconds
 		}

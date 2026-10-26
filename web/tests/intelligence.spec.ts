@@ -16,6 +16,17 @@ test('renders real static PNG thumbnails and keeps scripts in opaque sandboxes',
  await page.locator('.intelligence-history').scrollIntoViewIfNeeded();await expect(page.locator('.history-card img').first()).toBeVisible({timeout:15000});await expect(page.locator('.history-card img').first()).toHaveAttribute('src',/^data:image\/png;base64,/);expect(await page.locator('.thumbnail-capture').count()).toBeLessThanOrEqual(2);expect(await page.locator('svg circle').count()).toBe(0);
  await page.locator('[data-artifact-id="fixture-1"] .history-preview').click();await expect(page.locator('.intelligence-work iframe')).toHaveAttribute('title','fixture-1 · 当前作品');await page.getByRole('button',{name:'刷新',exact:true}).click();await expect(page.locator('.intelligence-work iframe')).toHaveAttribute('title','fixture-1 · 当前作品');expect(errors).toEqual([]);
 });
+
+for(const state of ['claimed','dispatching']){
+ test(`reports the actual ${state} worker state and elapsed time`,async({page})=>{
+  const group=await fixtures(page,[]);group.latest_attempt.state=state;
+  group.latest_attempt.started_at=new Date(Date.now()-15000).toISOString();
+  await page.goto('/intelligence');const status=page.getByRole('region',{name:'当前分组状态'});
+  await expect(status.getByText(state==='claimed'?'准备生成':'生成中',{exact:true})).toBeVisible();
+  const elapsed=status.locator('.group-metrics > div').filter({has:page.getByText('本次耗时',{exact:true})}).locator('strong');
+  await expect(elapsed).toHaveText(/\d+\.\d{2} s/);
+ });
+}
 test('retains empty group progress and fits the mobile viewport',async({page})=>{
  await fixtures(page,[]);await page.setViewportSize({width:390,height:844});await page.goto('/intelligence');await expect(page.getByText('这个分组还没有成功作品')).toBeVisible();await expect(page.getByText('4,321',{exact:true})).toBeVisible();await expect(page.getByText('正在接收生成内容，完成后会显示作品。')).toBeVisible();const dimensions=await page.evaluate(()=>({width:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth}));expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.width);
 });

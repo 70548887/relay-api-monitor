@@ -164,6 +164,7 @@ func (s *Server) saveChannel(c *gin.Context) {
 		b.ID = domain.NewID()
 		b.CreatedAt = time.Now().UTC()
 		b.Revision = 1
+		b.IntelligenceSchedule = nil
 		b.VerifiedGroup, b.GroupVerificationStatus, b.GroupVerificationError = "", "unverified", ""
 		b.GroupVerifiedAt, b.GroupVerificationRevision = nil, 0
 	}
@@ -492,8 +493,13 @@ func (s *Server) enqueue(c *gin.Context) {
 		dbError(c, e)
 		return
 	}
-	if m.Archived || ch.Archived || !ch.Enabled {
-		fail(c, 400, "disabled", "模型或分组已停用")
+	p, e := s.Store.GetPlatform(ctx, ch.PlatformID)
+	if e != nil {
+		dbError(c, e)
+		return
+	}
+	if m.Archived || m.Missing || ch.Archived || !ch.Enabled || p.Archived {
+		fail(c, 400, "disabled", "模型缺失，或模型、分组及平台已停用或归档")
 		return
 	}
 	if b.Kind != "probe" && b.Kind != "artifact" {

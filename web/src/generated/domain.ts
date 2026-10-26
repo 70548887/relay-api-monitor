@@ -26,6 +26,7 @@ export interface Channel {
   thinking_mode: string;
   thinking_budget: number;
   intelligence_model_id: string;
+  intelligence_schedule?: IntelligenceSchedule | null;
   group_provider: string;
   group_path: string;
   group_field: string;
@@ -42,6 +43,13 @@ export interface Channel {
   last_sync_at: string | null;
   sync_error: string;
   created_at: string;
+}
+
+export interface IntelligenceSchedule {
+  enabled: boolean;
+  model_id: string;
+  template_ids: Array<string>;
+  interval_seconds: number;
 }
 
 export interface Model {
@@ -73,6 +81,8 @@ export interface Usage {
   input_tokens: number | null;
   output_tokens: number | null;
   total_tokens: number | null;
+  cached_input_tokens?: number | null;
+  cache_creation_input_tokens?: number | null;
 }
 
 export interface ProbeResult {

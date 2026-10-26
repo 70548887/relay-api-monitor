@@ -87,7 +87,13 @@ test('terminal success still requires actual target commit and worker',async({pa
   await mount(page,data);
   await expect(page.getByText('安装结果已返回，正在确认目标版本与 Worker').first()).toBeVisible();
   await expect(page.getByText('升级完成',{exact:true})).toHaveCount(0);
+  const refreshed=page.waitForEvent('framenavigated',{predicate:frame=>frame===page.mainFrame()});
   data.current.commit=data.latest!.commit;data.maintenance!.worker_online=true;
   await page.getByRole('button',{name:'刷新',exact:true}).click();
+  // The confirmed build deliberately reloads embedded assets. Wait for the
+  // new document and restored authentication before assertions and teardown.
+  await refreshed;
+  await expect(page.getByText('70548887/relay-api-monitor',{exact:true})).toBeVisible();
   await expect(page.getByText('升级完成',{exact:true}).first()).toBeVisible();
+  expect(await page.evaluate(()=>sessionStorage.getItem('relaylab-update-refresh:browser-op'))).toBe('done');
 });

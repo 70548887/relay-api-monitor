@@ -245,6 +245,9 @@ func (c *Client) do(ctx context.Context, req *http.Request) (*http.Response, err
 		}
 		for _, ip := range ips {
 			if !publicIP(ip) {
+				if fakeIP(ip) {
+					return nil, &Error{Code: "blocked_target", Message: "域名被代理 DNS 解析为 Fake-IP；请在代理中将 API 域名加入 fake-ip-filter，或配置 upstream.dns_over_https 解析真实公网地址"}
+				}
 				return nil, &Error{Code: "blocked_target", Message: "Upstream hostname resolves to a non-public or reserved IP address"}
 			}
 		}

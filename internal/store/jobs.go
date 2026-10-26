@@ -73,6 +73,28 @@ func enqueue(ctx context.Context, q queryer, v *domain.Job, now time.Time) error
 	if v.Kind != "probe" && v.Kind != "artifact" {
 		return fmt.Errorf("store: invalid job kind %q", v.Kind)
 	}
+	m, err := load[domain.Model](ctx, q, "SELECT data FROM models WHERE id=?", v.ModelID)
+	if err != nil {
+		return err
+	}
+	if v.ChannelID != "" && v.ChannelID != m.ChannelID {
+		return ErrConfigurationChanged
+	}
+	v.ChannelID = m.ChannelID
+	c, err := channel(ctx, q, m.ChannelID)
+	if err != nil {
+		return err
+	}
+	p, err := load[domain.Platform](ctx, q, "SELECT data FROM platforms WHERE id=?", c.PlatformID)
+	if err != nil {
+		return err
+	}
+	if m.Archived || m.Missing || c.Archived || !c.Enabled || p.Archived {
+		return ErrConfigurationChanged
+	}
+	if v.ChannelRevision != 0 && v.ChannelRevision != c.Revision {
+		return ErrConfigurationChanged
+	}
 	isBusy, e := busy(ctx, q, v.ModelID, v.Kind, now)
 	if e != nil {
 		return e
@@ -95,17 +117,6 @@ func enqueue(ctx context.Context, q queryer, v *domain.Job, now time.Time) error
 	v.CreatedAt = created(v.CreatedAt)
 	if v.ScheduledAt.IsZero() {
 		v.ScheduledAt = v.CreatedAt
-	}
-	if v.ChannelID == "" {
-		m, e := load[domain.Model](ctx, q, "SELECT data FROM models WHERE id=?", v.ModelID)
-		if e != nil {
-			return e
-		}
-		v.ChannelID = m.ChannelID
-	}
-	c, e := channel(ctx, q, v.ChannelID)
-	if e != nil {
-		return e
 	}
 	if v.ChannelRevision == 0 {
 		v.ChannelRevision = c.Revision
@@ -203,7 +214,7 @@ func (s *Store) MarkDispatching(ctx context.Context, id, token string, deadline 
 		if e != nil {
 			return e
 		}
-		if m.ChannelID != c.ID || c.Revision != v.ChannelRevision || m.Archived || c.Archived || p.Archived {
+		if m.ChannelID != c.ID || c.Revision != v.ChannelRevision || m.Archived || m.Missing || c.Archived || !c.Enabled || p.Archived {
 			return ErrConfigurationChanged
 		}
 		if v.ScheduleID != "" {
@@ -214,7 +225,7 @@ func (s *Store) MarkDispatching(ctx context.Context, id, token string, deadline 
 			if !plan.Enabled || plan.ModelID != m.ID || plan.Kind != v.Kind || plan.TemplateID != v.TemplateID || !c.Enabled || m.Missing {
 				return ErrConfigurationChanged
 			}
-			if v.Kind == "artifact" && c.IntelligenceModelID != "" && c.IntelligenceModelID != m.ID {
+			if v.Kind == "artifact" && !c.ScheduledArtifactEnabled(*m, v.TemplateID) {
 				return ErrConfigurationChanged
 			}
 		}

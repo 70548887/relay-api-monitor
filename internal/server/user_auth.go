@@ -184,7 +184,12 @@ func (s *Server) memberPassword(c *gin.Context) {
 		fail(c, 400, "invalid_password", err.Error())
 		return
 	}
-	if err = s.Store.UpdateMemberPassword(c.Request.Context(), u.ID, hash); err != nil {
+	if err = s.Store.UpdateMemberPassword(c.Request.Context(), u.ID, hash, u.PasswordHash); err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			clearMemberCookie(c)
+			fail(c, 401, "credentials_changed", "账号状态已变更，请重新登录")
+			return
+		}
 		dbError(c, err)
 		return
 	}

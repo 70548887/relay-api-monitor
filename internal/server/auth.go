@@ -194,7 +194,11 @@ func (s *Server) password(c *gin.Context) {
 		fail(c, 400, "invalid_password", e.Error())
 		return
 	}
-	if e = s.Store.UpdatePassword(c.Request.Context(), u.ID, h); e != nil {
+	if e = s.Store.UpdatePassword(c.Request.Context(), u.ID, h, u.PasswordHash); e != nil {
+		if errors.Is(e, store.ErrConflict) {
+			fail(c, 401, "credentials_changed", "账号状态已变更，请重新登录")
+			return
+		}
 		dbError(c, e)
 		return
 	}

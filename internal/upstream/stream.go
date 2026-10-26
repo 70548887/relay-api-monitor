@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
-
-	"relaylab/internal/domain"
 )
 
 var errStreamDone = errors.New("stream terminal event received")
@@ -178,11 +176,19 @@ func (s *generationState) appendText(value string) error {
 }
 
 type usageWire struct {
-	Prompt     *int64 `json:"prompt_tokens"`
-	Completion *int64 `json:"completion_tokens"`
-	Input      *int64 `json:"input_tokens"`
-	Output     *int64 `json:"output_tokens"`
-	Total      *int64 `json:"total_tokens"`
+	Prompt        *int64 `json:"prompt_tokens"`
+	Completion    *int64 `json:"completion_tokens"`
+	Input         *int64 `json:"input_tokens"`
+	Output        *int64 `json:"output_tokens"`
+	Total         *int64 `json:"total_tokens"`
+	PromptDetails *struct {
+		Cached *int64 `json:"cached_tokens"`
+	} `json:"prompt_tokens_details"`
+	InputDetails *struct {
+		Cached *int64 `json:"cached_tokens"`
+	} `json:"input_tokens_details"`
+	CacheRead     *int64 `json:"cache_read_input_tokens"`
+	CacheCreation *int64 `json:"cache_creation_input_tokens"`
 }
 
 func (s *generationState) usage(value *usageWire) error {
@@ -203,8 +209,16 @@ func (s *generationState) usage(value *usageWire) error {
 	set(&usage.OutputTokens, value.Completion)
 	set(&usage.OutputTokens, value.Output)
 	set(&usage.TotalTokens, value.Total)
+	if value.PromptDetails != nil {
+		set(&usage.CachedInputTokens, value.PromptDetails.Cached)
+	}
+	if value.InputDetails != nil {
+		set(&usage.CachedInputTokens, value.InputDetails.Cached)
+	}
+	set(&usage.CachedInputTokens, value.CacheRead)
+	set(&usage.CacheCreationInputTokens, value.CacheCreation)
 	if changed && s.callback != nil {
-		snapshot := domain.Usage{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, TotalTokens: usage.TotalTokens}
+		snapshot := *usage
 		if err := s.callback(Event{Type: "usage", Usage: &snapshot, HTTPStatus: s.result.HTTPStatus, ReturnedModel: s.redact(s.result.ReturnedModel)}); err != nil {
 			return &callbackError{err}
 		}

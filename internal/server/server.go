@@ -134,6 +134,7 @@ func (s *Server) Handler() http.Handler {
 	admin.DELETE("/channels/:id", s.archiveChannel)
 	admin.POST("/channels/:id/sync-models", s.syncModels)
 	admin.POST("/channels/:id/verify-group", s.verifyGroup)
+	admin.PUT("/channels/:id/intelligence-schedule", s.saveIntelligenceSchedule)
 	admin.GET("/models", s.models)
 	admin.POST("/models", s.saveModel)
 	admin.PUT("/models/:id", s.saveModel)

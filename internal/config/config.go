@@ -26,10 +26,15 @@ type UpdateConfig struct {
 	BackupDir     string        `yaml:"backup_dir" json:"backup_dir"`
 }
 type Config struct {
-	DataDir    string       `yaml:"data_dir" json:"data_dir"`
-	Address    string       `yaml:"address" json:"address"`
-	ConfigPath string       `yaml:"-" json:"-"`
-	Update     UpdateConfig `yaml:"update" json:"-"`
+	DataDir    string         `yaml:"data_dir" json:"data_dir"`
+	Address    string         `yaml:"address" json:"address"`
+	ConfigPath string         `yaml:"-" json:"-"`
+	Update     UpdateConfig   `yaml:"update" json:"-"`
+	Upstream   UpstreamConfig `yaml:"upstream" json:"-"`
+}
+
+type UpstreamConfig struct {
+	DNSOverHTTPS string `yaml:"dns_over_https" json:"dns_over_https"`
 }
 
 func defaultUpdate() UpdateConfig {
@@ -77,6 +82,9 @@ type rawUpdate struct {
 	BackupDir     *scalar `yaml:"backup_dir"`
 }
 type rawConfig struct {
+	Upstream struct {
+		DNSOverHTTPS *scalar `yaml:"dns_over_https"`
+	} `yaml:"upstream"`
 	Server struct {
 		Address *scalar `yaml:"address"`
 		DataDir *scalar `yaml:"data_dir"`
@@ -124,6 +132,7 @@ func Load(path string) (Config, error) {
 		setString(&cfg.Address, raw.Address, true)
 		setString(&cfg.DataDir, raw.Server.DataDir, false)
 		setString(&cfg.DataDir, raw.DataDir, false)
+		setString(&cfg.Upstream.DNSOverHTTPS, raw.Upstream.DNSOverHTTPS, true)
 		if err := applyRawUpdate(&cfg.Update, raw.Update); err != nil {
 			return Config{}, err
 		}
@@ -199,6 +208,7 @@ func applyEnv(cfg *Config) error {
 		name string
 		dst  *string
 	}{
+		{"RELAYLAB_UPSTREAM_DNS_OVER_HTTPS", &cfg.Upstream.DNSOverHTTPS},
 		{"RELAYLAB_ADDR", &cfg.Address}, {"RELAYLAB_DATA_DIR", &cfg.DataDir}, {"RELAYLAB_UPDATE_GITHUB_OWNER", &cfg.Update.GitHubOwner}, {"RELAYLAB_UPDATE_GITHUB_REPO", &cfg.Update.GitHubRepo}, {"RELAYLAB_UPDATE_GITHUB_TOKEN", &cfg.Update.GitHubToken}, {"RELAYLAB_UPDATE_PROXY", &cfg.Update.Proxy}, {"RELAYLAB_UPDATE_BACKUP_DIR", &cfg.Update.BackupDir},
 	} {
 		if v := os.Getenv(item.name); v != "" {

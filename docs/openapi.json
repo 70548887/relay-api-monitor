@@ -276,6 +276,16 @@
           "intelligence_model_id": {
             "type": "string"
           },
+          "intelligence_schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntelligenceSchedule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "key_mask": {
             "type": "string"
           },
@@ -616,6 +626,13 @@
           "artifact_id": {
             "type": "string"
           },
+          "context_policy": {
+            "enum": [
+              "",
+              "independent"
+            ],
+            "type": "string"
+          },
           "duration_ms": {
             "type": "integer"
           },
@@ -794,6 +811,55 @@
             "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "IntelligenceSchedule": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "interval_seconds": {
+            "type": "integer"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "template_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "enabled",
+          "model_id",
+          "template_ids",
+          "interval_seconds"
+        ],
+        "type": "object"
+      },
+      "IntelligenceScheduleWrite": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "interval_seconds": {
+            "type": "integer"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "template_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
         "type": "object"
       },
       "Job": {
@@ -1828,6 +1894,26 @@
       },
       "Usage": {
         "properties": {
+          "cache_creation_input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cached_input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "input_tokens": {
             "anyOf": [
               {
@@ -1908,7 +1994,7 @@
   "info": {
     "description": "中转监控、分组作品与实时状态及访客临时测试。所有时间为UTC ISO8601。管理写操作需要X-CSRF-Token。JSON请求体必须是单个完整对象且不超过2MiB；浏览器Origin必须同源，非浏览器JSON CLI可省略Origin。默认本机端口42783。分组核验仅标记Token绑定，不证明实际路由或账号身份。",
     "title": "Relay Lab API",
-    "version": "1.3.0"
+    "version": "1.3.1"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -2463,6 +2549,85 @@
           }
         ],
         "summary": "更新配置"
+      }
+    },
+    "/admin/channels/{id}/intelligence-schedule": {
+      "put": {
+        "operationId": "admin_channels_id_intelligence-schedule_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntelligenceScheduleWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Channel"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "配置分组智商定时测试，关闭时可仅提交 enabled=false"
       }
     },
     "/admin/channels/{id}/sync-models": {

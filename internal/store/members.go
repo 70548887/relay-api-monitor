@@ -81,18 +81,22 @@ func (s *Store) SetMemberDisabled(ctx context.Context, id string, disabled bool)
 	return result, err
 }
 
-func (s *Store) UpdateMemberPassword(ctx context.Context, id, hash string) error {
+func (s *Store) UpdateMemberPassword(ctx context.Context, id, hash string, expectedHash ...string) error {
 	if hash == "" {
 		return errors.New("store: password hash required")
 	}
 	return s.transaction(ctx, func(tx *sql.Tx) error {
-		if _, err := member(ctx, tx, "id", id); err != nil {
+		current, err := member(ctx, tx, "id", id)
+		if err != nil {
 			return err
+		}
+		if len(expectedHash) > 0 && (current.Disabled || current.PasswordHash != expectedHash[0]) {
+			return ErrConflict
 		}
 		if err := affected(tx.ExecContext(ctx, "UPDATE users SET password_hash=? WHERE id=?", hash, id)); err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, "DELETE FROM user_sessions WHERE user_id=?", id)
+		_, err = tx.ExecContext(ctx, "DELETE FROM user_sessions WHERE user_id=?", id)
 		return err
 	})
 }

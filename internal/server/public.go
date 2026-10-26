@@ -355,6 +355,7 @@ func publicAttempt(job domain.Job) gin.H {
 		ThinkingMode    string `json:"thinking_mode"`
 		ThinkingBudget  int    `json:"thinking_budget"`
 		Parameters      struct {
+			ContextPolicy   string `json:"context_policy"`
 			ReasoningEffort string `json:"reasoning_effort"`
 			ThinkingMode    string `json:"thinking_mode"`
 			ThinkingBudget  int    `json:"thinking_budget"`
@@ -370,12 +371,13 @@ func publicAttempt(job domain.Job) gin.H {
 	if snapshot.ThinkingBudget == 0 {
 		snapshot.ThinkingBudget = snapshot.Parameters.ThinkingBudget
 	}
-	return gin.H{"id": job.ID, "model_id": job.ModelID, "channel_id": job.ChannelID, "template_id": job.TemplateID, "kind": job.Kind, "state": job.State, "created_at": job.CreatedAt, "started_at": job.StartedAt, "finished_at": job.FinishedAt, "error_code": job.ErrorCode, "error_message": message, "progress_chars": job.ProgressChars, "progress_at": job.ProgressAt, "returned_model": job.ReturnedModel, "requested_model": snapshot.RequestedModel, "protocol": snapshot.Protocol, "reasoning_effort": snapshot.ReasoningEffort, "thinking_mode": snapshot.ThinkingMode, "thinking_budget": snapshot.ThinkingBudget}
+	return gin.H{"id": job.ID, "model_id": job.ModelID, "channel_id": job.ChannelID, "template_id": job.TemplateID, "kind": job.Kind, "state": job.State, "created_at": job.CreatedAt, "started_at": job.StartedAt, "finished_at": job.FinishedAt, "error_code": job.ErrorCode, "error_message": message, "progress_chars": job.ProgressChars, "progress_at": job.ProgressAt, "returned_model": job.ReturnedModel, "requested_model": snapshot.RequestedModel, "protocol": snapshot.Protocol, "context_policy": snapshot.Parameters.ContextPolicy, "reasoning_effort": snapshot.ReasoningEffort, "thinking_mode": snapshot.ThinkingMode, "thinking_budget": snapshot.ThinkingBudget}
 }
 func publicArtifactMap(a domain.Artifact, catalog publicCatalog, full bool) map[string]any {
 	// Select public fields rather than copying an internal persistence document.
 	// Parameters remain comparable without exposing newly added transport fields.
 	var parameters struct {
+		ContextPolicy   string `json:"context_policy,omitempty"`
 		MaxTokens       int    `json:"max_tokens,omitempty"`
 		TimeoutSeconds  int    `json:"timeout_seconds,omitempty"`
 		ReasoningEffort string `json:"reasoning_effort,omitempty"`

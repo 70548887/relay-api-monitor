@@ -250,6 +250,10 @@ func run(args []string) error {
 		return nil
 	case "serve":
 		app := server.New(st, vault)
+		app.Client, e = upstream.NewWithDNS(cfg.Upstream.DNSOverHTTPS)
+		if e != nil {
+			return e
+		}
 		app.SetMaintenanceFile(filepath.Join(cfg.DataDir, "maintenance.request"))
 		updater, updateErr := update.New(cfg.Update, cfg.DataDir, update.BuildInfo{Version: version, Commit: commit, BuildTime: buildTime, OS: runtime.GOOS, Arch: runtime.GOARCH})
 		if updateErr != nil {
@@ -270,7 +274,11 @@ func run(args []string) error {
 		stopReport = runtimecontrol.StartReporter(context.Background(), cfg.DataDir, "serve", buildMetadata(), app.RuntimeState)
 		return serveHTTP(ctx, hs, ln)
 	case "worker":
-		w := worker.New(st, vault, upstream.New())
+		client, clientErr := upstream.NewWithDNS(cfg.Upstream.DNSOverHTTPS)
+		if clientErr != nil {
+			return clientErr
+		}
+		w := worker.New(st, vault, client)
 		w.SetMaintenanceFile(filepath.Join(cfg.DataDir, "maintenance.request"))
 		if os.Getenv("RELAYLAB_LAUNCHER_INSTANCE") != "" {
 			w.SetStartupLeaseWait(store.WorkerLeaseDuration + 5*time.Second)

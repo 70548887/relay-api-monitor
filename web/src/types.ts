@@ -3,6 +3,7 @@ import type * as Domain from './generated/domain';
 export type Protocol = 'chat'|'responses'|'anthropic';
 export type Platform = Domain.Platform;
 export type Channel = Omit<Domain.Channel,'protocol'> & {protocol:Protocol};
+export type IntelligenceSchedule = Domain.IntelligenceSchedule;
 export type Model = Omit<Domain.Model,'protocol'> & {protocol:Protocol|''};
 export type Usage = Domain.Usage;
 export type ProbeResult = Domain.ProbeResult;
@@ -51,6 +52,7 @@ export interface PublicAttempt {
  error_code?:string;error_message?:string;cancel_requested?:boolean;progress_chars?:number;progress_at?:string|null;returned_model?:string;
  snapshot?:string|Record<string,unknown>;requested_model?:string;protocol?:string;reasoning_effort?:string;thinking_mode?:string;thinking_budget?:number;
  artifact_id?:string;usage?:Usage;first_text_ms?:number|null;duration_ms?:number;finish_reason?:string;
+ context_policy?:string;
 }
 export interface IntelligenceGroup {
  id:string;channel_id:string;channel_name:string;platform_id:string;platform_name:string;model_id:string;requested_model:string;

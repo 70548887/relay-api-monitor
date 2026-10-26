@@ -749,12 +749,14 @@ func classifyError(err error) string {
 		return "checksum_mismatch"
 	case strings.Contains(s, "size mismatch") || strings.Contains(s, "truncat"):
 		return "size_mismatch"
-	case strings.Contains(s, "http"):
-		return "github_http_error"
 	case strings.Contains(s, "deadline") || strings.Contains(s, "timeout"):
 		return "timeout"
 	case strings.Contains(s, "proxy"):
 		return "proxy_error"
+	case strings.Contains(s, "eof") || strings.Contains(s, "connection reset") || strings.Contains(s, "forcibly closed"):
+		return "github_connection_closed"
+	case strings.Contains(s, "http"):
+		return "github_http_error"
 	default:
 		return "update_failed"
 	}

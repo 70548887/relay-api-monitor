@@ -14,7 +14,7 @@ export async function api<T>(path:string,init:RequestInit={}):Promise<T>{
  const headers=new Headers(init.headers);if(init.body)headers.set('Content-Type','application/json');
  if(init.method && !['GET','HEAD'].includes(init.method.toUpperCase()) && session)headers.set('X-CSRF-Token',session.csrf_token);
  const res=await fetch(`/api/v1${path}`,{...init,headers,credentials:'same-origin'});
- if(!res.ok){const body=await res.json().catch(()=>null);if(res.status===401&&version===sessionVersion&&(path==='/auth/me'||path.startsWith('/admin/')))setSession(null);throw new APIError(res.status,body?.error?.code||'request_failed',body?.error?.message||`请求失败 (${res.status})`)}
+ if(!res.ok){const body=await res.json().catch(()=>null);if(res.status===401&&version===sessionVersion&&(path==='/auth/me'||path==='/auth/password'||path.startsWith('/admin/')))setSession(null);throw new APIError(res.status,body?.error?.code||'request_failed',body?.error?.message||`请求失败 (${res.status})`)}
  if(res.status===204 || res.headers.get('content-length')==='0')return undefined as T;
  const content=await res.text();return content ? JSON.parse(content) as T : undefined as T;
 }

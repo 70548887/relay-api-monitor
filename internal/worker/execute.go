@@ -30,6 +30,7 @@ type requestSnapshot struct {
 	GroupVerificationRevision int               `json:"group_verification_revision,omitempty"`
 }
 type requestParameters struct {
+	ContextPolicy   string `json:"context_policy,omitempty"`
 	MaxTokens       int    `json:"max_tokens"`
 	TimeoutSeconds  int    `json:"timeout_seconds"`
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
@@ -76,8 +77,11 @@ func (w *Worker) execute(parent context.Context, j domain.Job) error {
 	if m.Archived || c.Archived || p.Archived {
 		return failBeforeDispatch("archived", "平台、渠道或模型已归档")
 	}
+	if !c.Enabled || m.Missing {
+		return failBeforeDispatch("disabled", "模型已缺失或分组已停用，请检查配置")
+	}
 	if j.ScheduleID != "" {
-		enabled := c.Enabled && !m.Missing && ((j.Kind == "probe" && m.ProbeEnabled) || (j.Kind == "artifact" && (c.IntelligenceModelID == "" || c.IntelligenceModelID == m.ID) && ((j.TemplateID == "cn_html" && m.ArtifactChinese) || (j.TemplateID == "en_svg" && m.ArtifactEnglish))))
+		enabled := c.Enabled && !m.Missing && ((j.Kind == "probe" && m.ProbeEnabled) || (j.Kind == "artifact" && c.ScheduledArtifactEnabled(*m, j.TemplateID)))
 		if !enabled {
 			return failBeforeDispatch("schedule_disabled", "定时任务已停用")
 		}
@@ -116,10 +120,10 @@ func (w *Worker) execute(parent context.Context, j domain.Job) error {
 		template = *t
 		prompt = t.Prompt
 	}
-	if m.MaxTokens > 0 {
+	if j.Kind == "artifact" && m.MaxTokens > 0 {
 		maxTokens = m.MaxTokens
 	}
-	if m.TimeoutSeconds > 0 {
+	if j.Kind == "artifact" && m.TimeoutSeconds > 0 {
 		timeoutSeconds = m.TimeoutSeconds
 	}
 	effort, thinkingMode, thinkingBudget := "", "", 0
@@ -134,7 +138,7 @@ func (w *Worker) execute(parent context.Context, j domain.Job) error {
 	if err != nil {
 		return failBeforeDispatch("key_unavailable", err.Error())
 	}
-	snapshot := requestSnapshot{ModelID: m.ID, RequestedModel: m.UpstreamID, ChannelID: c.ID, ChannelRevision: c.Revision, Protocol: protocol, TemplateID: template.ID, TemplateVersion: template.Version, Prompt: prompt, Parameters: requestParameters{MaxTokens: maxTokens, TimeoutSeconds: timeoutSeconds, ReasoningEffort: effort, ThinkingMode: thinkingMode, ThinkingBudget: thinkingBudget}}
+	snapshot := requestSnapshot{ModelID: m.ID, RequestedModel: m.UpstreamID, ChannelID: c.ID, ChannelRevision: c.Revision, Protocol: protocol, TemplateID: template.ID, TemplateVersion: template.Version, Prompt: prompt, Parameters: requestParameters{ContextPolicy: "independent", MaxTokens: maxTokens, TimeoutSeconds: timeoutSeconds, ReasoningEffort: effort, ThinkingMode: thinkingMode, ThinkingBudget: thinkingBudget}}
 	if c.GroupVerificationRevision == c.Revision {
 		snapshot.GroupVerificationStatus = c.GroupVerificationStatus
 		snapshot.GroupVerificationRevision = c.GroupVerificationRevision

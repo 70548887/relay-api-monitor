@@ -203,8 +203,12 @@ func TestRequestTimeoutIsRecordedOnceWithoutAutomaticRetry(t *testing.T) {
 		<-r.Context().Done()
 		close(canceled)
 	})
-	m.TimeoutSeconds = 1
-	if err := st.SaveModel(ctx, m); err != nil {
+	settings, err := st.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.ProbeTimeoutSeconds = 1
+	if err := st.SaveSettingsAndReconcile(ctx, settings); err != nil {
 		t.Fatal(err)
 	}
 	j := enqueue(t, st, ctx, m, "probe", "")

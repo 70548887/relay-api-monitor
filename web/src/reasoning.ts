@@ -3,7 +3,7 @@ import type { Protocol } from './types';
 export const reasoningOptions=(protocol:Protocol|''|undefined,inherit=false)=>[
  {value:'',label:inherit?'继承分组':'上游默认'},
  ...(inherit?[{value:'default',label:'上游默认（覆盖分组）'}]:[]),
- ...(protocol==='anthropic'?['low','medium','high','max']:['none','minimal','low','medium','high','xhigh']).map(value=>({value,label:value})),
+ ...(protocol==='anthropic'?['low','medium','high','xhigh','max']:['none','minimal','low','medium','high','xhigh','max']).map(value=>({value,label:value})),
 ];
 export const thinkingOptions=(inherit=false)=>[
  {value:'',label:inherit?'继承分组':'上游默认'},

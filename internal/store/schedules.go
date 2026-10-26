@@ -83,13 +83,15 @@ func reconcileSchedules(ctx context.Context, tx queryer, m domain.Model) error {
 	if e != nil {
 		return e
 	}
+	if c.IntelligenceSchedule != nil && c.IntelligenceSchedule.IntervalSeconds > 0 {
+		ai = c.IntelligenceSchedule.IntervalSeconds
+	}
 	p, e := load[domain.Platform](ctx, tx, "SELECT data FROM platforms WHERE id=?", c.PlatformID)
 	if e != nil {
 		return e
 	}
 	available := !m.Archived && !m.Missing && !c.Archived && c.Enabled && !p.Archived
-	artifactAvailable := available && (c.IntelligenceModelID == "" || c.IntelligenceModelID == m.ID)
-	desired := []domain.Schedule{{ModelID: m.ID, Kind: "probe", IntervalSeconds: pi, Enabled: available && m.ProbeEnabled}, {ModelID: m.ID, Kind: "artifact", TemplateID: "cn_html", IntervalSeconds: ai, Enabled: artifactAvailable && m.ArtifactChinese}, {ModelID: m.ID, Kind: "artifact", TemplateID: "en_svg", IntervalSeconds: ai, Enabled: artifactAvailable && m.ArtifactEnglish}}
+	desired := []domain.Schedule{{ModelID: m.ID, Kind: "probe", IntervalSeconds: pi, Enabled: available && m.ProbeEnabled}, {ModelID: m.ID, Kind: "artifact", TemplateID: "cn_html", IntervalSeconds: ai, Enabled: available && c.ScheduledArtifactEnabled(m, "cn_html")}, {ModelID: m.ID, Kind: "artifact", TemplateID: "en_svg", IntervalSeconds: ai, Enabled: available && c.ScheduledArtifactEnabled(m, "en_svg")}}
 	n := nowUTC()
 	for _, want := range desired {
 		key := want.Kind + ":" + want.TemplateID
@@ -107,7 +109,11 @@ func reconcileSchedules(ctx context.Context, tx queryer, m domain.Model) error {
 			return e
 		}
 		if !want.Enabled {
-			if e = cancelJobs(ctx, tx, "schedule_id=?", want.ID); e != nil {
+			where := "schedule_id=?"
+			if c.IntelligenceSchedule != nil && want.Kind == "artifact" && available {
+				where += " AND state IN ('queued','claimed')"
+			}
+			if e = cancelJobs(ctx, tx, where, want.ID); e != nil {
 				return e
 			}
 		}
@@ -137,13 +143,24 @@ func (s *Store) TickSchedules(ctx context.Context, now time.Time) (int, error) {
 			if e != nil {
 				return e
 			}
-			enabled := !m.Archived && !m.Missing && !c.Archived && c.Enabled && !p.Archived && ((v.Kind == "probe" && m.ProbeEnabled) || (v.Kind == "artifact" && (c.IntelligenceModelID == "" || c.IntelligenceModelID == m.ID) && ((v.TemplateID == "cn_html" && m.ArtifactChinese) || (v.TemplateID == "en_svg" && m.ArtifactEnglish))))
+			enabled := !m.Archived && !m.Missing && !c.Archived && c.Enabled && !p.Archived && ((v.Kind == "probe" && m.ProbeEnabled) || (v.Kind == "artifact" && c.ScheduledArtifactEnabled(*m, v.TemplateID)))
 			if enabled {
 				job := domain.Job{ID: domain.NewID(), ScheduleID: v.ID, ModelID: m.ID, ChannelID: c.ID, ChannelRevision: c.Revision, Kind: v.Kind, TemplateID: v.TemplateID, State: "queued", ScheduledAt: v.NextRunAt, CreatedAt: now}
 				if e = enqueue(ctx, tx, &job, now); e == nil {
 					count++
 				} else if e != ErrConflict {
 					return e
+				} else if v.Kind == "artifact" {
+					// A sibling template cannot run concurrently on this model.
+					// Keep its current slot due rather than discarding it for an
+					// entire interval. Same-template work still coalesces below.
+					var sameTemplate int
+					if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM jobs WHERE model_id=? AND kind='artifact' AND json_extract(data,'$.template_id')=? AND (state IN ('queued','claimed','dispatching') OR (state='uncertain' AND deadline>?))", m.ID, v.TemplateID, ts(now.Add(-30*time.Second))).Scan(&sameTemplate); err != nil {
+						return err
+					}
+					if sameTemplate == 0 {
+						continue
+					}
 				}
 			}
 			if v.IntervalSeconds < 1 {
