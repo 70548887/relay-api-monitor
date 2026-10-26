@@ -17,7 +17,7 @@ $env:RELAYLAB_UPDATE_PROXY = ''
 
 ## 发布
 
-根目录 VERSION 为唯一版本来源。当前稳定版本 `v1.3.1` 已发布，11 个附件已校验；本地 1.3.0 到该版本的真实 GitHub 更新及兼容回滚已通过。推送与 VERSION 严格一致的 Tag 后，`.github/workflows/release.yml` 会：
+根目录 VERSION 为唯一版本来源。当前稳定版本 `v1.3.2` 已发布，11 个附件已校验；正式版 1.3.1 到该版本的真实网页 GitHub 更新、自动刷新及兼容回滚已通过。推送与 VERSION 严格一致的 Tag 后，`.github/workflows/release.yml` 会：
 
 1. 读取 go.mod 的 Go 工具链基线，使用 Node.js 22 和锁定依赖。
 2. 执行 Go 测试、`go vet`、前端构建和类型检查。
