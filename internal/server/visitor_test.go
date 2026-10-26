@@ -21,11 +21,13 @@ import (
 type visitorDoer func(*http.Request) (*http.Response, error)
 
 func (f visitorDoer) Do(request *http.Request) (*http.Response, error) { return f(request) }
-func visitorPOST(t *testing.T, s *Server, path string, body any, origin string) *httptest.ResponseRecorder {
+func visitorPOSTWithMember(t *testing.T, s *Server, path string, body any, origin string, cookie *http.Cookie, csrf string) *httptest.ResponseRecorder {
 	t.Helper()
 	encoded, _ := json.Marshal(body)
 	request := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(encoded))
 	request.Header.Set("Content-Type", "application/json")
+	request.AddCookie(cookie)
+	request.Header.Set("X-CSRF-Token", csrf)
 	if origin != "" {
 		request.Header.Set("Origin", origin)
 	}
@@ -40,8 +42,64 @@ func visitorResponse(body, contentType string) *http.Response {
 	return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{contentType}}, Body: io.NopCloser(strings.NewReader(body))}
 }
 
+func TestOnlineTestingRequiresIndependentMemberSessionAndCSRF(t *testing.T) {
+	s, _, _, _ := publicFixture(t)
+	h := s.Handler()
+	adminCookie, adminCSRF := loginForTest(t, h)
+	memberCookie, memberCSRF, _ := registerMemberForAuthTest(t, h, "online-testing-member")
+	calls := 0
+	s.Client = upstream.NewTestClient(visitorDoer(func(request *http.Request) (*http.Response, error) {
+		calls++
+		if request.Header.Get("Authorization") != "Bearer sk-original-test-key-secret" || request.URL.Host != "public-upstream.example" {
+			t.Error("online testing did not use the member supplied endpoint and key")
+		}
+		if strings.HasSuffix(request.URL.Path, "/models") {
+			return visitorResponse(`{"data":[{"id":"member-model"}]}`, "application/json"), nil
+		}
+		return visitorResponse(`{"choices":[{"message":{"content":"member supplied key used"},"finish_reason":"stop"}]}`, "application/json"), nil
+	}))
+	for _, path := range []string{"/api/v1/test/models", "/api/v1/test/generate"} {
+		for _, tc := range []struct {
+			name   string
+			cookie *http.Cookie
+			csrf   string
+			status int
+		}{
+			{"anonymous", nil, "", 401},
+			{"administrator only", adminCookie, adminCSRF, 401},
+			{"member missing CSRF", memberCookie, "", 403},
+			{"member administrator CSRF", memberCookie, adminCSRF, 403},
+		} {
+			if response := request(t, h, http.MethodPost, path, visitorBody(), tc.cookie, tc.csrf); response.Code != tc.status {
+				t.Fatalf("%s at %s: status=%d want=%d %s", tc.name, path, response.Code, tc.status, response.Body.String())
+			}
+		}
+		if calls != 0 {
+			t.Fatalf("unauthenticated or invalid CSRF request reached upstream: %d", calls)
+		}
+	}
+	for _, path := range []string{"/api/v1/test/models", "/api/v1/test/generate"} {
+		response := request(t, h, http.MethodPost, path, visitorBody(), memberCookie, memberCSRF)
+		if response.Code != 200 || strings.Contains(response.Body.String(), "sk-original-test-key-secret") {
+			t.Fatalf("valid member online test failed or leaked key: %d %s", response.Code, response.Body.String())
+		}
+		if strings.HasSuffix(path, "/generate") && !strings.Contains(response.Body.String(), "event: done") {
+			t.Fatalf("member generation did not finish: %s", response.Body.String())
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("valid member requests reached upstream %d times", calls)
+	}
+	for _, path := range []string{"/api/v1/public/monitor", "/api/v1/public/intelligence"} {
+		if response := request(t, h, http.MethodGet, path, nil, nil, ""); response.Code != 200 {
+			t.Fatalf("public read requires login at %s: %d %s", path, response.Code, response.Body.String())
+		}
+	}
+}
+
 func TestVisitorModelsRateLimitAndOrigin(t *testing.T) {
 	s, _, _, _ := publicFixture(t)
+	cookie, csrf, _ := registerMemberForAuthTest(t, s.Handler(), "visitor-member")
 	calls := 0
 	s.Client = upstream.NewTestClient(visitorDoer(func(request *http.Request) (*http.Response, error) {
 		calls++
@@ -50,7 +108,7 @@ func TestVisitorModelsRateLimitAndOrigin(t *testing.T) {
 		}
 		return visitorResponse(`{"data":[{"id":"model-one"}]}`, "application/json"), nil
 	}))
-	response := visitorPOST(t, s, "/api/v1/test/models", visitorBody(), "https://evil.example")
+	response := visitorPOSTWithMember(t, s, "/api/v1/test/models", visitorBody(), "https://evil.example", cookie, csrf)
 	if response.Code != 403 || calls != 0 {
 		t.Fatalf("origin accepted: %d calls=%d", response.Code, calls)
 	}
@@ -59,11 +117,11 @@ func TestVisitorModelsRateLimitAndOrigin(t *testing.T) {
 	if err := s.Store.SaveSettings(context.Background(), settings); err != nil {
 		t.Fatal(err)
 	}
-	response = visitorPOST(t, s, "/api/v1/test/models", visitorBody(), "")
+	response = visitorPOSTWithMember(t, s, "/api/v1/test/models", visitorBody(), "", cookie, csrf)
 	if response.Code != 200 || !strings.Contains(response.Body.String(), "model-one") || strings.Contains(response.Body.String(), "sk-original-test-key-secret") {
 		t.Fatal(response.Body.String())
 	}
-	response = visitorPOST(t, s, "/api/v1/test/models", visitorBody(), "")
+	response = visitorPOSTWithMember(t, s, "/api/v1/test/models", visitorBody(), "", cookie, csrf)
 	if response.Code != 429 || calls != 1 {
 		t.Fatalf("rate limit: %d calls=%d", response.Code, calls)
 	}
@@ -74,10 +132,11 @@ func TestVisitorModelsRateLimitAndOrigin(t *testing.T) {
 
 func TestVisitorSSEAndKeyRedactionAcrossFragments(t *testing.T) {
 	s, _, _, _ := publicFixture(t)
+	cookie, csrf, _ := registerMemberForAuthTest(t, s.Handler(), "visitor-member")
 	s.Client = upstream.NewTestClient(visitorDoer(func(*http.Request) (*http.Response, error) {
 		return visitorResponse("data: {\"model\":\"served\",\"choices\":[{\"delta\":{\"content\":\"hi sk-original-\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"test-key-secret done\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":2}}\n\ndata: [DONE]\n\n", "text/event-stream"), nil
 	}))
-	response := visitorPOST(t, s, "/api/v1/test/generate", visitorBody(), "")
+	response := visitorPOSTWithMember(t, s, "/api/v1/test/generate", visitorBody(), "", cookie, csrf)
 	if response.Code != 200 || !strings.Contains(response.Body.String(), "event: meta") || !strings.Contains(response.Body.String(), "event: delta") || !strings.Contains(response.Body.String(), "event: usage") || !strings.Contains(response.Body.String(), "event: done") {
 		t.Fatal(response.Body.String())
 	}
@@ -90,6 +149,7 @@ func TestVisitorSSEAndKeyRedactionAcrossFragments(t *testing.T) {
 
 func TestVisitorArtifactAndValidation(t *testing.T) {
 	s, _, _, _ := publicFixture(t)
+	cookie, csrf, _ := registerMemberForAuthTest(t, s.Handler(), "visitor-member")
 	calls := 0
 	s.Client = upstream.NewTestClient(visitorDoer(func(*http.Request) (*http.Response, error) {
 		calls++
@@ -97,7 +157,7 @@ func TestVisitorArtifactAndValidation(t *testing.T) {
 	}))
 	body := visitorBody()
 	body["template_id"] = "cn_html"
-	response := visitorPOST(t, s, "/api/v1/test/generate", body, "")
+	response := visitorPOSTWithMember(t, s, "/api/v1/test/generate", body, "", cookie, csrf)
 	if !strings.Contains(response.Body.String(), "event: artifact") || !strings.Contains(response.Body.String(), "preview_document") {
 		t.Fatal(response.Body.String())
 	}
@@ -106,7 +166,7 @@ func TestVisitorArtifactAndValidation(t *testing.T) {
 		for key, value := range change {
 			invalid[key] = value
 		}
-		response = visitorPOST(t, s, "/api/v1/test/generate", invalid, "")
+		response = visitorPOSTWithMember(t, s, "/api/v1/test/generate", invalid, "", cookie, csrf)
 		if response.Code != 400 {
 			t.Fatalf("accepted invalid %+v: %d", change, response.Code)
 		}
@@ -118,6 +178,7 @@ func TestVisitorArtifactAndValidation(t *testing.T) {
 
 func TestVisitorCancellationReleasesConcurrency(t *testing.T) {
 	s, _, _, _ := publicFixture(t)
+	cookie, csrf, _ := registerMemberForAuthTest(t, s.Handler(), "visitor-member")
 	started := make(chan struct{})
 	var canceled atomic.Bool
 	s.Client = upstream.NewTestClient(visitorDoer(func(request *http.Request) (*http.Response, error) {
@@ -129,6 +190,8 @@ func TestVisitorCancellationReleasesConcurrency(t *testing.T) {
 	encoded, _ := json.Marshal(visitorBody())
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/test/generate", bytes.NewReader(encoded))
 	request.Header.Set("Content-Type", "application/json")
+	request.AddCookie(cookie)
+	request.Header.Set("X-CSRF-Token", csrf)
 	ctx, cancel := context.WithCancel(request.Context())
 	request = request.WithContext(ctx)
 	finished := make(chan struct{})
@@ -152,13 +215,14 @@ func TestVisitorCancellationReleasesConcurrency(t *testing.T) {
 
 func TestVisitorTimeoutStillSendsSSEError(t *testing.T) {
 	s, _, _, _ := publicFixture(t)
+	cookie, csrf, _ := registerMemberForAuthTest(t, s.Handler(), "visitor-member")
 	s.Client = upstream.NewTestClient(visitorDoer(func(request *http.Request) (*http.Response, error) {
 		<-request.Context().Done()
 		return nil, request.Context().Err()
 	}))
 	body := visitorBody()
 	body["timeout_seconds"] = 1
-	response := visitorPOST(t, s, "/api/v1/test/generate", body, "")
+	response := visitorPOSTWithMember(t, s, "/api/v1/test/generate", body, "", cookie, csrf)
 	if !strings.Contains(response.Body.String(), "event: error") || !strings.Contains(response.Body.String(), `"code":"timeout"`) {
 		t.Fatal(response.Body.String())
 	}
@@ -176,6 +240,7 @@ func TestPublicErrorOnlyTrustsNormalizedErrors(t *testing.T) {
 
 func TestVisitorDiscoveryConcurrencyCappedAtEight(t *testing.T) {
 	s, _, _, _ := publicFixture(t)
+	cookie, csrf, _ := registerMemberForAuthTest(t, s.Handler(), "visitor-member")
 	settings, _ := s.Store.GetSettings(context.Background())
 	settings.VisitorConcurrency = 64
 	settings.VisitorIPConcurrency = 8
@@ -187,7 +252,7 @@ func TestVisitorDiscoveryConcurrencyCappedAtEight(t *testing.T) {
 		t.Fatal("ninth discovery reached upstream")
 		return nil, nil
 	}))
-	response := visitorPOST(t, s, "/api/v1/test/models", visitorBody(), "")
+	response := visitorPOSTWithMember(t, s, "/api/v1/test/models", visitorBody(), "", cookie, csrf)
 	if response.Code != 429 || !strings.Contains(response.Body.String(), "concurrency_limited") {
 		t.Fatalf("%d %s", response.Code, response.Body.String())
 	}
@@ -198,6 +263,7 @@ func TestVisitorDiscoveryConcurrencyCappedAtEight(t *testing.T) {
 
 func TestVisitorConcurrentRejectionDoesNotBlockCancellation(t *testing.T) {
 	s, _, _, _ := publicFixture(t)
+	cookie, csrf, _ := registerMemberForAuthTest(t, s.Handler(), "visitor-member")
 	settings, _ := s.Store.GetSettings(context.Background())
 	settings.VisitorConcurrency = 1
 	settings.VisitorIPConcurrency = 1
@@ -212,6 +278,8 @@ func TestVisitorConcurrentRejectionDoesNotBlockCancellation(t *testing.T) {
 	}))
 	encoded, _ := json.Marshal(visitorBody())
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/test/generate", bytes.NewReader(encoded))
+	request.AddCookie(cookie)
+	request.Header.Set("X-CSRF-Token", csrf)
 	ctx, cancel := context.WithCancel(request.Context())
 	defer cancel()
 	request = request.WithContext(ctx)
@@ -222,7 +290,7 @@ func TestVisitorConcurrentRejectionDoesNotBlockCancellation(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("upstream did not start")
 	}
-	response := visitorPOST(t, s, "/api/v1/test/models", visitorBody(), "")
+	response := visitorPOSTWithMember(t, s, "/api/v1/test/models", visitorBody(), "", cookie, csrf)
 	if response.Code != 429 {
 		t.Fatalf("second request status=%d", response.Code)
 	}
@@ -241,6 +309,7 @@ func TestVisitorConcurrentRejectionDoesNotBlockCancellation(t *testing.T) {
 
 func TestOneHundredConcurrentVisitorsEnforceEightGlobalAndTwoPerIP(t *testing.T) {
 	s, _, _, _ := publicFixture(t)
+	cookie, csrf, _ := registerMemberForAuthTest(t, s.Handler(), "visitor-member")
 	ctx := context.Background()
 	settings, _ := s.Store.GetSettings(ctx)
 	settings.VisitorConcurrency = 8
@@ -300,6 +369,8 @@ func TestOneHundredConcurrentVisitorsEnforceEightGlobalAndTwoPerIP(t *testing.T)
 			ip := fmt.Sprintf("198.51.100.%d", index%4+1)
 			encoded, _ := json.Marshal(visitorBody())
 			request := httptest.NewRequest(http.MethodPost, "/api/v1/test/generate", bytes.NewReader(encoded))
+			request.AddCookie(cookie)
+			request.Header.Set("X-CSRF-Token", csrf)
 			request.RemoteAddr = ip + ":12345"
 			request = request.WithContext(context.WithValue(request.Context(), ipKey{}, ip))
 			response := httptest.NewRecorder()

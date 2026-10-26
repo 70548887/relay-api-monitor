@@ -23,7 +23,7 @@ var ErrConflict = errors.New("store: conflicting state or stale lease")
 
 var ErrConfigurationChanged = fmt.Errorf("%w: job configuration changed", ErrConflict)
 
-const schemaVersion = 1
+const schemaVersion = 2
 
 const timeFormat = "2006-01-02T15:04:05.000000000Z"
 const WorkerLeaseDuration = 45 * time.Second
@@ -39,6 +39,9 @@ type Store struct {
 
 //go:embed migrations/001_init.sql
 var migration string
+
+//go:embed migrations/002_admin_accounts.sql
+var adminAccountsMigration string
 
 func Open(path string) (*Store, error) {
 	if path == "" {
@@ -177,6 +180,9 @@ func (s *Store) Migrate(ctx context.Context) error {
 		if _, err := tx.ExecContext(ctx, migration); err != nil {
 			return err
 		}
+		if err := migrateAdminAccounts(ctx, tx); err != nil {
+			return err
+		}
 		settings, e := data(domain.DefaultSettings())
 		if e != nil {
 			return e
@@ -196,7 +202,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 		if err := validateSchema(ctx, tx); err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, "PRAGMA user_version=1")
+		_, err := tx.ExecContext(ctx, "PRAGMA user_version=2")
 		return err
 	})
 }
@@ -213,7 +219,19 @@ func checkSchemaVersion(ctx context.Context, q queryer) error {
 }
 
 func validateSchema(ctx context.Context, q queryer) error {
-	for _, columns := range []string{
+	if err := validateBaseSchema(ctx, q); err != nil {
+		return err
+	}
+	return validateSchemaColumns(ctx, q, []string{
+		"id,username,password_hash,disabled,created_at FROM admins",
+		"id,username,password_hash,disabled,created_at FROM users", "token_hash,user_id,csrf_token,expires_at FROM user_sessions",
+	})
+}
+
+// validateBaseSchema checks the complete schema supported by legacy backups
+// before a restore is allowed to create or migrate any tables.
+func validateBaseSchema(ctx context.Context, q queryer) error {
+	return validateSchemaColumns(ctx, q, []string{
 		"id,data FROM platforms", "id,platform_id,encrypted_key,revision,data FROM channels",
 		"id,channel_id,upstream_id,data FROM models", "id,data FROM settings", "id,data FROM templates",
 		"id,username,password_hash FROM admins", "token_hash,admin_id,csrf_token,expires_at FROM sessions",
@@ -221,7 +239,11 @@ func validateSchema(ctx context.Context, q queryer) error {
 		"id,schedule_id,model_id,channel_id,kind,state,owner,lease_token,lease_until,deadline,scheduled_at,created_at,finished_at,cancel_requested,data FROM jobs",
 		"id,job_id,model_id,created_at,data FROM probe_results", "id,job_id,model_id,template_id,created_at,hidden,data FROM artifacts",
 		"id,created_at,data FROM audit_events", "id,owner,heartbeat_at,lease_until FROM worker_lease",
-	} {
+	})
+}
+
+func validateSchemaColumns(ctx context.Context, q queryer, tables []string) error {
+	for _, columns := range tables {
 		rows, err := q.QueryContext(ctx, "SELECT "+columns+" LIMIT 0")
 		if err != nil {
 			return fmt.Errorf("store: database migration required: %w", err)
@@ -537,13 +559,13 @@ func (s *Store) EnsureAdmin(ctx context.Context, username, hash string) error {
 		if n > 0 {
 			return fmt.Errorf("%w: administrator already initialized", ErrConflict)
 		}
-		_, e := tx.ExecContext(ctx, "INSERT INTO admins(id,username,password_hash) VALUES(?,?,?)", domain.NewID(), username, hash)
+		_, e := tx.ExecContext(ctx, "INSERT INTO admins(id,username,password_hash,created_at) VALUES(?,?,?,?)", domain.NewID(), username, hash, ts(nowUTC()))
 		return e
 	})
 }
 func admin(ctx context.Context, q queryer, where string, arg string) (*domain.Admin, error) {
 	var v domain.Admin
-	e := q.QueryRowContext(ctx, "SELECT id,username,password_hash FROM admins WHERE "+where+"=?", arg).Scan(&v.ID, &v.Username, &v.PasswordHash)
+	e := q.QueryRowContext(ctx, "SELECT id,username,password_hash,disabled,created_at FROM admins WHERE "+where+"=?", arg).Scan(&v.ID, &v.Username, &v.PasswordHash, &v.Disabled, &v.CreatedAt)
 	return &v, e
 }
 func (s *Store) GetAdminByUsername(ctx context.Context, v string) (*domain.Admin, error) {
@@ -562,8 +584,31 @@ func (s *Store) UpdatePassword(ctx context.Context, id, hash string) error {
 	})
 }
 func (s *Store) SaveSession(ctx context.Context, v domain.Session) error {
+	return s.saveSession(ctx, v, "")
+}
+
+// SaveAuthenticatedSession rejects credentials changed or disabled after the
+// login password was verified, in the same transaction that creates a session.
+func (s *Store) SaveAuthenticatedSession(ctx context.Context, v domain.Session, passwordHash string) error {
+	if passwordHash == "" {
+		return ErrConflict
+	}
+	return s.saveSession(ctx, v, passwordHash)
+}
+
+func (s *Store) saveSession(ctx context.Context, v domain.Session, passwordHash string) error {
 	return s.transaction(ctx, func(tx *sql.Tx) error {
-		_, e := tx.ExecContext(ctx, "INSERT INTO sessions(token_hash,admin_id,csrf_token,expires_at) VALUES(?,?,?,?) ON CONFLICT(token_hash) DO UPDATE SET admin_id=excluded.admin_id,csrf_token=excluded.csrf_token,expires_at=excluded.expires_at", v.TokenHash, v.AdminID, v.CSRFToken, ts(v.ExpiresAt))
+		u, e := admin(ctx, tx, "id", v.AdminID)
+		if errors.Is(e, sql.ErrNoRows) {
+			return ErrConflict
+		}
+		if e != nil {
+			return e
+		}
+		if u.Disabled || (passwordHash != "" && u.PasswordHash != passwordHash) {
+			return ErrConflict
+		}
+		_, e = tx.ExecContext(ctx, "INSERT INTO sessions(token_hash,admin_id,csrf_token,expires_at) VALUES(?,?,?,?) ON CONFLICT(token_hash) DO UPDATE SET admin_id=excluded.admin_id,csrf_token=excluded.csrf_token,expires_at=excluded.expires_at", v.TokenHash, v.AdminID, v.CSRFToken, ts(v.ExpiresAt))
 		return e
 	})
 }

@@ -15,6 +15,25 @@ import (
 // OpenExisting opens a migrated database without creating files or running DDL.
 // It is suitable for a worker that must wait for the server to initialize.
 func OpenExisting(path string) (*Store, error) {
+	return openExisting(path, false)
+}
+
+// OpenForRestore migrates an existing, structurally valid backup database.
+// Callers must use an isolated extracted copy until key and integrity checks
+// succeed. Workers continue to use OpenExisting and never run migrations.
+func OpenForRestore(path string) (*Store, error) {
+	s, err := openExisting(path, true)
+	if err != nil {
+		return nil, err
+	}
+	if err = s.Migrate(context.Background()); err != nil {
+		s.Close()
+		return nil, err
+	}
+	return s, nil
+}
+
+func openExisting(path string, legacyBackup bool) (*Store, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
@@ -37,7 +56,11 @@ func OpenExisting(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if err = validateSchema(context.Background(), db); err != nil {
+	validate := validateSchema
+	if legacyBackup {
+		validate = validateBaseSchema
+	}
+	if err = validate(context.Background(), db); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -196,6 +219,9 @@ func (s *Store) Cleanup(ctx context.Context, now time.Time) error {
 			}
 		}
 		if _, e = tx.ExecContext(ctx, "DELETE FROM sessions WHERE expires_at<=?", ts(now)); e != nil {
+			return e
+		}
+		if _, e = tx.ExecContext(ctx, "DELETE FROM user_sessions WHERE expires_at<=?", ts(now)); e != nil {
 			return e
 		}
 		partition := "artifacts.model_id"

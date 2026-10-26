@@ -37,7 +37,7 @@ func newFixture(t *testing.T) (*releaseFixture, *Manager) {
 	payload := []byte("relaylab verified release executable")
 	hash := sha256.Sum256(payload)
 	f := &releaseFixture{payload: payload, failPath: map[string]int{}, requests: map[string]int{}, headers: map[string]string{}}
-	f.manifest = manifest{Version: "1.2.2", Commit: strings.Repeat("a", 40), BuildTime: "2026-10-26T01:02:03Z", LauncherProtocol: 2, UsageGuard: RequiredUsageGuard, DatabaseSchema: 1, MinDatabaseSchema: 1, Assets: []manifestAsset{{Name: platformAssetName(runtime.GOOS, runtime.GOARCH), OS: runtime.GOOS, Arch: runtime.GOARCH, Size: int64(len(payload)), SHA256: fmt.Sprintf("%x", hash)}}}
+	f.manifest = manifest{Version: "1.2.2", Commit: strings.Repeat("a", 40), BuildTime: "2026-10-26T01:02:03Z", LauncherProtocol: 2, UsageGuard: RequiredUsageGuard, DatabaseSchema: DatabaseSchema, MinDatabaseSchema: 1, Assets: []manifestAsset{{Name: platformAssetName(runtime.GOOS, runtime.GOARCH), OS: runtime.GOOS, Arch: runtime.GOARCH, Size: int64(len(payload)), SHA256: fmt.Sprintf("%x", hash)}}}
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.requests[r.URL.Path]++
@@ -175,7 +175,10 @@ func TestRequiredManifestValidation(t *testing.T) {
 		}},
 		{"wrong_version", func(f *releaseFixture) { f.manifest.Version = "1.2.3" }},
 		{"wrong_protocol", func(f *releaseFixture) { f.manifest.LauncherProtocol = 1 }},
-		{"schema_min_too_new", func(f *releaseFixture) { f.manifest.DatabaseSchema = 2; f.manifest.MinDatabaseSchema = 2 }},
+		{"schema_min_too_new", func(f *releaseFixture) {
+			f.manifest.DatabaseSchema = DatabaseSchema + 1
+			f.manifest.MinDatabaseSchema = DatabaseSchema + 1
+		}},
 		{"schema_zero", func(f *releaseFixture) { f.manifest.DatabaseSchema = 0 }},
 		{"commit_missing", func(f *releaseFixture) { f.manifest.Commit = "" }},
 		{"time_missing", func(f *releaseFixture) { f.manifest.BuildTime = "" }},
@@ -209,8 +212,8 @@ func TestRequiredManifestValidation(t *testing.T) {
 }
 func TestForwardSchemaWithCompatibleMinimum(t *testing.T) {
 	f, m := newFixture(t)
-	f.manifest.DatabaseSchema = 2
-	if snap, err := m.Check(context.Background()); err != nil || snap.Latest.DatabaseSchema != 2 {
+	f.manifest.DatabaseSchema = DatabaseSchema + 1
+	if snap, err := m.Check(context.Background()); err != nil || snap.Latest.DatabaseSchema != DatabaseSchema+1 {
 		t.Fatalf("forward migration rejected: %v", err)
 	}
 }
@@ -309,7 +312,7 @@ func TestApplyAcknowledgementAndLauncherAuthority(t *testing.T) {
 	if err != nil || snap.State != "validating" || received.OperationID == "" || snap.Operation.ID != received.OperationID {
 		t.Fatalf("acceptance failed: %#v %v", snap, err)
 	}
-	if received.Commit == "" || received.LauncherProtocol != 2 || received.UsageGuard != RequiredUsageGuard || received.DatabaseSchema != 1 {
+	if received.Commit == "" || received.LauncherProtocol != 2 || received.UsageGuard != RequiredUsageGuard || received.DatabaseSchema != DatabaseSchema {
 		t.Fatal("bridge metadata missing")
 	}
 	l := LauncherStatus{OperationID: received.OperationID, State: "failed", ErrorCode: "health_failed", Message: "worker did not come online", UpdatedAt: time.Now().UTC()}

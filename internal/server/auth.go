@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"relaylab/internal/domain"
 	"relaylab/internal/security"
+	"relaylab/internal/store"
 )
 
 func (s *Server) setupStatus(c *gin.Context) {
@@ -98,13 +99,17 @@ func (s *Server) login(c *gin.Context) {
 		encoded = u.PasswordHash
 	}
 	verified := security.VerifyPassword(encoded, b.Password)
-	if e != nil || u == nil || !verified {
+	if e != nil || u == nil || !verified || u.Disabled {
 		fail(c, 401, "invalid_credentials", "账号或密码不正确")
 		return
 	}
 	token := security.Token()
 	ss := domain.Session{TokenHash: security.HashToken(token), AdminID: u.ID, CSRFToken: security.Token(), ExpiresAt: time.Now().UTC().Add(8 * time.Hour)}
-	if e = s.Store.SaveSession(c.Request.Context(), ss); e != nil {
+	if e = s.Store.SaveAuthenticatedSession(c.Request.Context(), ss, u.PasswordHash); e != nil {
+		if errors.Is(e, store.ErrConflict) {
+			fail(c, 401, "invalid_credentials", "账号或密码不正确")
+			return
+		}
 		dbError(c, e)
 		return
 	}
@@ -113,7 +118,8 @@ func (s *Server) login(c *gin.Context) {
 }
 
 // Argon2 uses 64 MiB per verification. This shared pool bounds setup and
-// login work across source IPs before a request body or hash is processed.
+// login and account-password work across source IPs before a request body or
+// hash is processed.
 func (s *Server) authAdmission(c *gin.Context) bool {
 	select {
 	case s.authSlots <- struct{}{}:
@@ -138,7 +144,7 @@ func (s *Server) requireAuth(c *gin.Context) {
 		return
 	}
 	u, e := s.Store.GetAdminByID(c.Request.Context(), ss.AdminID)
-	if e != nil {
+	if e != nil || u.Disabled {
 		fail(c, 401, "unauthorized", "请重新登录")
 		return
 	}

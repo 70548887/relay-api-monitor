@@ -60,6 +60,11 @@ func generate() error {
 	schemas["ArtifactVisibility"] = object{"type": "object", "required": []string{"hidden"}, "properties": object{"hidden": object{"type": "boolean"}}}
 	schemas["Login"] = object{"type": "object", "required": []string{"username", "password"}, "properties": object{"username": object{"type": "string"}, "password": object{"type": "string", "writeOnly": true}}}
 	schemas["Session"] = object{"type": "object", "properties": object{"user": object{"type": "object", "properties": object{"id": object{"type": "string"}, "username": object{"type": "string"}}}, "csrf_token": object{"type": "string"}}}
+	schemas["Account"] = object{"type": "object", "properties": object{"id": object{"type": "string"}, "username": object{"type": "string"}, "disabled": object{"type": "boolean"}, "created_at": object{"type": "string"}, "is_current": object{"type": "boolean"}}}
+	schemas["AccountsResponse"] = object{"type": "object", "properties": object{"items": object{"type": "array", "items": ref("Account")}}}
+	schemas["AccountStatus"] = object{"type": "object", "required": []string{"disabled"}, "properties": object{"disabled": object{"type": "boolean"}}}
+	schemas["AccountPassword"] = object{"type": "object", "required": []string{"password"}, "properties": object{"password": object{"type": "string", "writeOnly": true}}}
+	schemas["MemberSession"] = object{"type": "object", "properties": object{"user": ref("Account"), "csrf_token": object{"type": "string"}}}
 	schemas["GenerateRequest"] = object{"type": "object", "required": []string{"base_url", "api_key", "model", "protocol"}, "properties": object{"base_url": object{"type": "string", "format": "uri"}, "api_key": object{"type": "string", "writeOnly": true}, "protocol": object{"type": "string", "enum": []string{"chat", "responses", "anthropic"}}, "model": object{"type": "string"}, "prompt": object{"type": "string"}, "template_id": object{"type": "string", "enum": []string{"", "cn_html", "en_svg"}}, "max_tokens": object{"type": "integer", "minimum": 1, "maximum": 131072}, "timeout_seconds": object{"type": "integer", "minimum": 1, "maximum": 600}, "generate_path": object{"type": "string"}, "chat_token_field": object{"type": "string"}, "anthropic_version": object{"type": "string"}}}
 	schemas["DiscoveryRequest"] = object{"type": "object", "required": []string{"base_url", "api_key"}, "properties": object{"base_url": object{"type": "string"}, "api_key": object{"type": "string", "writeOnly": true}, "discovery_protocol": object{"type": "string", "enum": []string{"openai", "anthropic"}}, "models_path": object{"type": "string"}, "anthropic_version": object{"type": "string"}}}
 	reasoningProperties := schemas["GenerateRequest"].(object)["properties"].(object)
@@ -138,6 +143,18 @@ func generate() error {
 	add("/auth/me", "get", "查询当前会话及 CSRF Token", "", "Session", true, false)
 	add("/auth/logout", "post", "退出登录", "", "", true, false)
 	add("/auth/password", "post", "修改密码并清除旧会话", "PasswordChange", "", true, false)
+	add("/user/auth/register", "post", "注册普通用户并建立独立用户会话", "Login", "MemberSession", false, false)
+	add("/user/auth/login", "post", "普通用户登录（不授予后台权限）", "Login", "MemberSession", false, false)
+	add("/user/auth/me", "get", "当前普通用户及用户CSRF Token", "", "MemberSession", true, false)
+	add("/user/auth/logout", "post", "退出普通用户会话", "", "", true, false)
+	add("/user/auth/password", "post", "修改普通用户密码并撤销全部用户会话", "PasswordChange", "", true, false)
+	for _, resource := range []string{"users", "members"} {
+		base := "/admin/" + resource
+		add(base, "get", "账户列表（管理员权限）", "", "AccountsResponse", true, false)
+		add(base, "post", "创建账户（管理员权限）", "Login", "Account", true, false)
+		add(base+"/{id}", "patch", "启用或停用账户并撤销会话", "AccountStatus", "Account", true, false)
+		add(base+"/{id}/reset-password", "post", "管理员重置账户密码并撤销会话", "AccountPassword", "", true, false)
+	}
 	for _, r := range []struct{ path, name string }{{"platforms", "Platform"}, {"channels", "Channel"}, {"models", "Model"}} {
 		req := r.name + "Write"
 		base := "/admin/" + r.path
@@ -179,10 +196,15 @@ func generate() error {
 	add("/public/artifacts/{id}", "get", "公开作品详情，不含原始回复", "", "", false, false)
 	add("/public/artifacts/{id}/source", "get", "以附件下载源码", "", "", false, false)
 	paths["/public/artifacts/{id}/source"].(object)["get"].(object)["responses"].(object)["200"] = object{"description": "纯文本源码附件", "content": object{"text/plain": object{"schema": object{"type": "string"}}}}
-	add("/test/models", "post", "临时凭据发现模型，不持久化", "DiscoveryRequest", "", false, false)
-	add("/test/generate", "post", "临时流式测试，无自动重试", "GenerateRequest", "", false, false)
+	add("/test/models", "post", "普通用户登录后使用临时凭据发现模型", "DiscoveryRequest", "", true, false)
+	add("/test/generate", "post", "普通用户登录后流式测试，CSRF保护，无自动重试", "GenerateRequest", "", true, false)
+	for _, path := range []string{"/user/auth/me", "/user/auth/logout", "/user/auth/password", "/test/models", "/test/generate"} {
+		for _, value := range paths[path].(object) {
+			value.(object)["security"] = []any{object{"memberCookieAuth": []string{}}}
+		}
+	}
 	paths["/test/generate"].(object)["post"].(object)["responses"].(object)["200"] = object{"description": "POST SSE；事件 meta、delta、usage、artifact、done、error；客户端断开即取消", "content": object{"text/event-stream": object{"schema": object{"type": "string"}}}}
-	for _, path := range []string{"/setup", "/admin/jobs"} {
+	for _, path := range []string{"/setup", "/admin/jobs", "/user/auth/register", "/admin/users", "/admin/members"} {
 		responses := paths[path].(object)["post"].(object)["responses"].(object)
 		responses["201"] = responses["200"]
 		delete(responses, "200")
@@ -204,7 +226,7 @@ func generate() error {
 			operationValue.(object)["responses"].(object)["413"] = object{"description": "请求体超过2MiB限制"}
 		}
 	}
-	doc := object{"openapi": "3.1.0", "info": object{"title": "Relay Lab API", "version": releaseVersion, "description": "中转监控、分组作品与实时状态及访客临时测试。所有时间为UTC ISO8601。管理写操作需要X-CSRF-Token。JSON请求体必须是单个完整对象且不超过2MiB；浏览器Origin必须同源，非浏览器JSON CLI可省略Origin。默认本机端口42783。分组核验仅标记Token绑定，不证明实际路由或账号身份。"}, "servers": []any{object{"url": "/api/v1"}}, "paths": paths, "components": object{"schemas": schemas, "securitySchemes": object{"cookieAuth": object{"type": "apiKey", "in": "cookie", "name": "relaylab_session"}}}}
+	doc := object{"openapi": "3.1.0", "info": object{"title": "Relay Lab API", "version": releaseVersion, "description": "中转监控、分组作品与实时状态及访客临时测试。所有时间为UTC ISO8601。管理写操作需要X-CSRF-Token。JSON请求体必须是单个完整对象且不超过2MiB；浏览器Origin必须同源，非浏览器JSON CLI可省略Origin。默认本机端口42783。分组核验仅标记Token绑定，不证明实际路由或账号身份。"}, "servers": []any{object{"url": "/api/v1"}}, "paths": paths, "components": object{"schemas": schemas, "securitySchemes": object{"cookieAuth": object{"type": "apiKey", "in": "cookie", "name": "relaylab_session"}, "memberCookieAuth": object{"type": "apiKey", "in": "cookie", "name": "relaylab_user_session"}}}}
 	b, e := json.MarshalIndent(doc, "", "  ")
 	if e != nil {
 		return e

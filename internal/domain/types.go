@@ -209,10 +209,25 @@ type Admin struct {
 	ID           string `json:"id"`
 	Username     string `json:"username"`
 	PasswordHash string `json:"-"`
+	Disabled     bool   `json:"disabled"`
+	CreatedAt    string `json:"created_at"`
 }
 type Session struct {
 	TokenHash string
 	AdminID   string
+	CSRFToken string
+	ExpiresAt time.Time
+}
+type Member struct {
+	ID           string `json:"id"`
+	Username     string `json:"username"`
+	PasswordHash string `json:"-"`
+	Disabled     bool   `json:"disabled"`
+	CreatedAt    string `json:"created_at"`
+}
+type MemberSession struct {
+	TokenHash string
+	MemberID  string
 	CSRFToken string
 	ExpiresAt time.Time
 }

@@ -189,6 +189,7 @@ func TestPublicIntelligenceLatestAttemptUsesOnlyItsSuccessfulVisibleArtifact(t *
 
 func TestVisitorReasoningValidationAndActualMetadata(t *testing.T) {
 	s, _, _, _ := publicFixture(t)
+	cookie, csrf, _ := registerMemberForAuthTest(t, s.Handler(), "visitor-member")
 	calls := 0
 	s.Client = upstream.NewTestClient(visitorDoer(func(r *http.Request) (*http.Response, error) {
 		calls++
@@ -201,12 +202,12 @@ func TestVisitorReasoningValidationAndActualMetadata(t *testing.T) {
 	}))
 	body := visitorBody()
 	body["reasoning_effort"] = "max"
-	w := visitorPOST(t, s, "/api/v1/test/generate", body, "")
+	w := visitorPOSTWithMember(t, s, "/api/v1/test/generate", body, "", cookie, csrf)
 	if w.Code != 400 || !strings.Contains(w.Body.String(), "invalid_reasoning") || calls != 0 {
 		t.Fatalf("validation %d %s calls=%d", w.Code, w.Body.String(), calls)
 	}
 	body["reasoning_effort"], body["timeout_seconds"] = "high", 0
-	w = visitorPOST(t, s, "/api/v1/test/generate", body, "")
+	w = visitorPOSTWithMember(t, s, "/api/v1/test/generate", body, "", cookie, csrf)
 	if w.Code != 200 || calls != 1 || strings.Count(w.Body.String(), `"reasoning_effort":"high"`) != 2 || !strings.Contains(w.Body.String(), "event: done") {
 		t.Fatalf("actual metadata %d %s", w.Code, w.Body.String())
 	}

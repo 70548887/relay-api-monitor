@@ -74,7 +74,7 @@ func runUpdateChecks(ctx context.Context, manager *update.Manager, interval time
 }
 
 func buildMetadata() runtimecontrol.Build {
-	return runtimecontrol.Build{Version: version, Commit: commit, BuildTime: buildTime, OS: runtime.GOOS, Arch: runtime.GOARCH, LauncherProtocol: runtimecontrol.Protocol, DatabaseSchema: 1, MinDatabaseSchema: 1, UsageGuard: 1}
+	return runtimecontrol.Build{Version: version, Commit: commit, BuildTime: buildTime, OS: runtime.GOOS, Arch: runtime.GOARCH, LauncherProtocol: runtimecontrol.Protocol, DatabaseSchema: 2, MinDatabaseSchema: 1, UsageGuard: 1}
 }
 
 func run(args []string) error {
@@ -482,7 +482,7 @@ func restore(dataDir, input string) error {
 	if e != nil {
 		return e
 	}
-	st, e := store.OpenExisting(filepath.Join(temp, "relaylab.db"))
+	st, e := store.OpenForRestore(filepath.Join(temp, "relaylab.db"))
 	if e != nil {
 		return e
 	}

@@ -232,6 +232,7 @@ func TestVisitorInvalidBodiesConsumeAdmissionAndEnforceWholeJSONLimit(t *testing
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, _, _, _ := publicFixture(t)
+			cookie, csrf, _ := registerMemberForAuthTest(t, s.Handler(), "visitor-member")
 			settings, _ := s.Store.GetSettings(context.Background())
 			settings.VisitorModelsPerMinute = 1
 			if err := s.Store.SaveSettings(context.Background(), settings); err != nil {
@@ -243,6 +244,8 @@ func TestVisitorInvalidBodiesConsumeAdmissionAndEnforceWholeJSONLimit(t *testing
 			}))
 			h := s.Handler()
 			r := httptest.NewRequest(http.MethodPost, "/api/v1/test/models", strings.NewReader(tc.body))
+			r.AddCookie(cookie)
+			r.Header.Set("X-CSRF-Token", csrf)
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, r)
 			if w.Code != tc.want {
@@ -250,6 +253,8 @@ func TestVisitorInvalidBodiesConsumeAdmissionAndEnforceWholeJSONLimit(t *testing
 			}
 			body := &countingBody{Reader: strings.NewReader(`{}`)}
 			r = httptest.NewRequest(http.MethodPost, "/api/v1/test/models", body)
+			r.AddCookie(cookie)
+			r.Header.Set("X-CSRF-Token", csrf)
 			w = httptest.NewRecorder()
 			h.ServeHTTP(w, r)
 			if w.Code != 429 || body.reads != 0 || s.total != 0 || len(s.active) != 0 {
@@ -342,11 +347,14 @@ func (w *deadlineRecorder) Write(body []byte) (int, error) {
 func TestVisitorSSEBoundsEachWriteAndStopsAfterWriteFailure(t *testing.T) {
 	for _, failWrite := range []bool{false, true} {
 		s, _, _, _ := publicFixture(t)
+		cookie, csrf, _ := registerMemberForAuthTest(t, s.Handler(), "visitor-member")
 		s.Client = upstream.NewTestClient(visitorDoer(func(*http.Request) (*http.Response, error) {
 			return visitorResponse(`{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`, "application/json"), nil
 		}))
 		encoded, _ := json.Marshal(visitorBody())
 		r := httptest.NewRequest(http.MethodPost, "/api/v1/test/generate", strings.NewReader(string(encoded)))
+		r.AddCookie(cookie)
+		r.Header.Set("X-CSRF-Token", csrf)
 		w := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder(), failWrite: failWrite}
 		s.Handler().ServeHTTP(w, r)
 		if len(w.deadlines) < 2 || len(w.deadlines)%2 != 0 || !w.deadlines[len(w.deadlines)-1].IsZero() {

@@ -356,7 +356,7 @@ func TestFutureSchemaIsRejectedWithoutCreatingTables(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if _, err = db.Exec("PRAGMA user_version=2"); err != nil {
+	if _, err = db.Exec("PRAGMA user_version=3"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = db.Exec("CREATE TABLE future_marker (id INTEGER PRIMARY KEY)"); err != nil {
@@ -375,13 +375,13 @@ func TestFutureSchemaIsRejectedWithoutCreatingTables(t *testing.T) {
 		if e = db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table'").Scan(&tables); e != nil {
 			t.Fatal(e)
 		}
-		if version != 2 || tables != 1 {
+		if version != 3 || tables != 1 {
 			t.Fatalf("future database was changed: version=%d tables=%d", version, tables)
 		}
 	}
 }
 
-func TestCompatibleVersionZeroRemainsReadableAndMigratesToOne(t *testing.T) {
+func TestCompatibleVersionZeroRemainsReadableAndMigratesToCurrent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "legacy.db")
 	a, err := Open(path)
 	if err != nil {
@@ -409,7 +409,7 @@ func TestCompatibleVersionZeroRemainsReadableAndMigratesToOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	if err = c.DB.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 1 {
+	if err = c.DB.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != schemaVersion {
 		t.Fatal("legacy schema was not upgraded", version, err)
 	}
 }

@@ -31,7 +31,7 @@ const (
 	maxReleaseBody        = 4 << 20
 	maxDownloadSize       = 2 << 30
 	LauncherProtocol      = 2
-	DatabaseSchema        = 1
+	DatabaseSchema        = 2
 	RequiredUsageGuard    = 1
 )
 

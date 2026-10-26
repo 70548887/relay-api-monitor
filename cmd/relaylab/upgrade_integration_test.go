@@ -233,7 +233,7 @@ func TestActualBinaryUpgradeAndRecovery(t *testing.T) {
 	}
 	hash := sha256.Sum256(payload)
 	op := "integration-upgrade-001"
-	install := map[string]any{"operation_id": op, "staged_path": staged, "sha256": fmt.Sprintf("%x", hash), "size": len(payload), "version": newVersion, "commit": newCommit, "launcher_protocol": 2, "usage_guard": 1, "database_schema": 1, "min_database_schema": 1}
+	install := map[string]any{"operation_id": op, "staged_path": staged, "sha256": fmt.Sprintf("%x", hash), "size": len(payload), "version": newVersion, "commit": newCommit, "launcher_protocol": 2, "usage_guard": 1, "database_schema": 2, "min_database_schema": 1}
 	status, reply, e := request("POST", control+"/control/replace", install, token)
 	if e != nil || status != 202 {
 		t.Fatalf("install: %d %#v %v", status, reply, e)
@@ -304,7 +304,7 @@ func TestActualBinaryUpgradeAndRecovery(t *testing.T) {
 	brokenCode := `package main
 import ("database/sql";"encoding/json";"os";"path/filepath";"runtime"; _ "modernc.org/sqlite")
 func main(){
- if len(os.Args)>1&&os.Args[1]=="version"{json.NewEncoder(os.Stdout).Encode(map[string]any{"version":"1.2.3","commit":"cccccccccccccccccccccccccccccccccccccccc","build_time":"2026-10-26T00:00:00Z","os":runtime.GOOS,"arch":runtime.GOARCH,"launcher_protocol":2,"usage_guard":1,"database_schema":1,"min_database_schema":1});return}
+ if len(os.Args)>1&&os.Args[1]=="version"{json.NewEncoder(os.Stdout).Encode(map[string]any{"version":"1.2.3","commit":"cccccccccccccccccccccccccccccccccccccccc","build_time":"2026-10-26T00:00:00Z","os":runtime.GOOS,"arch":runtime.GOARCH,"launcher_protocol":2,"usage_guard":1,"database_schema":2,"min_database_schema":1});return}
  var data string;for i,a:=range os.Args{if a=="--data-dir"&&i+1<len(os.Args){data=os.Args[i+1]}}
  if data!=""{db,e:=sql.Open("sqlite",filepath.Join(data,"relaylab.db"));if e==nil{db.Exec("PRAGMA user_version=999");db.Exec("DELETE FROM platforms");db.Close()}}
  os.Exit(17)
@@ -324,7 +324,7 @@ func main(){
 	}
 	brokenHash := sha256.Sum256(brokenPayload)
 	failureID := "integration-failed-start-003"
-	install = map[string]any{"operation_id": failureID, "staged_path": broken, "sha256": fmt.Sprintf("%x", brokenHash), "size": len(brokenPayload), "version": "1.2.3", "commit": strings.Repeat("c", 40), "launcher_protocol": 2, "usage_guard": 1, "database_schema": 1, "min_database_schema": 1}
+	install = map[string]any{"operation_id": failureID, "staged_path": broken, "sha256": fmt.Sprintf("%x", brokenHash), "size": len(brokenPayload), "version": "1.2.3", "commit": strings.Repeat("c", 40), "launcher_protocol": 2, "usage_guard": 1, "database_schema": 2, "min_database_schema": 1}
 	status, reply, e = request("POST", control+"/control/replace", install, token)
 	if e != nil || status != 202 {
 		t.Fatalf("bad candidate request: %d %#v %v", status, reply, e)

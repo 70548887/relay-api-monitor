@@ -162,7 +162,7 @@ func (m *Manager) fetchManifest(ctx context.Context, rawURL, tag string) (manife
 	if _, err = time.Parse(time.RFC3339, meta.BuildTime); err != nil {
 		return manifest{}, fmt.Errorf("%w: invalid build_time", ErrInvalidManifest)
 	}
-	if meta.LauncherProtocol != LauncherProtocol || meta.DatabaseSchema < DatabaseSchema || meta.MinDatabaseSchema <= 0 || meta.MinDatabaseSchema > DatabaseSchema || meta.MinDatabaseSchema > meta.DatabaseSchema {
+	if meta.LauncherProtocol != LauncherProtocol || meta.DatabaseSchema <= 0 || meta.MinDatabaseSchema <= 0 || meta.MinDatabaseSchema > meta.DatabaseSchema || (isNewer(tag, m.build.Version) && (meta.DatabaseSchema < DatabaseSchema || meta.MinDatabaseSchema > DatabaseSchema)) {
 		return manifest{}, fmt.Errorf("%w: launcher protocol or database schema is incompatible", ErrInvalidManifest)
 	}
 	if meta.UsageGuard < 0 || meta.UsageGuard > RequiredUsageGuard || (isNewer(tag, m.build.Version) && meta.UsageGuard != RequiredUsageGuard) {

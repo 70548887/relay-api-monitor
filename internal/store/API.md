@@ -9,6 +9,7 @@ Save methods take values and return error. IDs may be omitted on save and will b
 ```go
 Open(path string) (*Store, error) // opens and migrates
 OpenExisting(path string) (*Store, error) // validates existing schema without migrating
+OpenForRestore(path string) (*Store, error) // validates a legacy backup, then migrates its extracted copy
 (*Store).Close() error
 (*Store).Migrate(ctx context.Context) error
 ListPlatforms(ctx) ([]domain.Platform, error)
@@ -35,10 +36,24 @@ EnsureAdmin(ctx, username, passwordHash string) error
 HasAdmin(ctx) (bool, error)
 GetAdminByUsername(ctx, username string) (*domain.Admin, error)
 GetAdminByID(ctx, id string) (*domain.Admin, error)
+ListAdmins(ctx) ([]domain.Admin, error) // no password hashes
+CreateAdmin(ctx, username, passwordHash string) (*domain.Admin, error)
+SetAdminDisabled(ctx, actorID, adminID string, disabled bool) (*domain.Admin, error)
+ResetAdminPassword(ctx, actorID, adminID, passwordHash string) error
 UpdatePassword(ctx, adminID, passwordHash string) error
 SaveSession(ctx, value domain.Session) error
+SaveAuthenticatedSession(ctx, value domain.Session, passwordHash string) error
 GetSession(ctx, tokenHash string) (*domain.Session, error)
 DeleteSession(ctx, tokenHash string) error
+CreateMember(ctx, username, passwordHash string) (*domain.Member, error)
+ListMembers(ctx) ([]domain.Member, error) // no password hashes
+GetMemberByUsername(ctx, username string) (*domain.Member, error)
+GetMemberByID(ctx, id string) (*domain.Member, error)
+SetMemberDisabled(ctx, memberID string, disabled bool) (*domain.Member, error)
+UpdateMemberPassword(ctx, memberID, passwordHash string) error // revokes all member sessions
+SaveAuthenticatedMemberSession(ctx, value domain.MemberSession, passwordHash string) error
+GetMemberSession(ctx, tokenHash string) (*domain.MemberSession, error)
+DeleteMemberSession(ctx, tokenHash string) error
 ListSchedules(ctx, modelID ...string) ([]domain.Schedule, error)
 GetSchedule(ctx, id string) (*domain.Schedule, error)
 SaveSchedule(ctx, value domain.Schedule) error

@@ -1,6 +1,60 @@
 {
   "components": {
     "schemas": {
+      "Account": {
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_current": {
+            "type": "boolean"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AccountPassword": {
+        "properties": {
+          "password": {
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "type": "object"
+      },
+      "AccountStatus": {
+        "properties": {
+          "disabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "disabled"
+        ],
+        "type": "object"
+      },
+      "AccountsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Account"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "Artifact": {
         "properties": {
           "channel_id": {
@@ -921,6 +975,17 @@
         ],
         "type": "object"
       },
+      "MemberSession": {
+        "properties": {
+          "csrf_token": {
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/Account"
+          }
+        },
+        "type": "object"
+      },
       "Model": {
         "properties": {
           "archived": {
@@ -1832,13 +1897,18 @@
         "in": "cookie",
         "name": "relaylab_session",
         "type": "apiKey"
+      },
+      "memberCookieAuth": {
+        "in": "cookie",
+        "name": "relaylab_user_session",
+        "type": "apiKey"
       }
     }
   },
   "info": {
     "description": "中转监控、分组作品与实时状态及访客临时测试。所有时间为UTC ISO8601。管理写操作需要X-CSRF-Token。JSON请求体必须是单个完整对象且不超过2MiB；浏览器Origin必须同源，非浏览器JSON CLI可省略Origin。默认本机端口42783。分组核验仅标记Token绑定，不证明实际路由或账号身份。",
     "title": "Relay Lab API",
-    "version": "1.2.3"
+    "version": "1.3.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -2774,6 +2844,279 @@
           }
         ],
         "summary": "请求取消"
+      }
+    },
+    "/admin/members": {
+      "get": {
+        "operationId": "admin_members_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountsResponse"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "账户列表（管理员权限）"
+      },
+      "post": {
+        "operationId": "admin_members_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Login"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "创建账户（管理员权限）"
+      }
+    },
+    "/admin/members/{id}": {
+      "patch": {
+        "operationId": "admin_members_id_patch",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountStatus"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "启用或停用账户并撤销会话"
+      }
+    },
+    "/admin/members/{id}/reset-password": {
+      "post": {
+        "operationId": "admin_members_id_reset-password_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountPassword"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "管理员重置账户密码并撤销会话"
       }
     },
     "/admin/models": {
@@ -4042,6 +4385,279 @@
         "summary": "读取在线升级操作状态"
       }
     },
+    "/admin/users": {
+      "get": {
+        "operationId": "admin_users_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountsResponse"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "账户列表（管理员权限）"
+      },
+      "post": {
+        "operationId": "admin_users_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Login"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "创建账户（管理员权限）"
+      }
+    },
+    "/admin/users/{id}": {
+      "patch": {
+        "operationId": "admin_users_id_patch",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountStatus"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "启用或停用账户并撤销会话"
+      }
+    },
+    "/admin/users/{id}/reset-password": {
+      "post": {
+        "operationId": "admin_users_id_reset-password_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountPassword"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "管理员重置账户密码并撤销会话"
+      }
+    },
     "/auth/login": {
       "post": {
         "operationId": "auth_login_post",
@@ -4742,6 +5358,16 @@
     "/test/generate": {
       "post": {
         "operationId": "test_generate_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -4792,12 +5418,27 @@
             "description": "上游失败"
           }
         },
-        "summary": "临时流式测试，无自动重试"
+        "security": [
+          {
+            "memberCookieAuth": []
+          }
+        ],
+        "summary": "普通用户登录后流式测试，CSRF保护，无自动重试"
       }
     },
     "/test/models": {
       "post": {
         "operationId": "test_models_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -4846,7 +5487,300 @@
             "description": "上游失败"
           }
         },
-        "summary": "临时凭据发现模型，不持久化"
+        "security": [
+          {
+            "memberCookieAuth": []
+          }
+        ],
+        "summary": "普通用户登录后使用临时凭据发现模型"
+      }
+    },
+    "/user/auth/login": {
+      "post": {
+        "operationId": "user_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Login"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberSession"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "summary": "普通用户登录（不授予后台权限）"
+      }
+    },
+    "/user/auth/logout": {
+      "post": {
+        "operationId": "user_auth_logout_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "memberCookieAuth": []
+          }
+        ],
+        "summary": "退出普通用户会话"
+      }
+    },
+    "/user/auth/me": {
+      "get": {
+        "operationId": "user_auth_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberSession"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "memberCookieAuth": []
+          }
+        ],
+        "summary": "当前普通用户及用户CSRF Token"
+      }
+    },
+    "/user/auth/password": {
+      "post": {
+        "operationId": "user_auth_password_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "memberCookieAuth": []
+          }
+        ],
+        "summary": "修改普通用户密码并撤销全部用户会话"
+      }
+    },
+    "/user/auth/register": {
+      "post": {
+        "operationId": "user_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Login"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberSession"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "summary": "注册普通用户并建立独立用户会话"
       }
     }
   },

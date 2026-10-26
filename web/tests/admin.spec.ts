@@ -12,7 +12,8 @@ test('isolated administrator setup, CRUD, queue cancellation and password change
   const model=`E2E 临时模型 ${suffix}`;
   const status=await page.request.get('/api/v1/setup/status');
   const initialized=(await status.json()).initialized as boolean;
-  await page.goto('/admin');
+  await page.goto('/admin/login');
+  await expect(page).toHaveURL(initialized?/\/admin\/login(?:\?|$)/:/\/admin\/setup(?:\?|$)/);
   await page.getByLabel('用户名',{exact:true}).fill(username);
   await page.getByLabel('密码',{exact:true}).fill(password);
   if(!initialized)await page.getByLabel('确认密码',{exact:true}).fill(password);
@@ -67,12 +68,14 @@ test('isolated administrator setup, CRUD, queue cancellation and password change
   await page.getByLabel('新密码',{exact:true}).fill(updatedPassword);
   await page.getByLabel('确认新密码',{exact:true}).fill(updatedPassword);
   await page.getByRole('button',{name:'更新密码',exact:true}).click();
+  await expect(page).toHaveURL(/\/admin\/login\?/);
   await expect(page.getByRole('heading',{name:'欢迎回来',exact:true})).toBeVisible();
   await page.getByLabel('用户名',{exact:true}).fill(username);
   await page.getByLabel('密码',{exact:true}).fill(updatedPassword);
   await page.getByRole('button',{name:'登录工作台',exact:true}).click();
   await expect(page.getByRole('heading',{name:'按你的节奏，持续观测。',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'退出登录',exact:true}).click();
+  await expect(page).toHaveURL(/\/admin\/login$/);
   await expect(page.getByRole('heading',{name:'欢迎回来',exact:true})).toBeVisible();
 });
 async function choose(page:Page,label:string,text:string){await page.getByLabel(label,{exact:true}).click();await page.getByTitle(text,{exact:true}).click()}
