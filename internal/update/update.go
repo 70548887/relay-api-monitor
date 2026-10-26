@@ -26,13 +26,15 @@ import (
 )
 
 const (
-	stateFileName         = "update-state.json"
-	launcherStateFileName = "launcher-update.json"
-	maxReleaseBody        = 4 << 20
-	maxDownloadSize       = 2 << 30
-	LauncherProtocol      = 2
-	DatabaseSchema        = 2
-	RequiredUsageGuard    = 1
+	stateFileName           = "update-state.json"
+	launcherStateFileName   = "launcher-update.json"
+	maxReleaseBody          = 4 << 20
+	maxDownloadSize         = 2 << 30
+	LauncherProtocol        = 2
+	DatabaseSchema          = 2
+	RequiredUsageGuard      = 1
+	metadataRequestTimeout  = 2 * time.Minute
+	artifactDownloadTimeout = 15 * time.Minute
 )
 
 var repoPartPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
@@ -200,7 +202,7 @@ func New(cfg config.UpdateConfig, dataDir string, build BuildInfo) (*Manager, er
 		}
 		transport.Proxy = http.ProxyURL(u)
 	}
-	m := &Manager{cfg: cfg, dataDir: abs, build: build, client: &http.Client{Transport: transport, Timeout: 2 * time.Minute}, state: stateJournal{State: "idle", History: []HistoryEntry{}}}
+	m := &Manager{cfg: cfg, dataDir: abs, build: build, client: &http.Client{Transport: transport, Timeout: metadataRequestTimeout}, state: stateJournal{State: "idle", History: []HistoryEntry{}}}
 	m.client.CheckRedirect = m.checkRedirect
 	if err = m.load(); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
@@ -388,6 +390,8 @@ func (m *Manager) Download(ctx context.Context) (Snapshot, error) {
 	return m.snapshotLocked(), nil
 }
 func (m *Manager) download(ctx context.Context, asset Asset, opID string) (path string, err error) {
+	ctx, cancel := context.WithTimeout(ctx, artifactDownloadTimeout)
+	defer cancel()
 	dir := filepath.Join(m.dataDir, "updates", opID)
 	if e := os.MkdirAll(dir, 0700); e != nil {
 		return "", errors.New("update: cannot create staging directory")
@@ -403,7 +407,12 @@ func (m *Manager) download(ctx context.Context, asset Asset, opID string) (path 
 			_ = os.Remove(tempPath)
 		}
 	}()
-	resp, e := m.request(ctx, asset.DownloadURL, "application/octet-stream")
+	// A binary transfer may legitimately outlive the metadata request budget.
+	// Copy the HTTP client rather than mutating shared timeout state; the
+	// operation context still provides a strict, cancelable transfer deadline.
+	downloadClient := *m.client
+	downloadClient.Timeout = 0
+	resp, e := m.requestUsing(ctx, asset.DownloadURL, "application/octet-stream", &downloadClient)
 	if e != nil {
 		return "", e
 	}

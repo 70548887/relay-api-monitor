@@ -261,6 +261,10 @@ func rejectDuplicateJSONKeys(data []byte) error {
 }
 
 func (m *Manager) request(ctx context.Context, rawURL, accept string) (*http.Response, error) {
+	return m.requestUsing(ctx, rawURL, accept, m.client)
+}
+
+func (m *Manager) requestUsing(ctx context.Context, rawURL, accept string, client *http.Client) (*http.Response, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil || !m.allowedURL(u) {
 		return nil, errors.New("update: URL is outside allowed HTTPS GitHub hosts")
@@ -278,7 +282,7 @@ func (m *Manager) request(ctx context.Context, rawURL, accept string) (*http.Res
 	// accepted. This path is never shared with model generation requests.
 	var resp *http.Response
 	for attempt := 0; attempt < 3; attempt++ {
-		resp, err = m.client.Do(req.Clone(ctx))
+		resp, err = client.Do(req.Clone(ctx))
 		if err == nil || ctx.Err() != nil || !retryableGitHubTransport(err) || attempt == 2 {
 			break
 		}

@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -16,6 +18,7 @@ import (
 	"time"
 
 	"relaylab/internal/domain"
+	"relaylab/internal/server"
 )
 
 // Explicit opt-in: normal unit/CI runs never wait for a soak. Only loopback
@@ -143,10 +146,19 @@ func TestLongRunningWorkerStability(t *testing.T) {
 		chatResponse(rw, text)
 	})
 	channels := make([]domain.Channel, 5)
+	platform, err := st.GetPlatform(ctx, baseChannel.PlatformID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	platform.Public = true
+	if err = st.SavePlatform(ctx, *platform); err != nil {
+		t.Fatal(err)
+	}
 	for i := range channels {
 		channels[i] = baseChannel
 		channels[i].ID = fmt.Sprintf("soak-channel-%d", i)
 		channels[i].Name = channels[i].ID
+		channels[i].Public = true
 		if err = st.SaveChannel(ctx, channels[i]); err != nil {
 			t.Fatal(err)
 		}
@@ -156,6 +168,7 @@ func TestLongRunningWorkerStability(t *testing.T) {
 		m.ID = fmt.Sprintf("soak-model-%03d", i)
 		m.ChannelID = channels[i%5].ID
 		m.UpstreamID = fmt.Sprintf("soak-%03d", i)
+		m.Public = true
 		m.ProbeEnabled = true
 		m.ArtifactChinese = true
 		m.ArtifactEnglish = true
@@ -176,6 +189,13 @@ func TestLongRunningWorkerStability(t *testing.T) {
 	if err = st.SaveSettingsAndReconcile(ctx, settings); err != nil {
 		t.Fatal(err)
 	}
+	web := server.New(st, w.vault)
+	web.Client = w.client
+	publicServer := httptest.NewServer(web.Handler())
+	t.Cleanup(publicServer.Close)
+	publicClient := &http.Client{Timeout: 15 * time.Second}
+	var httpQueries int
+	var maxHTTPQuery time.Duration
 	started := time.Now()
 	runCtx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
@@ -243,12 +263,32 @@ func TestLongRunningWorkerStability(t *testing.T) {
 	nextSample := time.Time{}
 	nextCancel := started.Add(45 * time.Second)
 	nextRestart := started.Add(duration / 3)
+	nextHTTP := started
 	for time.Since(started) < duration {
 		select {
 		case err := <-done:
 			done <- err
 			t.Fatalf("worker exited during soak: %v", err)
 		case now := <-ticker.C:
+			if now.After(nextHTTP) {
+				for _, route := range []string{"/api/v1/public/monitor", "/api/v1/public/intelligence?template_id=cn_html"} {
+					began := time.Now()
+					response, e := publicClient.Get(publicServer.URL + route)
+					if e != nil {
+						t.Fatalf("public HTTP query failed: %v", e)
+					}
+					_, readErr := io.Copy(io.Discard, response.Body)
+					response.Body.Close()
+					if response.StatusCode != http.StatusOK || readErr != nil {
+						t.Fatalf("public HTTP query status=%d err=%v", response.StatusCode, readErr)
+					}
+					httpQueries++
+					if elapsed := time.Since(began); elapsed > maxHTTPQuery {
+						maxHTTPQuery = elapsed
+					}
+				}
+				nextHTTP = now.Add(5 * time.Second)
+			}
 			if now.After(nextSample) {
 				current := collect()
 				samples = append(samples, current)
@@ -308,7 +348,28 @@ func TestLongRunningWorkerStability(t *testing.T) {
 	if err = st.DB.QueryRowContext(ctx, "PRAGMA quick_check").Scan(&integrity); err != nil || integrity != "ok" {
 		t.Fatalf("SQLite integrity=%s err=%v", integrity, err)
 	}
-	jobs, err := st.ListJobs(ctx, 100000)
+	// Query the full run, including failures older than a bounded latest-jobs
+	// page. A 24-hour soak can produce substantially more than 100,000 jobs.
+	failureRows, err := st.DB.QueryContext(ctx, "SELECT data FROM jobs WHERE state IN ('failed','claimed','dispatching') AND (state!='failed' OR COALESCE(json_extract(data,'$.error_code'),'') NOT IN ('rate_limited','invalid_response','timeout','truncated','incomplete_stream'))")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var jobs []domain.Job
+	for failureRows.Next() {
+		var encoded string
+		var j domain.Job
+		if err = failureRows.Scan(&encoded); err != nil {
+			failureRows.Close()
+			t.Fatal(err)
+		}
+		if err = json.Unmarshal([]byte(encoded), &j); err != nil {
+			failureRows.Close()
+			t.Fatal(err)
+		}
+		jobs = append(jobs, j)
+	}
+	err = failureRows.Err()
+	failureRows.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,9 +391,16 @@ func TestLongRunningWorkerStability(t *testing.T) {
 	coverage := len(stats.served)
 	maxProbe, maxArtifact, maxChannel, maxSame := stats.maxKind["probe"], stats.maxKind["artifact"], stats.maxChannel, stats.maxSameModel
 	stats.Unlock()
+	var successfulCombinations int
+	if err = st.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM (SELECT model_id,kind,json_extract(data,'$.template_id') FROM jobs WHERE state='succeeded' GROUP BY model_id,kind,json_extract(data,'$.template_id'))").Scan(&successfulCombinations); err != nil {
+		t.Fatal(err)
+	}
 	report := map[string]any{"duration_seconds": time.Since(started).Seconds(), "requested_duration": durationText, "models": 100, "channels": 5, "requests": requests.Load(), "samples": samples, "worker_restarts": workerRestarts, "cancel_requests": cancellationRequests, "injected_429": injected429.Load(), "injected_truncations": injectedTruncation.Load(), "injected_timeouts": injectedTimeout.Load(), "model_kind_coverage": coverage, "max_probe": maxProbe, "max_artifact": maxArtifact, "max_channel": maxChannel, "max_same_model_kind": maxSame, "concurrency_violations": violations, "unexpected_failures": unexpected, "sqlite_integrity": integrity, "running_after_shutdown": running, "real_upstream_requests": 0}
+	report["successful_model_template_combinations"] = successfulCombinations
+	report["public_http_queries"] = httpQueries
+	report["max_public_http_query_ms"] = maxHTTPQuery.Milliseconds()
 	writeJSON("report.json", report)
-	if len(violations) > 0 || len(unexpected) > 0 || running != 0 || (duration >= 5*time.Minute && coverage != 200) {
+	if len(violations) > 0 || len(unexpected) > 0 || running != 0 || (duration >= 5*time.Minute && (coverage != 200 || successfulCombinations != 300)) {
 		t.Fatalf("soak invariants failed; see %s/report.json", output)
 	}
 	if final.Goroutines > 300 {

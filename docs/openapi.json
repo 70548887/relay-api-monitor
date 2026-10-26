@@ -1994,7 +1994,7 @@
   "info": {
     "description": "中转监控、分组作品与实时状态及访客临时测试。所有时间为UTC ISO8601。管理写操作需要X-CSRF-Token。JSON请求体必须是单个完整对象且不超过2MiB；浏览器Origin必须同源，非浏览器JSON CLI可省略Origin。默认本机端口42783。分组核验仅标记Token绑定，不证明实际路由或账号身份。",
     "title": "Relay Lab API",
-    "version": "1.3.1"
+    "version": "1.3.2"
   },
   "openapi": "3.1.0",
   "paths": {
