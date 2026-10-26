@@ -35,6 +35,9 @@ jobs:
         env:
           RELAYLAB_UPGRADE_INTEGRATION: '1'
         run: go test ./cmd/relaylab -run TestActualBinaryUpgradeAndRecovery -count=1 -timeout=360s
+      - name: Verify Windows stop fallback guards
+        if: runner.os == 'Windows'
+        run: powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/test-stop.ps1
 
   release:
     needs: actual-binaries

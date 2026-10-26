@@ -30,6 +30,7 @@ if (Test-Path -LiteralPath $recordPath) {
     foreach ($identity in $state.children) { $child=Get-VerifiedProcess $identity $relayPath; if ($null -ne $child) { $children+=$child } }
     if ($null -ne $process) {
         $shutdownSent=$false
+        $confirmedLegacy=$false
         $metadataPath=Join-Path $DataDir 'launcher.json'
         if ($ControlAddress -eq '' -and (Test-Path -LiteralPath $metadataPath)) {
             $metadata=Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
@@ -46,6 +47,9 @@ if (Test-Path -LiteralPath $recordPath) {
             $legacyStopped=$false
             try {
                 $before=Invoke-RestMethod -Uri ('http://'+$ControlAddress+'/status') -Headers $headers -TimeoutSec 2
+                if(-not $before.state -or $null -eq $before.serve -or $null -eq $before.worker){throw '启动器状态响应不完整'}
+                $protocolProperty=$before.PSObject.Properties['protocol']
+                $confirmedLegacy=($null -eq $protocolProperty -or [string]$protocolProperty.Value -match '^[01]$')
                 foreach($childStatus in @($before.serve,$before.worker)){
                     if($childStatus.pid){
                         $child=Get-Process -Id $childStatus.pid -ErrorAction SilentlyContinue
@@ -55,6 +59,7 @@ if (Test-Path -LiteralPath $recordPath) {
                 Invoke-RestMethod -Method Post -Uri ('http://'+$ControlAddress+'/control/shutdown') -Headers $headers -TimeoutSec 3 | Out-Null
                 $shutdownSent=$true
             } catch {
+                if(-not $confirmedLegacy){throw "启动器关闭请求被拒绝或结果未确认，已保留运行记录：$($_.Exception.Message)"}
                 # Protocol 1 has no shutdown endpoint. Stop children first and
                 # terminate that verified launcher only after their exit.
                 Request-FileStop
@@ -69,10 +74,12 @@ if (Test-Path -LiteralPath $recordPath) {
                 if($null -ne $process){Stop-Process -Id $process.Id -Force}
             }
         }
-        if(-not $shutdownSent){Request-FileStop}
+        if(-not $shutdownSent){
+            if(-not $confirmedLegacy){throw '未确认旧协议，停止未完成，已保留运行记录。'}
+            Request-FileStop
+        }
         if ($null -ne $process -and -not $process.WaitForExit(45000)) { throw "启动器仍在运行，保留记录以便重试：PID $($process.Id)" }
     }
-    if($null -eq $process){Request-FileStop}
     foreach ($child in $children) { if (-not $child.WaitForExit(5000)) { throw "子进程仍在运行，保留记录：PID $($child.Id)" } }
     Remove-Item -LiteralPath $recordPath -Force
 }

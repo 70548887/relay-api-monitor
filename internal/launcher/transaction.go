@@ -118,8 +118,22 @@ func (s *Supervisor) newTransaction(req InstallRequest, kind string) (*Transacti
 	if !operationPattern.MatchString(req.OperationID) {
 		return nil, errors.New("launcher: operation_id must contain 1-80 safe alphanumeric/underscore/hyphen characters")
 	}
-	if old := s.transactionCopy(); old != nil && old.OperationID == req.OperationID {
-		return nil, errors.New("launcher: operation_id already exists; inspect the authoritative journal")
+	if old := s.transactionCopy(); old != nil {
+		if old.OperationID == req.OperationID {
+			return nil, errors.New("launcher: operation_id already exists; inspect the authoritative journal")
+		}
+		switch old.State {
+		case "succeeded", "rolled_back":
+			// A durable, completed operation may be followed by a new one.
+		case "failed":
+			if old.BinaryChanged {
+				return nil, errors.New("launcher: previous operation requires recovery before another operation")
+			}
+		default:
+			// This also blocks pending_restart, recovery_required and future
+			// unknown phases. Their journal must survive until recovery runs.
+			return nil, fmt.Errorf("launcher: operation %s is %s; inspect the authoritative journal", old.OperationID, old.State)
+		}
 	}
 	t := &Transaction{ID: req.OperationID, OperationID: req.OperationID, Kind: kind, Version: req.Version, Commit: req.Commit, Request: req, StartedAt: time.Now().UTC()}
 	if e := s.phase(t, "accepted", 0, "Operation accepted", ""); e != nil {

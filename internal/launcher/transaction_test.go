@@ -505,3 +505,56 @@ func TestProcessControlShutdownJoinsChildrenAndReleasesLock(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+
+func TestNewTransactionPreservesUnfinishedJournal(t *testing.T) {
+	for _, state := range []string{"accepted", "checking", "draining", "stopped", "backed_up", "replacing", "starting", "validating", "rolling_back", "pending_restart", "recovery_required", "future_phase"} {
+		t.Run(state, func(t *testing.T) {
+			s := newProcessSupervisor(t)
+			old, err := s.newTransaction(InstallRequest{OperationID: "existing-operation"}, "update")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = s.phase(old, state, 10, "existing durable transaction", ""); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(s.journalPath())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = s.newTransaction(InstallRequest{OperationID: "replacement-operation"}, "update"); err == nil {
+				t.Fatalf("unfinished %s journal overwritten", state)
+			}
+			after, err := os.ReadFile(s.journalPath())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(after) != string(before) {
+				t.Fatal("journal changed after rejected operation")
+			}
+		})
+	}
+}
+
+func TestNewTransactionOnlyAllowsDurableTerminalStates(t *testing.T) {
+	for _, test := range []struct {
+		state   string
+		changed bool
+		allowed bool
+	}{{"succeeded", true, true}, {"rolled_back", true, true}, {"failed", false, true}, {"failed", true, false}} {
+		t.Run(fmt.Sprintf("%s_changed_%t", test.state, test.changed), func(t *testing.T) {
+			s := newProcessSupervisor(t)
+			old, err := s.newTransaction(InstallRequest{OperationID: "completed-operation"}, "update")
+			if err != nil {
+				t.Fatal(err)
+			}
+			old.BinaryChanged = test.changed
+			if err = s.phase(old, test.state, 100, "previous operation", ""); err != nil {
+				t.Fatal(err)
+			}
+			_, err = s.newTransaction(InstallRequest{OperationID: "next-operation"}, "update")
+			if (err == nil) != test.allowed {
+				t.Fatalf("state %s changed=%t allowed=%t err=%v", test.state, test.changed, test.allowed, err)
+			}
+		})
+	}
+}
