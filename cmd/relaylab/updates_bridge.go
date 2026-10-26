@@ -72,6 +72,7 @@ func wireLauncherUpdater(manager *update.Manager, autoRestart bool) (bool, int) 
 			"operation_id": info.OperationID, "staged_path": path, "sha256": info.SHA256,
 			"size": info.AssetSize, "version": strings.TrimPrefix(info.LatestVersion, "v"), "commit": info.Commit,
 			"launcher_protocol": info.LauncherProtocol, "database_schema": info.DatabaseSchema,
+			"usage_guard":         info.UsageGuard,
 			"min_database_schema": info.MinDatabaseSchema, "defer_restart": !autoRestart,
 		}, nil)
 	})

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"golang.org/x/sys/windows"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -61,6 +62,33 @@ func processAlive(pid int) bool {
 		return true
 	}
 	return code == 259
+}
+func processIdentity(pid int) (string, error) {
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+	if err != nil {
+		if err == windows.ERROR_INVALID_PARAMETER {
+			return "", os.ErrNotExist
+		}
+		return "", err
+	}
+	defer windows.CloseHandle(h)
+	var code uint32
+	if err = windows.GetExitCodeProcess(h, &code); err != nil {
+		return "", err
+	}
+	if code != 259 {
+		return "", os.ErrNotExist
+	}
+	var creation, exit, kernel, user windows.Filetime
+	if err = windows.GetProcessTimes(h, &creation, &exit, &kernel, &user); err != nil {
+		return "", err
+	}
+	name := make([]uint16, 32768)
+	size := uint32(len(name))
+	if err = windows.QueryFullProcessImageName(h, 0, &name[0], &size); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%d:%d|%s", creation.HighDateTime, creation.LowDateTime, strings.ToLower(windows.UTF16ToString(name[:size]))), nil
 }
 
 // Restrict only files owned by this launcher. Never rewrite the data directory

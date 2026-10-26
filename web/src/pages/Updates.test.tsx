@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App } from 'antd';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -31,6 +31,39 @@ beforeEach(()=>{
 afterEach(()=>{cleanup();clients.splice(0).forEach(client=>client.clear());vi.restoreAllMocks();vi.unstubAllGlobals();});
 
 describe('online updates page',()=>{
+  it.each([
+    {kind:'check',label:'检查更新',active:'checking' as const,terminal:'available' as const},
+    {kind:'download',label:'下载并校验',active:'downloading' as const,terminal:'ready' as const},
+  ])('refreshes history when a deferred $kind completes in a status poll',async({kind,label,active,terminal})=>{
+    const initial=fixture();initial.history=[];
+    const accepted=fixture();accepted.history=[];accepted.operation={id:`${kind}-async`,state:active,version:'v1.2.2'};accepted.state=active;
+    const completed=fixture();completed.operation={...accepted.operation,state:terminal};completed.state=terminal;
+    const historyMessage=`${kind} 结果已写入历史`;
+    completed.history=[{id:`${kind}-history`,kind,state:terminal,version:'v1.2.2',message:historyMessage,created_at:'2026-10-26T01:00:00Z'}];
+    let finish!: (snapshot:UpdateSnapshot)=>void;
+    const completion=new Promise<UpdateSnapshot>(resolve=>{finish=resolve;});
+    let current=initial;let activeReads=0;let pendingPoll=false;
+    const fetcher=vi.fn(async(url:RequestInfo|URL,init?:RequestInit)=>{
+      let result:UpdateSnapshot|{history:[]};
+      if(String(url).endsWith('/history'))result={history:[]};
+      else if(init?.method==='POST'){current=accepted;result=accepted;}
+      else if(current===accepted&&++activeReads>1){pendingPoll=true;result=await completion;}
+      else result=current;
+      return new Response(JSON.stringify(result),{status:init?.method==='POST'?202:200,headers:{'Content-Type':'application/json'}});
+    });
+    vi.stubGlobal('fetch',fetcher);
+    const client=new QueryClient({defaultOptions:{queries:{retry:false}}});clients.push(client);
+    render(<QueryClientProvider client={client}><App><UpdatesPage/></App></QueryClientProvider>);
+    await screen.findByText('70548887/relay-api-monitor');
+    fireEvent.click(screen.getByRole('button',{name:label}));
+    await waitFor(()=>expect(fetcher).toHaveBeenCalledWith(`/api/v1/admin/updates/${kind}`,expect.objectContaining({method:'POST'})));
+    expect(screen.queryByText(historyMessage)).not.toBeInTheDocument();
+    await waitFor(()=>expect(pendingPoll).toBe(true),{timeout:4000});
+    await act(async()=>{finish(completed);});
+    expect(await screen.findByText(historyMessage)).toBeInTheDocument();
+    if(terminal==='ready')expect(screen.getByRole('button',{name:'安装升级'})).toBeEnabled();
+    else expect(screen.getByRole('button',{name:'安装升级'})).toBeDisabled();
+  });
   it('uses the snapshot contract and treats download acceptance as progress',async()=>{
     const data=fixture();const accepted=fixture();accepted.operation={id:'download-2',state:'downloading',version:'v1.2.2',progress:20};
     const fetcher=show(data,accepted);

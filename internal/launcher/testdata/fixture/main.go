@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"time"
+
+	"relaylab/internal/runtimecontrol"
 )
 
 var version = "old"
@@ -20,7 +22,7 @@ func main() {
 	}
 	role := os.Args[1]
 	if role == "version" {
-		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"version": releaseVersion(), "commit": "commit-" + version, "os": runtime.GOOS, "arch": runtime.GOARCH, "launcher_protocol": 2, "database_schema": 1, "min_database_schema": 1})
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"version": releaseVersion(), "commit": "commit-" + version, "os": runtime.GOOS, "arch": runtime.GOARCH, "launcher_protocol": 2, "usage_guard": 1, "database_schema": 1, "min_database_schema": 1})
 		return
 	}
 	fs := flag.NewFlagSet(role, flag.ExitOnError)
@@ -64,6 +66,12 @@ func main() {
 	if role != "serve" && role != "worker" {
 		os.Exit(2)
 	}
+	releaseUsage, e := runtimecontrol.AcquireUsage(*dir, role)
+	check(e)
+	defer releaseUsage()
+	for exists(filepath.Join(*dir, "hold-first-report-"+role)) {
+		time.Sleep(20 * time.Millisecond)
+	}
 	if !exists(filepath.Join(*dir, "relaylab.db")) {
 		if role == "worker" {
 			fmt.Fprintln(os.Stderr, "worker opened before database initialization")
@@ -93,6 +101,12 @@ func main() {
 		check(os.WriteFile(tmp, b, 0600))
 		check(replace(tmp, filepath.Join(*dir, "runtime-"+role+".json")))
 		if exists(filepath.Join(*dir, "stop.request")) || exists(filepath.Join(*dir, role+".stop.request")) {
+			if exists(filepath.Join(*dir, "hold-cleanup-"+role)) {
+				check(os.Remove(filepath.Join(*dir, "runtime-"+role+".json")))
+				for exists(filepath.Join(*dir, "hold-cleanup-"+role)) {
+					time.Sleep(20 * time.Millisecond)
+				}
+			}
 			event(*dir, role+" stop "+version)
 			return
 		}

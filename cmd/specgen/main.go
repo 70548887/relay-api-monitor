@@ -98,6 +98,7 @@ func generate() error {
 		for _, field := range []string{"launcher_protocol", "database_schema", "min_database_schema"} {
 			props[field] = object{"type": "integer"}
 		}
+		props["usage_guard"] = object{"type": "integer", "minimum": 0, "maximum": 1}
 	}
 	for _, field := range []string{"bytes_downloaded", "total_bytes", "eta_seconds"} {
 		schemas["UpdateOperation"].(object)["properties"].(object)[field] = object{"type": "integer", "minimum": 0}

@@ -37,3 +37,31 @@ func TestFenceKeepsExistingAdmissionAndRejectsNewWork(t *testing.T) {
 	}
 	leave()
 }
+
+func TestUsageLockCoversInitializationAndCleanup(t *testing.T) {
+	dir := t.TempDir()
+	release, err := AcquireUsage(dir, "serve")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if other, err := AcquireUsage(dir, "serve"); err == nil {
+		_ = other()
+		t.Fatal("second process lifetime admitted")
+	}
+	worker, err := AcquireUsage(dir, "worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = worker()
+	if err = release(); err != nil {
+		t.Fatal(err)
+	}
+	if err = release(); err != nil {
+		t.Fatal("release is not idempotent")
+	}
+	replacement, err := AcquireUsage(dir, "serve")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = replacement()
+}

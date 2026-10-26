@@ -20,6 +20,7 @@ type Build struct {
 	OS                string `json:"os"`
 	Arch              string `json:"arch"`
 	LauncherProtocol  int    `json:"launcher_protocol"`
+	UsageGuard        int    `json:"usage_guard"`
 	DatabaseSchema    int    `json:"database_schema"`
 	MinDatabaseSchema int    `json:"min_database_schema"`
 }

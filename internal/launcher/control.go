@@ -138,7 +138,7 @@ func (s *Supervisor) handleReplace(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
 		return
 	}
-	if !operationPattern.MatchString(req.OperationID) || req.StagedPath == "" || req.Size <= 0 || len(req.SHA256) != 64 || req.Version == "" || req.Commit == "" || req.LauncherProtocol != Protocol || req.DatabaseSchema < 1 || req.MinDatabaseSchema < 1 {
+	if !operationPattern.MatchString(req.OperationID) || req.StagedPath == "" || req.Size <= 0 || len(req.SHA256) != 64 || req.Version == "" || req.Commit == "" || req.LauncherProtocol != Protocol || req.UsageGuard != 1 || req.DatabaseSchema < 1 || req.MinDatabaseSchema < 1 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "required_release_metadata_missing"})
 		return
 	}

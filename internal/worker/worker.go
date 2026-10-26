@@ -42,12 +42,34 @@ type Worker struct {
 	maintenanceFile     string
 	ticking             int
 	ready               atomic.Bool
+	startupLeaseWait    time.Duration
 }
 
 // SetMaintenanceFile connects the worker to the launcher maintenance fence.
 // While the fence exists, heartbeats and leases continue, but no new durable
 // jobs, schedules, discovery calls or cleanup writes are started.
 func (w *Worker) SetMaintenanceFile(path string) { w.maintenanceFile = path }
+
+// Managed restarts can encounter an unexpired lease left by a crashed worker.
+// Waiting never claims work before the database lease is actually acquired.
+func (w *Worker) SetStartupLeaseWait(wait time.Duration) { w.startupLeaseWait = wait }
+
+func (w *Worker) acquireStartupLease(ctx context.Context) (bool, error) {
+	deadline := time.Now().Add(w.startupLeaseWait)
+	for {
+		acquired, err := w.st.AcquireWorkerLease(ctx, w.owner, time.Now().UTC())
+		if err != nil || acquired || !time.Now().Before(deadline) {
+			return acquired, err
+		}
+		timer := time.NewTimer(200 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return false, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
 
 func (w *Worker) RuntimeState() (bool, int, bool) {
 	w.mu.Lock()
@@ -89,7 +111,7 @@ func (w *Worker) Run(ctx context.Context) error {
 		return ErrWorkerActive
 	}
 	defer w.running.Store(false)
-	acquired, err := w.st.AcquireWorkerLease(ctx, w.owner, time.Now().UTC())
+	acquired, err := w.acquireStartupLease(ctx)
 	if err != nil {
 		return err
 	}

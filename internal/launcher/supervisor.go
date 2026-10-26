@@ -93,7 +93,9 @@ func (o Options) withDefaults() (Options, error) {
 		o.GracePeriod = 30 * time.Second
 	}
 	if o.StartupTimeout <= 0 {
-		o.StartupTimeout = 30 * time.Second
+		// A confirmed dead worker can leave its 45-second database lease.
+		// Keep startup validation longer than the worker's bounded lease wait.
+		o.StartupTimeout = 90 * time.Second
 	}
 	if o.DrainTimeout <= 0 || o.DrainTimeout > 660*time.Second {
 		o.DrainTimeout = 660 * time.Second
@@ -116,6 +118,7 @@ type BinaryMetadata struct {
 	OS                string `json:"os"`
 	Arch              string `json:"arch"`
 	LauncherProtocol  int    `json:"launcher_protocol"`
+	UsageGuard        int    `json:"usage_guard"`
 	DatabaseSchema    int    `json:"database_schema"`
 	MinDatabaseSchema int    `json:"min_database_schema"`
 }
@@ -389,17 +392,19 @@ func (s *Supervisor) startLocked(ctx context.Context) error {
 	defer cancel()
 	for _, role := range []string{"serve", "worker"} {
 		c, e := s.startChild(role, metadata)
+		if c != nil {
+			s.mu.Lock()
+			if role == "serve" {
+				s.serve = c
+			} else {
+				s.worker = c
+			}
+			s.mu.Unlock()
+		}
 		if e != nil {
 			_ = s.stopStartupChildren()
 			return s.failStart(e)
 		}
-		s.mu.Lock()
-		if role == "serve" {
-			s.serve = c
-		} else {
-			s.worker = c
-		}
-		s.mu.Unlock()
 		if role == "serve" {
 			// The HTTP child owns first-run database/key initialization. Its
 			// exact ready report must exist before a worker may open that data.
@@ -439,7 +444,7 @@ func (s *Supervisor) startChild(role string, m BinaryMetadata) (*child, error) {
 	env := make([]string, 0, len(os.Environ())+6)
 	for _, v := range os.Environ() {
 		key, _, _ := strings.Cut(v, "=")
-		if key != "RELAYLAB_LAUNCHER" && key != "RELAYLAB_LAUNCHER_INSTANCE" && key != "RELAYLAB_LAUNCHER_CONTROL_ADDR" && key != "RELAYLAB_LAUNCHER_TOKEN" && key != "RELAYLAB_CONFIG" {
+		if key != "RELAYLAB_LAUNCHER" && key != "RELAYLAB_LAUNCHER_INSTANCE" && key != "RELAYLAB_LAUNCHER_CONTROL_ADDR" && key != "RELAYLAB_LAUNCHER_TOKEN" && key != "RELAYLAB_CONFIG" && key != "RELAYLAB_CHILD_STARTED_AT" {
 			env = append(env, v)
 		}
 	}
@@ -453,20 +458,44 @@ func (s *Supervisor) startChild(role string, m BinaryMetadata) (*child, error) {
 	}
 	cmd.Stdout = f
 	cmd.Stderr = f
+	intent := childIntent{Role: role, InstanceID: s.instance, Executable: s.opts.RelayLabPath, StartedAt: time.Now().UTC()}
+	cmd.Env = append(cmd.Env, "RELAYLAB_CHILD_STARTED_AT="+intent.StartedAt.Format(time.RFC3339Nano))
+	if e = s.saveChildIntent(intent); e != nil {
+		_ = f.Close()
+		return nil, e
+	}
 	if e = cmd.Start(); e != nil {
 		_ = f.Close()
+		_ = removeIfExists(s.childIntentPath(role))
 		return nil, e
 	}
 	c := &child{role: role, cmd: cmd, done: make(chan struct{}), started: time.Now().UTC(), instance: s.instance, metadata: m}
 	go func() {
 		c.err = cmd.Wait()
 		_ = f.Close()
+		_ = s.removeChildIntent(role, c.instance, c.cmd.Process.Pid)
 		close(c.done)
 		select {
 		case s.events <- c:
 		default:
 		}
 	}()
+	intent.PID = cmd.Process.Pid
+	identity, identityErr := processIdentity(intent.PID)
+	if identityErr == nil {
+		intent.ProcessIdentity = identity
+	}
+	if e = s.saveChildIntent(intent); e != nil {
+		return c, e
+	}
+	if identityErr != nil {
+		select {
+		case <-c.done:
+			return c, nil
+		default:
+		}
+		return c, fmt.Errorf("launcher: child identity: %w", identityErr)
+	}
 	return c, nil
 }
 func (s *Supervisor) children() []*child {
@@ -557,6 +586,9 @@ func (s *Supervisor) drainLocked() error {
 }
 func (s *Supervisor) Resume() error { s.opMu.Lock(); defer s.opMu.Unlock(); return s.resumeLocked() }
 func (s *Supervisor) resumeLocked() error {
+	if err := s.unmanagedIntentError(); err != nil {
+		return s.recoveryBlocked(err)
+	}
 	if e := removeIfExists(filepath.Join(s.opts.DataDir, "maintenance.request")); e != nil {
 		return e
 	}
@@ -576,6 +608,9 @@ func (s *Supervisor) Stop(ctx context.Context) error {
 func (s *Supervisor) stopLocked(ctx context.Context) error {
 	children := s.children()
 	if children[0] == nil && children[1] == nil {
+		if err := s.unmanagedIntentError(); err != nil {
+			return s.recoveryBlocked(err)
+		}
 		s.setState(StateStopped, nil)
 		return nil
 	}
@@ -663,6 +698,9 @@ func (s *Supervisor) Restart(ctx context.Context) error {
 // Recovery fences and closes children surviving a previous launcher. It never
 // kills by a stale PID: an ambiguous process leaves the fence in place.
 func (s *Supervisor) quiesceOrphans(ctx context.Context) error {
+	if err := s.quiesceRegistered(ctx); err != nil {
+		return err
+	}
 	var live []RuntimeReport
 	for _, role := range []string{"worker", "serve"} {
 		managedRole := false
@@ -755,7 +793,7 @@ func readBinaryMetadata(ctx context.Context, path string) (BinaryMetadata, error
 	if e = json.Unmarshal(out, &m); e != nil {
 		return m, fmt.Errorf("launcher: binary requires manual protocol-2 bootstrap: %w", e)
 	}
-	if m.LauncherProtocol != Protocol || m.Version == "" || m.Commit == "" || m.OS != runtime.GOOS || m.Arch != runtime.GOARCH || m.DatabaseSchema < 1 || m.MinDatabaseSchema < 1 || m.MinDatabaseSchema > m.DatabaseSchema {
+	if m.LauncherProtocol != Protocol || m.UsageGuard != 1 || m.Version == "" || m.Commit == "" || m.OS != runtime.GOOS || m.Arch != runtime.GOARCH || m.DatabaseSchema < 1 || m.MinDatabaseSchema < 1 || m.MinDatabaseSchema > m.DatabaseSchema {
 		return m, errors.New("launcher: incompatible binary metadata; protocol-2 bootstrap required")
 	}
 	return m, nil

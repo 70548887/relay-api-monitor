@@ -34,6 +34,22 @@ var version = "dev"
 var commit = "unknown"
 var buildTime = "unknown"
 
+type automaticUpdater interface {
+	Check(context.Context) (update.Snapshot, error)
+	Download(context.Context) (update.Snapshot, error)
+	Config() config.UpdateConfig
+}
+
+func runAutomaticCheck(ctx context.Context, manager automaticUpdater) {
+	snapshot, err := manager.Check(ctx)
+	if err != nil {
+		return
+	}
+	if manager.Config().AutoDownload && snapshot.State == "available" && snapshot.Latest != nil && snapshot.Latest.Available && snapshot.Latest.Compatible {
+		_, _ = manager.Download(ctx)
+	}
+}
+
 func main() {
 	if e := run(os.Args[1:]); e != nil {
 		log.Printf("Relay Lab: %v", e)
@@ -52,21 +68,20 @@ func runUpdateChecks(ctx context.Context, manager *update.Manager, interval time
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if _, err := manager.Check(ctx); err != nil {
-				continue
-			}
-			if manager.Config().AutoDownload {
-				_, _ = manager.Download(ctx)
-			}
+			runAutomaticCheck(ctx, manager)
 		}
 	}
 }
 
 func buildMetadata() runtimecontrol.Build {
-	return runtimecontrol.Build{Version: version, Commit: commit, BuildTime: buildTime, OS: runtime.GOOS, Arch: runtime.GOARCH, LauncherProtocol: runtimecontrol.Protocol, DatabaseSchema: 1, MinDatabaseSchema: 1}
+	return runtimecontrol.Build{Version: version, Commit: commit, BuildTime: buildTime, OS: runtime.GOOS, Arch: runtime.GOARCH, LauncherProtocol: runtimecontrol.Protocol, DatabaseSchema: 1, MinDatabaseSchema: 1, UsageGuard: 1}
 }
 
 func run(args []string) error {
+	processStartedAt := time.Now()
+	if stamp, err := time.Parse(time.RFC3339Nano, os.Getenv("RELAYLAB_CHILD_STARTED_AT")); err == nil {
+		processStartedAt = stamp
+	}
 	if len(args) == 0 {
 		fmt.Println("Relay Lab — 中转 API 监控与模型测试\n命令: serve | worker | init-admin | backup | restore | version\n运行 scripts/start.ps1 启动网站和任务进程。")
 		return nil
@@ -122,6 +137,15 @@ func run(args []string) error {
 	if args[0] == "restore" {
 		return restore(cfg.DataDir, *input)
 	}
+	if args[0] == "serve" || args[0] == "worker" {
+		releaseUsage, guardErr := runtimecontrol.AcquireUsage(cfg.DataDir, args[0])
+		if guardErr != nil {
+			return guardErr
+		}
+		// Registered before any database defers: this lock outlives every DB
+		// handle and the runtime report, including startup and shutdown.
+		defer releaseUsage()
+	}
 	dbPath := filepath.Join(cfg.DataDir, "relaylab.db")
 	_, statErr := os.Stat(dbPath)
 	if statErr != nil && !os.IsNotExist(statErr) {
@@ -146,7 +170,13 @@ func run(args []string) error {
 	if e != nil {
 		return e
 	}
-	defer st.Close()
+	var stopReport func()
+	defer func() {
+		_ = st.Close()
+		if stopReport != nil {
+			stopReport()
+		}
+	}()
 	// Fail fast on a mismatched master key instead of scheduling doomed requests.
 	channels, e := st.ListChannels(context.Background())
 	if e != nil {
@@ -162,7 +192,18 @@ func run(args []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	if args[0] == "serve" || args[0] == "worker" {
-		startedAt := time.Now()
+		checkStop := func() bool {
+			for _, name := range []string{"stop.request", args[0] + ".stop.request"} {
+				if info, err := os.Stat(filepath.Join(cfg.DataDir, name)); err == nil && !info.ModTime().Before(processStartedAt) {
+					cancel()
+					return true
+				}
+			}
+			return false
+		}
+		if checkStop() {
+			return nil
+		}
 		go func() {
 			ticker := time.NewTicker(200 * time.Millisecond)
 			defer ticker.Stop()
@@ -171,11 +212,8 @@ func run(args []string) error {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					for _, name := range []string{"stop.request", args[0] + ".stop.request"} {
-						if info, err := os.Stat(filepath.Join(cfg.DataDir, name)); err == nil && !info.ModTime().Before(startedAt) {
-							cancel()
-							return
-						}
+					if checkStop() {
+						return
 					}
 				}
 			}
@@ -229,14 +267,15 @@ func run(args []string) error {
 			return e
 		}
 		log.Printf("Relay Lab %s 已启动 http://%s", version, ln.Addr())
-		stopReport := runtimecontrol.StartReporter(ctx, cfg.DataDir, "serve", buildMetadata(), app.RuntimeState)
-		defer stopReport()
+		stopReport = runtimecontrol.StartReporter(context.Background(), cfg.DataDir, "serve", buildMetadata(), app.RuntimeState)
 		return serveHTTP(ctx, hs, ln)
 	case "worker":
 		w := worker.New(st, vault, upstream.New())
 		w.SetMaintenanceFile(filepath.Join(cfg.DataDir, "maintenance.request"))
-		stopReport := runtimecontrol.StartReporter(ctx, cfg.DataDir, "worker", buildMetadata(), w.RuntimeState)
-		defer stopReport()
+		if os.Getenv("RELAYLAB_LAUNCHER_INSTANCE") != "" {
+			w.SetStartupLeaseWait(store.WorkerLeaseDuration + 5*time.Second)
+		}
+		stopReport = runtimecontrol.StartReporter(context.Background(), cfg.DataDir, "worker", buildMetadata(), w.RuntimeState)
 		err := w.Run(ctx)
 		if errors.Is(err, context.Canceled) {
 			return nil

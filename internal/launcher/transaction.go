@@ -25,6 +25,7 @@ type InstallRequest struct {
 	Commit            string `json:"commit"`
 	BackupDir         string `json:"backup_dir,omitempty"` // compatibility only; never trusted
 	LauncherProtocol  int    `json:"launcher_protocol"`
+	UsageGuard        int    `json:"usage_guard"`
 	DatabaseSchema    int    `json:"database_schema"`
 	MinDatabaseSchema int    `json:"min_database_schema"`
 	DeferRestart      bool   `json:"defer_restart"`
@@ -143,7 +144,7 @@ func (s *Supervisor) newTransaction(req InstallRequest, kind string) (*Transacti
 }
 func (s *Supervisor) validateInstall(ctx context.Context, req InstallRequest) (InstallRequest, BinaryMetadata, error) {
 	var m BinaryMetadata
-	if !operationPattern.MatchString(req.OperationID) || req.Size <= 0 || req.Version == "" || req.Commit == "" || req.LauncherProtocol != Protocol || req.DatabaseSchema < 1 || req.MinDatabaseSchema < 1 || req.MinDatabaseSchema > req.DatabaseSchema {
+	if !operationPattern.MatchString(req.OperationID) || req.Size <= 0 || req.Version == "" || req.Commit == "" || req.LauncherProtocol != Protocol || req.UsageGuard != 1 || req.DatabaseSchema < 1 || req.MinDatabaseSchema < 1 || req.MinDatabaseSchema > req.DatabaseSchema {
 		return req, m, errors.New("launcher: required operation/hash/size/version/commit/protocol/schema metadata missing or incompatible")
 	}
 	digest, e := hex.DecodeString(req.SHA256)
@@ -189,7 +190,7 @@ func (s *Supervisor) validateInstall(ctx context.Context, req InstallRequest) (I
 	if e != nil {
 		return req, m, e
 	}
-	if m.Version != req.Version || m.Commit != req.Commit || m.LauncherProtocol != req.LauncherProtocol || m.DatabaseSchema != req.DatabaseSchema || m.MinDatabaseSchema != req.MinDatabaseSchema {
+	if m.Version != req.Version || m.Commit != req.Commit || m.LauncherProtocol != req.LauncherProtocol || m.UsageGuard != req.UsageGuard || m.DatabaseSchema != req.DatabaseSchema || m.MinDatabaseSchema != req.MinDatabaseSchema {
 		return req, m, errors.New("launcher: staged executable metadata does not match release manifest")
 	}
 	req.StagedPath = resolved
@@ -248,38 +249,45 @@ func (s *Supervisor) installLocked(ctx context.Context, t *Transaction, fromRest
 	if e = s.phase(t, "stopped", 30, "Both children have closed their resources", ""); e != nil {
 		return e
 	}
+	releaseUsage, e := s.holdDataUsage()
+	if e != nil {
+		return e
+	}
+	defer releaseUsage()
+	failOffline := func(cause error) error { releaseUsage(); return s.failBeforeReplacement(ctx, t, cause) }
+	rollbackOffline := func(cause error) error { releaseUsage(); return s.rollbackFailure(t, cause) }
 	opdir := filepath.Join(s.opts.BackupDir, "update", t.ID)
 	if e = os.MkdirAll(opdir, 0700); e != nil {
-		return s.failBeforeReplacement(ctx, t, e)
+		return failOffline(e)
 	}
 	if e = protectDirectory(opdir); e != nil {
-		return s.failBeforeReplacement(ctx, t, e)
+		return failOffline(e)
 	}
 	t.OldBinary = filepath.Join(opdir, "relaylab"+filepath.Ext(s.opts.RelayLabPath))
 	t.Snapshot = filepath.Join(opdir, "snapshot.zip")
 	if e = copyFile(s.opts.RelayLabPath, t.OldBinary); e != nil {
-		return s.failBeforeReplacement(ctx, t, e)
+		return failOffline(e)
 	}
 	if t.OldSHA256, _, e = SHA256File(t.OldBinary); e != nil {
-		return s.failBeforeReplacement(ctx, t, e)
+		return failOffline(e)
 	}
 	oldSize := int64(0)
 	_, oldSize, e = SHA256File(t.OldBinary)
 	if e != nil {
-		return s.failBeforeReplacement(ctx, t, e)
+		return failOffline(e)
 	}
 	b, _ := json.MarshalIndent(binaryBackup{Metadata: current, SHA256: t.OldSHA256, Size: oldSize, CreatedAt: time.Now().UTC()}, "", "  ")
 	if e = atomicWrite(filepath.Join(opdir, "binary.json"), append(b, '\n'), 0600); e != nil {
-		return s.failBeforeReplacement(ctx, t, e)
+		return failOffline(e)
 	}
 	if e = s.runDataCommand(ctx, t.OldBinary, "backup", "--data-dir", s.opts.DataDir, "--output", t.Snapshot); e != nil {
-		return s.failBeforeReplacement(ctx, t, e)
+		return failOffline(e)
 	}
 	if e = protectFile(t.Snapshot); e != nil {
-		return s.failBeforeReplacement(ctx, t, e)
+		return failOffline(e)
 	}
 	if t.SnapshotSHA256, _, e = SHA256File(t.Snapshot); e != nil {
-		return s.failBeforeReplacement(ctx, t, e)
+		return failOffline(e)
 	}
 	if e = s.phase(t, "backed_up", 45, "Consistent database/key snapshot and previous executable saved", ""); e != nil {
 		return e
@@ -288,7 +296,7 @@ func (s *Supervisor) installLocked(ctx context.Context, t *Transaction, fromRest
 	// hash and metadata are checked again on that exact replacement artifact.
 	prepared, e := s.prepareExecutable(req)
 	if e != nil {
-		return s.failBeforeReplacement(ctx, t, e)
+		return failOffline(e)
 	}
 	defer os.Remove(prepared)
 	t.BinaryChanged = true
@@ -296,15 +304,16 @@ func (s *Supervisor) installLocked(ctx context.Context, t *Transaction, fromRest
 		return e
 	}
 	if e = atomicRename(prepared, s.opts.RelayLabPath); e != nil {
-		return s.rollbackFailure(t, e)
+		return rollbackOffline(e)
 	}
 	if e = syncDirectory(filepath.Dir(s.opts.RelayLabPath)); e != nil {
-		return s.rollbackFailure(t, e)
+		return rollbackOffline(e)
 	}
 	t.DataMayHaveChanged = true
 	if e = s.phase(t, "starting", 70, "Starting the target binary behind the maintenance fence", ""); e != nil {
-		return s.rollbackFailure(t, e)
+		return rollbackOffline(e)
 	}
+	releaseUsage()
 	if e = s.startLocked(ctx); e != nil {
 		return s.rollbackFailure(t, e)
 	}
@@ -393,6 +402,11 @@ func (s *Supervisor) restoreTransaction(ctx context.Context, t *Transaction, cau
 	if e := s.stopLocked(ctx); e != nil {
 		return e
 	}
+	releaseUsage, e := s.holdDataUsage()
+	if e != nil {
+		return e
+	}
+	defer releaseUsage()
 	hash, _, e := SHA256File(t.OldBinary)
 	if e != nil {
 		return e
@@ -442,6 +456,7 @@ func (s *Supervisor) restoreTransaction(ctx context.Context, t *Transaction, cau
 	if e = replaceFile(t.OldBinary, s.opts.RelayLabPath); e != nil {
 		return e
 	}
+	releaseUsage()
 	if e = s.startLocked(ctx); e != nil {
 		return e
 	}
@@ -629,7 +644,7 @@ func (s *Supervisor) latestRollback(ctx context.Context) (InstallRequest, error)
 		return req, e
 	}
 	m := chosen.Metadata
-	return InstallRequest{OperationID: id, StagedPath: stage, SHA256: chosen.SHA256, Size: chosen.Size, Version: m.Version, Commit: m.Commit, LauncherProtocol: m.LauncherProtocol, DatabaseSchema: m.DatabaseSchema, MinDatabaseSchema: m.MinDatabaseSchema}, nil
+	return InstallRequest{OperationID: id, StagedPath: stage, SHA256: chosen.SHA256, Size: chosen.Size, Version: m.Version, Commit: m.Commit, LauncherProtocol: m.LauncherProtocol, UsageGuard: m.UsageGuard, DatabaseSchema: m.DatabaseSchema, MinDatabaseSchema: m.MinDatabaseSchema}, nil
 }
 
 // Legacy in-process API now derives every required property from the staged
@@ -650,5 +665,5 @@ func (s *Supervisor) ReplaceBinary(ctx context.Context, path, sha, _ string) err
 	if e != nil {
 		return e
 	}
-	return s.Install(ctx, InstallRequest{OperationID: "update-" + id[:24], StagedPath: path, SHA256: sha, Size: size, Version: m.Version, Commit: m.Commit, LauncherProtocol: m.LauncherProtocol, DatabaseSchema: m.DatabaseSchema, MinDatabaseSchema: m.MinDatabaseSchema})
+	return s.Install(ctx, InstallRequest{OperationID: "update-" + id[:24], StagedPath: path, SHA256: sha, Size: size, Version: m.Version, Commit: m.Commit, LauncherProtocol: m.LauncherProtocol, UsageGuard: m.UsageGuard, DatabaseSchema: m.DatabaseSchema, MinDatabaseSchema: m.MinDatabaseSchema})
 }

@@ -34,6 +34,7 @@ type manifest struct {
 	Commit            string          `json:"commit"`
 	BuildTime         string          `json:"build_time"`
 	LauncherProtocol  int             `json:"launcher_protocol"`
+	UsageGuard        int             `json:"usage_guard"`
 	DatabaseSchema    int             `json:"database_schema"`
 	MinDatabaseSchema int             `json:"min_database_schema"`
 	Assets            []manifestAsset `json:"assets"`
@@ -47,11 +48,21 @@ type manifestAsset struct {
 }
 
 func (m *Manager) fetchLatest(ctx context.Context) (Release, error) {
+	return m.fetchRelease(ctx, "")
+}
+
+// A recovered download resolves its saved tag rather than whichever release is
+// latest now. URLs are deliberately transient; identity is checked separately.
+func (m *Manager) fetchRelease(ctx context.Context, tag string) (Release, error) {
 	base := m.apiBase
 	if base == "" {
 		base = "https://api.github.com"
 	}
-	endpoint := strings.TrimRight(base, "/") + "/repos/" + url.PathEscape(m.cfg.GitHubOwner) + "/" + url.PathEscape(m.cfg.GitHubRepo) + "/releases/latest"
+	releasePath := "latest"
+	if tag != "" {
+		releasePath = "tags/" + url.PathEscape(tag)
+	}
+	endpoint := strings.TrimRight(base, "/") + "/repos/" + url.PathEscape(m.cfg.GitHubOwner) + "/" + url.PathEscape(m.cfg.GitHubRepo) + "/releases/" + releasePath
 	resp, err := m.request(ctx, endpoint, "application/vnd.github+json")
 	if err != nil {
 		return Release{}, err
@@ -60,6 +71,9 @@ func (m *Manager) fetchLatest(ctx context.Context) (Release, error) {
 	var raw githubRelease
 	if decodeBounded(resp.Body, &raw, false) != nil {
 		return Release{}, errors.New("update: invalid GitHub release response")
+	}
+	if tag != "" && raw.TagName != tag {
+		return Release{}, ErrReleaseChanged
 	}
 	v, valid := parseVersion(raw.TagName)
 	if !valid {
@@ -94,7 +108,7 @@ func (m *Manager) fetchLatest(ctx context.Context) (Release, error) {
 	if err != nil {
 		return Release{}, err
 	}
-	rel := Release{TagName: raw.TagName, Name: m.safeText(raw.Name), URL: raw.HTMLURL, PublishedAt: published, Body: m.safeText(raw.Body), Assets: []Asset{}, Commit: meta.Commit, BuildTime: meta.BuildTime, LauncherProtocol: meta.LauncherProtocol, DatabaseSchema: meta.DatabaseSchema, MinDatabaseSchema: meta.MinDatabaseSchema}
+	rel := Release{TagName: raw.TagName, Name: m.safeText(raw.Name), URL: raw.HTMLURL, PublishedAt: published, Body: m.safeText(raw.Body), Assets: []Asset{}, Commit: meta.Commit, BuildTime: meta.BuildTime, LauncherProtocol: meta.LauncherProtocol, UsageGuard: meta.UsageGuard, DatabaseSchema: meta.DatabaseSchema, MinDatabaseSchema: meta.MinDatabaseSchema}
 	for _, item := range meta.Assets {
 		a, exists := assets[item.Name]
 		if !exists || a.Size != item.Size {
@@ -150,6 +164,9 @@ func (m *Manager) fetchManifest(ctx context.Context, rawURL, tag string) (manife
 	}
 	if meta.LauncherProtocol != LauncherProtocol || meta.DatabaseSchema < DatabaseSchema || meta.MinDatabaseSchema <= 0 || meta.MinDatabaseSchema > DatabaseSchema || meta.MinDatabaseSchema > meta.DatabaseSchema {
 		return manifest{}, fmt.Errorf("%w: launcher protocol or database schema is incompatible", ErrInvalidManifest)
+	}
+	if meta.UsageGuard < 0 || meta.UsageGuard > RequiredUsageGuard || (isNewer(tag, m.build.Version) && meta.UsageGuard != RequiredUsageGuard) {
+		return manifest{}, fmt.Errorf("%w: usage guard is incompatible; use a full installation package", ErrInvalidManifest)
 	}
 	if len(meta.Assets) == 0 {
 		return manifest{}, fmt.Errorf("%w: assets are empty", ErrInvalidManifest)

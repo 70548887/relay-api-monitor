@@ -39,6 +39,7 @@ class PackagingTests(unittest.TestCase):
         manifest = json.loads((self.output / 'manifest.json').read_text())
         self.assertEqual(len(manifest['assets']), 9)
         self.assertEqual(manifest['launcher_protocol'], 2)
+        self.assertEqual(manifest['usage_guard'], 1)
         self.assertEqual(manifest['min_database_schema'], 1)
         for goos, arch in release.TARGETS:
             stem = f'relaylab-{goos}-{arch}-9.9.9'
@@ -56,6 +57,21 @@ class PackagingTests(unittest.TestCase):
             self.assertFalse(any(name.endswith(('config.yaml', 'master.key', '.env.production', 'relaylab.env', 'private.json')) for name in files))
         self.assertNotIn('dist/', (self.output / 'SHA256SUMS').read_text())
         release.validate_release(self.output, '9.9.9')
+
+    def test_manifest_requires_usage_guard(self):
+        self.package()
+        path = self.output / 'manifest.json'
+        original = json.loads(path.read_text())
+        for guard in (None, 0, 2):
+            with self.subTest(usage_guard=guard):
+                manifest = dict(original)
+                if guard is None:
+                    manifest.pop('usage_guard')
+                else:
+                    manifest['usage_guard'] = guard
+                path.write_text(json.dumps(manifest))
+                with self.assertRaisesRegex(ValueError, 'compatibility contract'):
+                    release.validate_release(self.output, '9.9.9')
 
     def test_tampering_or_incomplete_release_is_rejected(self):
         self.package()

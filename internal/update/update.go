@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"relaylab/internal/config"
 )
@@ -31,6 +32,7 @@ const (
 	maxDownloadSize       = 2 << 30
 	LauncherProtocol      = 2
 	DatabaseSchema        = 1
+	RequiredUsageGuard    = 1
 )
 
 var repoPartPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
@@ -46,6 +48,7 @@ var (
 	ErrRollbackUnavailable = errors.New("update: launcher protocol 2 is required to roll back")
 	ErrStateDurability     = errors.New("update: cannot durably write update state")
 	ErrInvalidManifest     = errors.New("update: invalid or incompatible required manifest")
+	ErrReleaseChanged      = errors.New("update: saved release changed; check for updates again")
 )
 
 type BuildInfo struct {
@@ -75,6 +78,7 @@ type Release struct {
 	Commit            string    `json:"commit,omitempty"`
 	BuildTime         string    `json:"build_time,omitempty"`
 	LauncherProtocol  int       `json:"launcher_protocol"`
+	UsageGuard        int       `json:"usage_guard"`
 	DatabaseSchema    int       `json:"database_schema"`
 	MinDatabaseSchema int       `json:"min_database_schema"`
 }
@@ -92,6 +96,7 @@ type UpdateInfo struct {
 	OperationID       string     `json:"operation_id,omitempty"`
 	Commit            string     `json:"commit"`
 	LauncherProtocol  int        `json:"launcher_protocol"`
+	UsageGuard        int        `json:"usage_guard"`
 	DatabaseSchema    int        `json:"database_schema"`
 	MinDatabaseSchema int        `json:"min_database_schema"`
 }
@@ -323,11 +328,31 @@ func (m *Manager) Download(ctx context.Context) (Snapshot, error) {
 	}
 	info := *m.state.Latest
 	asset, ok := selectAsset(m.state.Release.Assets, runtime.GOOS, runtime.GOARCH)
-	if !ok || asset.DownloadURL == "" || targetBinding(makeInfo(m.build, *m.state.Release, asset)) != targetBinding(info) {
+	if !ok || targetBinding(makeInfo(m.build, *m.state.Release, asset)) != targetBinding(info) {
 		out, err := m.finishErrorLocked(ErrNoRelease)
 		m.busy = false
 		m.mu.Unlock()
 		return out, err
+	}
+	if asset.DownloadURL == "" {
+		// Journal recovery intentionally has no asset URLs. Fetch the original
+		// tag and validate its manifest before reattaching transient URLs.
+		m.mu.Unlock()
+		release, err := m.fetchRelease(ctx, info.LatestVersion)
+		m.mu.Lock()
+		if err == nil {
+			asset, ok = selectAsset(release.Assets, runtime.GOOS, runtime.GOARCH)
+			if !ok || targetBinding(makeInfo(m.build, release, asset)) != targetBinding(info) {
+				err = ErrReleaseChanged
+			}
+		}
+		if err != nil {
+			out, err := m.finishErrorLocked(err)
+			m.busy = false
+			m.mu.Unlock()
+			return out, err
+		}
+		m.state.Release = &release
 	}
 	opID := m.state.Operation.ID
 	m.state.Operation.Version = info.LatestVersion
@@ -627,10 +652,10 @@ func (m *Manager) markVerifiedLocked(name, path string) {
 }
 func validInfo(info UpdateInfo) bool {
 	_, ok := parseVersion(info.LatestVersion)
-	return ok && info.Available && info.Compatible && info.AssetName == platformAssetName(runtime.GOOS, runtime.GOARCH) && info.AssetSize > 0 && info.AssetSize <= maxDownloadSize && digestPattern.MatchString(info.SHA256) && commitPattern.MatchString(info.Commit) && info.LauncherProtocol == LauncherProtocol && info.DatabaseSchema >= DatabaseSchema && info.MinDatabaseSchema > 0 && info.MinDatabaseSchema <= DatabaseSchema && info.MinDatabaseSchema <= info.DatabaseSchema
+	return ok && info.Available && info.Compatible && info.AssetName == platformAssetName(runtime.GOOS, runtime.GOARCH) && info.AssetSize > 0 && info.AssetSize <= maxDownloadSize && digestPattern.MatchString(info.SHA256) && commitPattern.MatchString(info.Commit) && info.LauncherProtocol == LauncherProtocol && info.UsageGuard == RequiredUsageGuard && info.DatabaseSchema >= DatabaseSchema && info.MinDatabaseSchema > 0 && info.MinDatabaseSchema <= DatabaseSchema && info.MinDatabaseSchema <= info.DatabaseSchema
 }
 func targetBinding(info UpdateInfo) string {
-	b, _ := json.Marshal([]any{info.LatestVersion, info.Commit, info.AssetName, info.AssetSize, strings.ToLower(info.SHA256), info.LauncherProtocol, info.DatabaseSchema, info.MinDatabaseSchema})
+	b, _ := json.Marshal([]any{info.LatestVersion, info.Commit, info.AssetName, info.AssetSize, strings.ToLower(info.SHA256), info.LauncherProtocol, info.DatabaseSchema, info.MinDatabaseSchema, info.UsageGuard})
 	hash := sha256.Sum256(b)
 	return hex.EncodeToString(hash[:])
 }
@@ -640,7 +665,7 @@ func makeInfo(build BuildInfo, rel Release, asset Asset) UpdateInfo {
 		v := rel.PublishedAt
 		published = &v
 	}
-	return UpdateInfo{CurrentVersion: build.Version, LatestVersion: rel.TagName, ReleaseURL: rel.URL, PublishedAt: published, AssetName: asset.Name, AssetSize: asset.Size, SHA256: asset.SHA256, Compatible: true, Available: isNewer(rel.TagName, build.Version), Notes: rel.Body, Commit: rel.Commit, LauncherProtocol: rel.LauncherProtocol, DatabaseSchema: rel.DatabaseSchema, MinDatabaseSchema: rel.MinDatabaseSchema}
+	return UpdateInfo{CurrentVersion: build.Version, LatestVersion: rel.TagName, ReleaseURL: rel.URL, PublishedAt: published, AssetName: asset.Name, AssetSize: asset.Size, SHA256: asset.SHA256, Compatible: true, Available: isNewer(rel.TagName, build.Version), Notes: rel.Body, Commit: rel.Commit, LauncherProtocol: rel.LauncherProtocol, UsageGuard: rel.UsageGuard, DatabaseSchema: rel.DatabaseSchema, MinDatabaseSchema: rel.MinDatabaseSchema}
 }
 func randomID() string {
 	var b [16]byte
@@ -666,7 +691,7 @@ func (m *Manager) safeError(err error) error {
 	if err == nil {
 		return nil
 	}
-	for _, known := range []error{ErrDisabled, ErrNoRelease, ErrBusy, ErrApplyUnavailable, ErrRollbackUnavailable, ErrStateDurability} {
+	for _, known := range []error{ErrDisabled, ErrNoRelease, ErrBusy, ErrApplyUnavailable, ErrRollbackUnavailable, ErrStateDurability, ErrReleaseChanged} {
 		if errors.Is(err, known) {
 			return known
 		}
@@ -695,7 +720,12 @@ func safeMessage(err error) string {
 	})
 	s = bearerPattern.ReplaceAllString(s, "${1}[redacted]")
 	if len(s) > 2048 {
-		s = s[:2048]
+		const suffix = "…"
+		end := 2048 - len(suffix)
+		for end > 0 && !utf8.RuneStart(s[end]) {
+			end--
+		}
+		s = s[:end] + suffix
 	}
 	return s
 }
@@ -710,6 +740,8 @@ func classifyError(err error) string {
 		return "state_write_failed"
 	case errors.Is(err, ErrInvalidManifest):
 		return "invalid_manifest"
+	case errors.Is(err, ErrReleaseChanged):
+		return "release_changed"
 	}
 	s := strings.ToLower(err.Error())
 	switch {

@@ -37,7 +37,7 @@ func newFixture(t *testing.T) (*releaseFixture, *Manager) {
 	payload := []byte("relaylab verified release executable")
 	hash := sha256.Sum256(payload)
 	f := &releaseFixture{payload: payload, failPath: map[string]int{}, requests: map[string]int{}, headers: map[string]string{}}
-	f.manifest = manifest{Version: "1.2.2", Commit: strings.Repeat("a", 40), BuildTime: "2026-10-26T01:02:03Z", LauncherProtocol: 2, DatabaseSchema: 1, MinDatabaseSchema: 1, Assets: []manifestAsset{{Name: platformAssetName(runtime.GOOS, runtime.GOARCH), OS: runtime.GOOS, Arch: runtime.GOARCH, Size: int64(len(payload)), SHA256: fmt.Sprintf("%x", hash)}}}
+	f.manifest = manifest{Version: "1.2.2", Commit: strings.Repeat("a", 40), BuildTime: "2026-10-26T01:02:03Z", LauncherProtocol: 2, UsageGuard: RequiredUsageGuard, DatabaseSchema: 1, MinDatabaseSchema: 1, Assets: []manifestAsset{{Name: platformAssetName(runtime.GOOS, runtime.GOARCH), OS: runtime.GOOS, Arch: runtime.GOARCH, Size: int64(len(payload)), SHA256: fmt.Sprintf("%x", hash)}}}
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.requests[r.URL.Path]++
@@ -55,7 +55,7 @@ func newFixture(t *testing.T) (*releaseFixture, *Manager) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		switch r.URL.Path {
-		case "/repos/o/r/releases/latest":
+		case "/repos/o/r/releases/latest", "/repos/o/r/releases/tags/v1.2.2":
 			_ = json.NewEncoder(w).Encode(f.release)
 		case "/manifest.json", "/api/manifest":
 			if f.rawManifest != nil {
@@ -309,7 +309,7 @@ func TestApplyAcknowledgementAndLauncherAuthority(t *testing.T) {
 	if err != nil || snap.State != "validating" || received.OperationID == "" || snap.Operation.ID != received.OperationID {
 		t.Fatalf("acceptance failed: %#v %v", snap, err)
 	}
-	if received.Commit == "" || received.LauncherProtocol != 2 || received.DatabaseSchema != 1 {
+	if received.Commit == "" || received.LauncherProtocol != 2 || received.UsageGuard != RequiredUsageGuard || received.DatabaseSchema != 1 {
 		t.Fatal("bridge metadata missing")
 	}
 	l := LauncherStatus{OperationID: received.OperationID, State: "failed", ErrorCode: "health_failed", Message: "worker did not come online", UpdatedAt: time.Now().UTC()}

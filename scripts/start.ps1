@@ -31,7 +31,10 @@ $record = @{ id=$launcher.Id; start_ticks=$launcher.StartTime.ToUniversalTime().
 Write-AtomicJson $recordPath $record
 try {
     $ready = $false
-    for ($attempt=0; $attempt -lt 80; $attempt++) {
+    # A crashed worker can leave a 45-second lease. Allow launcher readiness
+    # validation and the bounded lease wait to finish before declaring failure.
+    $startupDeadline=[DateTime]::UtcNow.AddSeconds(120)
+    while ([DateTime]::UtcNow -lt $startupDeadline) {
         $launcher.Refresh()
         if ($launcher.HasExited) { throw 'launcher 已退出，请查看数据目录中的 launcher.err.log' }
         $metadataPath = Join-Path $DataDir 'launcher.json'

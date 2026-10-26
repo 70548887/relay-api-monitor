@@ -86,7 +86,7 @@ func stagedRequest(t *testing.T, s *Supervisor, version, id string) InstallReque
 	if e != nil {
 		t.Fatal(e)
 	}
-	return InstallRequest{OperationID: id, StagedPath: path, SHA256: sha, Size: size, Version: fixtureVersion(version), Commit: "commit-" + version, LauncherProtocol: Protocol, DatabaseSchema: 1, MinDatabaseSchema: 1}
+	return InstallRequest{OperationID: id, StagedPath: path, SHA256: sha, Size: size, Version: fixtureVersion(version), Commit: "commit-" + version, LauncherProtocol: Protocol, UsageGuard: 1, DatabaseSchema: 1, MinDatabaseSchema: 1}
 }
 func startFixture(t *testing.T, s *Supervisor) {
 	t.Helper()
