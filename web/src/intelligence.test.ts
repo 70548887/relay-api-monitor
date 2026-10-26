@@ -1,0 +1,9 @@
+import { describe, expect, it } from 'vitest';
+import { countdown, reasoningLabel, sameQuestion, verificationLabel } from './intelligence';
+import type { Artifact } from './types';
+const original={template_id:'cn_html',template_version:1,prompt:'same exact prompt'} as Artifact;
+describe('intelligence evidence labels and comparison',()=>{
+ it('requires actual prompt text and template version for a same-question comparison',()=>{expect(sameQuestion(original,{...original,id:'other'})).toBe(true);expect(sameQuestion(original,{...original,prompt:'different prompt'})).toBe(false);expect(sameQuestion(original,{...original,template_version:2})).toBe(false);expect(sameQuestion(original,{...original,prompt:''})).toBe(false);expect(sameQuestion({...original,prompt:''},{...original,prompt:''})).toBe(false)});
+ it('never invents a high effort or claims an automatic routing hit',()=>{expect(reasoningLabel('')).toBe('上游默认');expect(reasoningLabel('default')).toBe('上游默认');expect(reasoningLabel('high')).toBe('high');expect(verificationLabel({status:'verified',group:'auto'})).toContain('未确认实际命中');expect(verificationLabel({status:'unsupported'})).toBe('上游不支持分组验证');expect(verificationLabel({status:'unverified',group:'vip'})).toBe('绑定组未验证');expect(verificationLabel({status:'verified',group:'vip'})).toBe('令牌绑定组：vip')});
+ it('shows an actionable countdown without negative time',()=>{expect(countdown('2026-10-25T12:01:30Z',Date.parse('2026-10-25T12:00:00Z'))).toBe('1 分 30 秒');expect(countdown('2026-10-25T12:00:00Z',Date.parse('2026-10-25T12:01:00Z'))).toBe('即将执行');expect(countdown(null)).toBe('未安排')});
+});

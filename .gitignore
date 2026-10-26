@@ -1,0 +1,30 @@
+/data/
+/bin/
+/release/
+/backups/
+/.gocache/
+/web/node_modules/
+/web/dist/
+/web/test-results/
+/web/playwright-report/
+/web/tsconfig.tsbuildinfo
+
+# Local configuration and secret material
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+
+# Runtime and diagnostic output
+*.log
+*.tmp
+*.out

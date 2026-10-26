@@ -1,0 +1,7 @@
+import { Alert, Empty, Skeleton, Tag, Tooltip } from 'antd';
+import type { ReactNode } from 'react';
+import { stateColor, stateLabel } from '../lib';
+export function StateTag({state}:{state:string}){return <Tag color={stateColor[state]||'default'}>{stateLabel[state]||state}</Tag>}
+export function QueryState({loading,error,empty,children}:{loading:boolean;error?:Error|null;empty?:boolean;children:ReactNode}){if(loading)return <div className="panel"><Skeleton active paragraph={{rows:5}}/></div>;if(error)return <Alert type="error" showIcon message="读取失败" description={error.message}/>;if(empty)return <div className="panel empty-panel"><Empty description="还没有数据"/></div>;return <>{children}</>}
+export function Timeline({timeline}:{timeline:{at:string;status:string;count:number}[]}){return <div className="timeline" aria-label="最近24小时状态">{Array.from({length:24},(_,i)=>{const bucket=timeline?.[i];return <Tooltip key={i} title={bucket?`${new Date(bucket.at).toLocaleString('zh-CN')} · ${stateLabel[bucket.status]||bucket.status} · ${bucket.count} 次`:'暂无观测'}><span className={`timeline-block ${bucket?.status||'unknown'}`}/></Tooltip>})}</div>}
+export function PageHeading({eyebrow,title,description,extra}:{eyebrow:string;title:string;description:string;extra?:ReactNode}){return <div className="page-heading"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{description}</p></div>{extra&&<div className="heading-extra">{extra}</div>}</div>}

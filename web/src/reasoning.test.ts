@@ -1,0 +1,6 @@
+import { describe, expect, it } from 'vitest';
+import { compatibleReasoning, reasoningOptions, thinkingOptions } from './reasoning';
+describe('reasoning form protocol boundaries',()=>{
+ it('keeps inheritance distinct from an explicit upstream default',()=>{const options=reasoningOptions('chat',true);expect(options.find(option=>option.value==='')?.label).toBe('继承分组');expect(options.find(option=>option.value==='default')?.label).toContain('覆盖分组');expect(thinkingOptions(true).map(option=>option.value)).toEqual(['','default','adaptive','enabled'])});
+ it('offers protocol-supported effort levels and clears incompatible thinking settings',()=>{expect(reasoningOptions('anthropic').map(option=>option.value)).toEqual(['','low','medium','high','max']);expect(reasoningOptions('responses').map(option=>option.value)).toEqual(['','none','minimal','low','medium','high','xhigh']);expect(compatibleReasoning('responses',{reasoning_effort:'max',thinking_mode:'enabled',thinking_budget:2048})).toEqual({reasoning_effort:'',thinking_mode:'',thinking_budget:0});expect(compatibleReasoning('anthropic',{reasoning_effort:'default',thinking_mode:'adaptive',thinking_budget:2048})).toEqual({reasoning_effort:'default',thinking_mode:'adaptive',thinking_budget:0})});
+});

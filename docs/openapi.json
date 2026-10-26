@@ -1,0 +1,4165 @@
+{
+  "components": {
+    "schemas": {
+      "Artifact": {
+        "properties": {
+          "channel_id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "duration_ms": {
+            "type": "integer"
+          },
+          "finish_reason": {
+            "type": "string"
+          },
+          "first_text_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "group_verification_status": {
+            "type": "string"
+          },
+          "hidden": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "parameters": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "raw_response": {
+            "type": "string"
+          },
+          "reasoning_effort": {
+            "type": "string"
+          },
+          "requested_model": {
+            "type": "string"
+          },
+          "returned_model": {
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "template_id": {
+            "type": "string"
+          },
+          "template_version": {
+            "type": "integer"
+          },
+          "thinking_budget": {
+            "type": "integer"
+          },
+          "thinking_mode": {
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/Usage"
+          },
+          "verified_group": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "job_id",
+          "model_id",
+          "channel_id",
+          "template_id",
+          "template_version",
+          "prompt",
+          "protocol",
+          "requested_model",
+          "returned_model",
+          "parameters",
+          "reasoning_effort",
+          "thinking_mode",
+          "thinking_budget",
+          "verified_group",
+          "group_verification_status",
+          "raw_response",
+          "code",
+          "kind",
+          "hidden",
+          "first_text_ms",
+          "duration_ms",
+          "usage",
+          "finish_reason",
+          "started_at",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "ArtifactVisibility": {
+        "properties": {
+          "hidden": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hidden"
+        ],
+        "type": "object"
+      },
+      "AuditEvent": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "entity_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "entity_id",
+          "detail",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "Channel": {
+        "properties": {
+          "anthropic_version": {
+            "type": "string"
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "chat_token_field": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "discovery_protocol": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "generate_path": {
+            "type": "string"
+          },
+          "group_field": {
+            "type": "string"
+          },
+          "group_path": {
+            "type": "string"
+          },
+          "group_provider": {
+            "type": "string"
+          },
+          "group_verification_error": {
+            "type": "string"
+          },
+          "group_verification_revision": {
+            "type": "integer"
+          },
+          "group_verification_status": {
+            "type": "string"
+          },
+          "group_verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "intelligence_model_id": {
+            "type": "string"
+          },
+          "key_mask": {
+            "type": "string"
+          },
+          "last_sync_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "models_path": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "platform_id": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "public": {
+            "type": "boolean"
+          },
+          "reasoning_effort": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "sort": {
+            "type": "integer"
+          },
+          "sync_error": {
+            "type": "string"
+          },
+          "thinking_budget": {
+            "type": "integer"
+          },
+          "thinking_mode": {
+            "type": "string"
+          },
+          "verified_group": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "platform_id",
+          "name",
+          "base_url",
+          "key_mask",
+          "discovery_protocol",
+          "protocol",
+          "models_path",
+          "generate_path",
+          "anthropic_version",
+          "chat_token_field",
+          "reasoning_effort",
+          "thinking_mode",
+          "thinking_budget",
+          "intelligence_model_id",
+          "group_provider",
+          "group_path",
+          "group_field",
+          "verified_group",
+          "group_verification_status",
+          "group_verified_at",
+          "group_verification_error",
+          "group_verification_revision",
+          "enabled",
+          "public",
+          "archived",
+          "sort",
+          "revision",
+          "last_sync_at",
+          "sync_error",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "ChannelWrite": {
+        "properties": {
+          "anthropic_version": {
+            "type": "string"
+          },
+          "api_key": {
+            "description": "创建时必填；更新留空保持原密钥",
+            "type": "string",
+            "writeOnly": true
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "chat_token_field": {
+            "type": "string"
+          },
+          "discovery_protocol": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "generate_path": {
+            "type": "string"
+          },
+          "group_field": {
+            "type": "string"
+          },
+          "group_path": {
+            "type": "string"
+          },
+          "group_provider": {
+            "type": "string"
+          },
+          "intelligence_model_id": {
+            "type": "string"
+          },
+          "models_path": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "platform_id": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "public": {
+            "type": "boolean"
+          },
+          "reasoning_effort": {
+            "type": "string"
+          },
+          "sort": {
+            "type": "integer"
+          },
+          "thinking_budget": {
+            "type": "integer"
+          },
+          "thinking_mode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "platform_id",
+          "name",
+          "base_url",
+          "protocol"
+        ],
+        "type": "object"
+      },
+      "DiscoveryRequest": {
+        "properties": {
+          "anthropic_version": {
+            "type": "string"
+          },
+          "api_key": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "discovery_protocol": {
+            "enum": [
+              "openai",
+              "anthropic"
+            ],
+            "type": "string"
+          },
+          "models_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "base_url",
+          "api_key"
+        ],
+        "type": "object"
+      },
+      "Error": {
+        "properties": {
+          "error": {
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GenerateRequest": {
+        "properties": {
+          "anthropic_version": {
+            "type": "string"
+          },
+          "api_key": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "base_url": {
+            "format": "uri",
+            "type": "string"
+          },
+          "chat_token_field": {
+            "type": "string"
+          },
+          "generate_path": {
+            "type": "string"
+          },
+          "max_tokens": {
+            "maximum": 131072,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "protocol": {
+            "enum": [
+              "chat",
+              "responses",
+              "anthropic"
+            ],
+            "type": "string"
+          },
+          "reasoning_effort": {
+            "description": "按协议显式发送；空/default不发送。协议或模型不支持时明确失败，不自动降级重试。",
+            "enum": [
+              "",
+              "default",
+              "none",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "type": "string"
+          },
+          "template_id": {
+            "enum": [
+              "",
+              "cn_html",
+              "en_svg"
+            ],
+            "type": "string"
+          },
+          "thinking_budget": {
+            "description": "enabled模式至少1024且小于输出上限；其余模式不发送",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "thinking_mode": {
+            "description": "仅Anthropic；enabled必须配合法budget",
+            "enum": [
+              "",
+              "default",
+              "adaptive",
+              "enabled"
+            ],
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "maximum": 600,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "base_url",
+          "api_key",
+          "model",
+          "protocol"
+        ],
+        "type": "object"
+      },
+      "GroupVerification": {
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "group": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "scope": {
+            "const": "token_binding",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "unverified",
+              "verified",
+              "unsupported",
+              "failed"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "IntelligenceAttempt": {
+        "description": "可选用量和耗时仅来自匹配本次成功任务的作品；缺失代表未知，不能沿用上次成功值。",
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "duration_ms": {
+            "type": "integer"
+          },
+          "finish_reason": {
+            "type": "string"
+          },
+          "finished_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "first_text_ms": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "progress_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "progress_chars": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reasoning_effort": {
+            "type": "string"
+          },
+          "requested_model": {
+            "type": "string"
+          },
+          "returned_model": {
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": "string"
+          },
+          "thinking_budget": {
+            "type": "integer"
+          },
+          "thinking_mode": {
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/Usage"
+          }
+        },
+        "type": "object"
+      },
+      "IntelligenceGroup": {
+        "properties": {
+          "automatic_enabled": {
+            "type": "boolean"
+          },
+          "channel_id": {
+            "type": "string"
+          },
+          "channel_name": {
+            "type": "string"
+          },
+          "group_verification": {
+            "$ref": "#/components/schemas/GroupVerification"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/PublicArtifact"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interval_seconds": {
+            "type": "integer"
+          },
+          "latest_attempt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntelligenceAttempt"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "properties": {
+                "display_name": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "protocol": {
+                  "type": "string"
+                },
+                "upstream_id": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "next_run_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "platform_id": {
+            "type": "string"
+          },
+          "platform_name": {
+            "type": "string"
+          },
+          "reasoning_effort": {
+            "type": "string"
+          },
+          "requested_model": {
+            "type": "string"
+          },
+          "thinking_budget": {
+            "type": "integer"
+          },
+          "thinking_mode": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "IntelligenceResponse": {
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/IntelligenceGroup"
+            },
+            "type": "array"
+          },
+          "history_scope": {
+            "enum": [
+              "group",
+              "model"
+            ],
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "worker_online": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "Job": {
+        "properties": {
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "channel_id": {
+            "type": "string"
+          },
+          "channel_revision": {
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "deadline": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error_code": {
+            "type": "string"
+          },
+          "error_message": {
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "lease_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "progress_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "progress_chars": {
+            "type": "integer"
+          },
+          "returned_model": {
+            "type": "string"
+          },
+          "schedule_id": {
+            "type": "string"
+          },
+          "scheduled_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "snapshot": {
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "type": "string"
+          },
+          "template_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "schedule_id",
+          "model_id",
+          "channel_id",
+          "kind",
+          "template_id",
+          "state",
+          "channel_revision",
+          "owner",
+          "lease_until",
+          "scheduled_at",
+          "created_at",
+          "started_at",
+          "finished_at",
+          "deadline",
+          "cancel_requested",
+          "error_code",
+          "error_message",
+          "snapshot",
+          "progress_chars",
+          "progress_at",
+          "returned_model"
+        ],
+        "type": "object"
+      },
+      "JobCreate": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "probe",
+              "artifact"
+            ],
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "template_id": {
+            "enum": [
+              "cn_html",
+              "en_svg"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_id",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "Login": {
+        "properties": {
+          "password": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "type": "object"
+      },
+      "Model": {
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "artifact_chinese": {
+            "type": "boolean"
+          },
+          "artifact_english": {
+            "type": "boolean"
+          },
+          "artifact_interval_seconds": {
+            "type": "integer"
+          },
+          "channel_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "generate_path": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "max_tokens": {
+            "type": "integer"
+          },
+          "missing": {
+            "type": "boolean"
+          },
+          "probe_enabled": {
+            "type": "boolean"
+          },
+          "probe_interval_seconds": {
+            "type": "integer"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "public": {
+            "type": "boolean"
+          },
+          "reasoning_effort": {
+            "type": "string"
+          },
+          "sort": {
+            "type": "integer"
+          },
+          "source": {
+            "type": "string"
+          },
+          "thinking_budget": {
+            "type": "integer"
+          },
+          "thinking_mode": {
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "type": "integer"
+          },
+          "upstream_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "channel_id",
+          "upstream_id",
+          "display_name",
+          "source",
+          "public",
+          "archived",
+          "missing",
+          "protocol",
+          "generate_path",
+          "max_tokens",
+          "reasoning_effort",
+          "thinking_mode",
+          "thinking_budget",
+          "probe_enabled",
+          "artifact_chinese",
+          "artifact_english",
+          "probe_interval_seconds",
+          "artifact_interval_seconds",
+          "timeout_seconds",
+          "sort",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "ModelWrite": {
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "artifact_chinese": {
+            "type": "boolean"
+          },
+          "artifact_english": {
+            "type": "boolean"
+          },
+          "artifact_interval_seconds": {
+            "type": "integer"
+          },
+          "channel_id": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "generate_path": {
+            "type": "string"
+          },
+          "max_tokens": {
+            "type": "integer"
+          },
+          "probe_enabled": {
+            "type": "boolean"
+          },
+          "probe_interval_seconds": {
+            "type": "integer"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "public": {
+            "type": "boolean"
+          },
+          "reasoning_effort": {
+            "type": "string"
+          },
+          "sort": {
+            "type": "integer"
+          },
+          "thinking_budget": {
+            "type": "integer"
+          },
+          "thinking_mode": {
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "type": "integer"
+          },
+          "upstream_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel_id",
+          "upstream_id"
+        ],
+        "type": "object"
+      },
+      "PasswordChange": {
+        "properties": {
+          "new_password": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "old_password": {
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "old_password",
+          "new_password"
+        ],
+        "type": "object"
+      },
+      "Platform": {
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "public": {
+            "type": "boolean"
+          },
+          "sort": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "public",
+          "archived",
+          "sort",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "PlatformWrite": {
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "public": {
+            "type": "boolean"
+          },
+          "sort": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "ProbeResult": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "duration_ms": {
+            "type": "integer"
+          },
+          "error_code": {
+            "type": "string"
+          },
+          "error_message": {
+            "type": "string"
+          },
+          "finish_reason": {
+            "type": "string"
+          },
+          "first_text_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "http_status": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "returned_model": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/Usage"
+          }
+        },
+        "required": [
+          "id",
+          "job_id",
+          "model_id",
+          "status",
+          "protocol",
+          "returned_model",
+          "http_status",
+          "first_text_ms",
+          "duration_ms",
+          "usage",
+          "finish_reason",
+          "error_code",
+          "error_message",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "PromptTemplate": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "prompt",
+          "version"
+        ],
+        "type": "object"
+      },
+      "PublicArtifact": {
+        "properties": {
+          "channel_id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "duration_ms": {
+            "type": "integer"
+          },
+          "finish_reason": {
+            "type": "string"
+          },
+          "first_text_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "group_verification_status": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "parameters": {
+            "type": "string"
+          },
+          "preview_document": {
+            "description": "仅详情返回；应使用不具备同源权限的sandbox iframe渲染",
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "reasoning_effort": {
+            "type": "string"
+          },
+          "requested_model": {
+            "type": "string"
+          },
+          "returned_model": {
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "template_id": {
+            "type": "string"
+          },
+          "template_version": {
+            "type": "integer"
+          },
+          "thinking_budget": {
+            "type": "integer"
+          },
+          "thinking_mode": {
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/Usage"
+          },
+          "verified_group": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Schedule": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interval_seconds": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "next_run_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "template_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "model_id",
+          "kind",
+          "template_id",
+          "interval_seconds",
+          "next_run_at",
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "Session": {
+        "properties": {
+          "csrf_token": {
+            "type": "string"
+          },
+          "user": {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "username": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "Settings": {
+        "properties": {
+          "artifact_concurrency": {
+            "type": "integer"
+          },
+          "artifact_history_scope": {
+            "default": "group",
+            "enum": [
+              "group",
+              "model"
+            ],
+            "type": "string"
+          },
+          "artifact_interval_seconds": {
+            "type": "integer"
+          },
+          "artifact_timeout_seconds": {
+            "type": "integer"
+          },
+          "channel_concurrency": {
+            "type": "integer"
+          },
+          "discovery_timeout_seconds": {
+            "type": "integer"
+          },
+          "probe_concurrency": {
+            "type": "integer"
+          },
+          "probe_interval_seconds": {
+            "type": "integer"
+          },
+          "probe_timeout_seconds": {
+            "type": "integer"
+          },
+          "retention_days": {
+            "type": "integer"
+          },
+          "slow_threshold_ms": {
+            "type": "integer"
+          },
+          "visitor_concurrency": {
+            "type": "integer"
+          },
+          "visitor_generations_per_minute": {
+            "type": "integer"
+          },
+          "visitor_ip_concurrency": {
+            "type": "integer"
+          },
+          "visitor_models_per_minute": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "probe_concurrency",
+          "artifact_concurrency",
+          "channel_concurrency",
+          "probe_interval_seconds",
+          "artifact_interval_seconds",
+          "probe_timeout_seconds",
+          "artifact_timeout_seconds",
+          "artifact_history_scope",
+          "discovery_timeout_seconds",
+          "slow_threshold_ms",
+          "retention_days",
+          "visitor_concurrency",
+          "visitor_ip_concurrency",
+          "visitor_models_per_minute",
+          "visitor_generations_per_minute"
+        ],
+        "type": "object"
+      },
+      "Usage": {
+        "properties": {
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "input_tokens",
+          "output_tokens",
+          "total_tokens"
+        ],
+        "type": "object"
+      },
+      "WorkerHealth": {
+        "properties": {
+          "heartbeat_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "lease_until": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "owner": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "heartbeat_at",
+          "lease_until",
+          "online"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "cookieAuth": {
+        "in": "cookie",
+        "name": "relaylab_session",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "中转监控、分组作品与实时状态及访客临时测试。所有时间为UTC ISO8601。管理写操作需要X-CSRF-Token。JSON请求体必须是单个完整对象且不超过2MiB；浏览器Origin必须同源，非浏览器JSON CLI可省略Origin。默认本机端口42783。分组核验仅标记Token绑定，不证明实际路由或账号身份。",
+    "title": "Relay Lab API",
+    "version": "1.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/admin/artifacts": {
+      "get": {
+        "operationId": "admin_artifacts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "作品元数据列表，不含源码"
+      }
+    },
+    "/admin/artifacts/{id}": {
+      "delete": {
+        "operationId": "admin_artifacts_id_delete",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "删除作品"
+      },
+      "get": {
+        "operationId": "admin_artifacts_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Artifact"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "管理员作品详情及原始回复"
+      },
+      "patch": {
+        "operationId": "admin_artifacts_id_patch",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactVisibility"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "隐藏或公开作品"
+      }
+    },
+    "/admin/audit": {
+      "get": {
+        "operationId": "admin_audit_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AuditEvent"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "审计记录"
+      }
+    },
+    "/admin/channels": {
+      "get": {
+        "operationId": "admin_channels_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Channel"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "列出配置"
+      },
+      "post": {
+        "operationId": "admin_channels_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Channel"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "新增配置"
+      }
+    },
+    "/admin/channels/{id}": {
+      "delete": {
+        "operationId": "admin_channels_id_delete",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "归档配置并停止任务"
+      },
+      "put": {
+        "operationId": "admin_channels_id_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Channel"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "更新配置"
+      }
+    },
+    "/admin/channels/{id}/sync-models": {
+      "post": {
+        "operationId": "admin_channels_id_sync-models_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "同步模型目录，失败保留原目录"
+      }
+    },
+    "/admin/channels/{id}/verify-group": {
+      "post": {
+        "operationId": "admin_channels_id_verify-group_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupVerification"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "核验上游Token绑定分组；不推断实际账号或路由"
+      }
+    },
+    "/admin/jobs": {
+      "get": {
+        "operationId": "admin_jobs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Job"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "任务列表"
+      },
+      "post": {
+        "operationId": "admin_jobs_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "创建立即执行任务"
+      }
+    },
+    "/admin/jobs/{id}": {
+      "get": {
+        "operationId": "admin_jobs_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "任务详情"
+      }
+    },
+    "/admin/jobs/{id}/cancel": {
+      "post": {
+        "operationId": "admin_jobs_id_cancel_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "请求取消"
+      }
+    },
+    "/admin/models": {
+      "get": {
+        "operationId": "admin_models_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Model"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "列出配置"
+      },
+      "post": {
+        "operationId": "admin_models_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Model"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "新增配置"
+      }
+    },
+    "/admin/models/{id}": {
+      "delete": {
+        "operationId": "admin_models_id_delete",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "归档配置并停止任务"
+      },
+      "put": {
+        "operationId": "admin_models_id_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Model"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "更新配置"
+      }
+    },
+    "/admin/overview": {
+      "get": {
+        "operationId": "admin_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Worker心跳与任务概览"
+      }
+    },
+    "/admin/platforms": {
+      "get": {
+        "operationId": "admin_platforms_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Platform"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "列出配置"
+      },
+      "post": {
+        "operationId": "admin_platforms_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Platform"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "新增配置"
+      }
+    },
+    "/admin/platforms/{id}": {
+      "delete": {
+        "operationId": "admin_platforms_id_delete",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "归档配置并停止任务"
+      },
+      "put": {
+        "operationId": "admin_platforms_id_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Platform"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "更新配置"
+      }
+    },
+    "/admin/schedules": {
+      "get": {
+        "operationId": "admin_schedules_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Schedule"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "列出调度计划"
+      }
+    },
+    "/admin/settings": {
+      "get": {
+        "operationId": "admin_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "系统设置"
+      },
+      "put": {
+        "operationId": "admin_settings_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Settings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "更新系统设置"
+      }
+    },
+    "/admin/templates": {
+      "get": {
+        "operationId": "admin_templates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PromptTemplate"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "列出提示词模板"
+      }
+    },
+    "/admin/templates/{id}": {
+      "put": {
+        "operationId": "admin_templates_id_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptTemplate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptTemplate"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "更新模板并增加版本"
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "operationId": "auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Login"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "summary": "登录"
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "operationId": "auth_logout_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "退出登录"
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "operationId": "auth_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "查询当前会话及 CSRF Token"
+      }
+    },
+    "/auth/password": {
+      "post": {
+        "operationId": "auth_password_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "修改密码并清除旧会话"
+      }
+    },
+    "/public/artifacts": {
+      "get": {
+        "operationId": "public_artifacts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "summary": "公开作品元数据，支持template_id与model_id"
+      }
+    },
+    "/public/artifacts/{id}": {
+      "get": {
+        "operationId": "public_artifacts_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "summary": "公开作品详情，不含原始回复"
+      }
+    },
+    "/public/artifacts/{id}/source": {
+      "get": {
+        "operationId": "public_artifacts_id_source_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "纯文本源码附件"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "summary": "以附件下载源码"
+      }
+    },
+    "/public/intelligence": {
+      "get": {
+        "operationId": "public_intelligence_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "template_id",
+            "schema": {
+              "default": "cn_html",
+              "enum": [
+                "cn_html",
+                "en_svg"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "channel_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "model_id",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntelligenceResponse"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "summary": "分组作品、无成功作品时的任务状态、进度与下一次时间"
+      }
+    },
+    "/public/models/{id}/history": {
+      "get": {
+        "operationId": "public_models_id_history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "最近检测记录条数；按时间倒序",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 1000,
+              "maximum": 5000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProbeResult"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "summary": "公开模型最近历史"
+      }
+    },
+    "/public/monitor": {
+      "get": {
+        "operationId": "public_monitor_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "summary": "公开监控：分组、模型、成功率、24小时状态桶"
+      }
+    },
+    "/public/templates": {
+      "get": {
+        "operationId": "public_templates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PromptTemplate"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "summary": "公开提示词模板"
+      }
+    },
+    "/setup": {
+      "post": {
+        "operationId": "setup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Login"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "summary": "仅本机初始化首个管理员"
+      }
+    },
+    "/setup/status": {
+      "get": {
+        "operationId": "setup_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "summary": "查询是否已初始化"
+      }
+    },
+    "/test/generate": {
+      "post": {
+        "operationId": "test_generate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "POST SSE；事件 meta、delta、usage、artifact、done、error；客户端断开即取消"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "summary": "临时流式测试，无自动重试"
+      }
+    },
+    "/test/models": {
+      "post": {
+        "operationId": "test_models_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "请求体超过2MiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "summary": "临时凭据发现模型，不持久化"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ]
+}

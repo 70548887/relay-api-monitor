@@ -1,0 +1,20 @@
+import React, { Suspense, lazy } from 'react';
+import ReactDOM from 'react-dom/client';
+import { BrowserRouter, NavLink, Route, Routes, useLocation } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { App as AntApp, ConfigProvider, Spin } from 'antd';
+import { bindSessionCache } from './sessionCache';
+import zhCN from 'antd/es/locale/zh_CN';
+import { ArrowUpOutlined, ControlOutlined } from '@ant-design/icons';
+import './styles.css';
+const Monitor=lazy(()=>import('./pages/Monitor'));const Gallery=lazy(()=>import('./pages/Gallery'));const OnlineTest=lazy(()=>import('./pages/OnlineTest'));
+const AdminLayout=lazy(()=>import('./pages/Admin').then(module=>({default:module.AdminLayout})));
+const OverviewPage=lazy(()=>import('./pages/Admin').then(module=>({default:module.OverviewPage})));
+const PlatformsPage=lazy(()=>import('./pages/Admin').then(module=>({default:module.PlatformsPage})));
+const ModelsPage=lazy(()=>import('./pages/Admin').then(module=>({default:module.ModelsPage})));
+const JobsPage=lazy(()=>import('./pages/Admin').then(module=>({default:module.JobsPage})));
+const SettingsPage=lazy(()=>import('./pages/Admin').then(module=>({default:module.SettingsPage})));
+const client=new QueryClient({defaultOptions:{queries:{retry:1,staleTime:15000,refetchOnWindowFocus:false}}});
+bindSessionCache(client);
+function Shell(){const location=useLocation();const admin=location.pathname.startsWith('/admin');return <><header className="site-header"><div className="header-inner"><NavLink to="/" className="brand" aria-label="Relay Lab 首页"><div className="brand-mark">r<span>↗</span></div><div><strong>Relay Lab<span className="brand-dot">.</span></strong><span className="brand-subtitle">中转观测站</span></div></NavLink><nav className="top-nav" aria-label="主导航"><NavLink to="/" end>中转 API 监控</NavLink><NavLink to="/intelligence">智商测试</NavLink><NavLink to="/test">在线测试</NavLink></nav><NavLink to="/admin" aria-label="管理后台" className={`admin-entry ${admin?'active':''}`}><ControlOutlined aria-hidden="true"/><span>管理后台</span><span className="entry-arrow">↗</span></NavLink></div></header><main className={admin?'main admin-main':'main'}><Suspense fallback={<div className="center-loading"><Spin size="large"/></div>}><Routes><Route path="/" element={<Monitor/>}/><Route path="/intelligence" element={<Gallery/>}/><Route path="/test" element={<OnlineTest/>}/><Route path="/admin" element={<AdminLayout/>}><Route index element={<OverviewPage/>}/><Route path="platforms" element={<PlatformsPage/>}/><Route path="models" element={<ModelsPage/>}/><Route path="jobs" element={<JobsPage/>}/><Route path="settings" element={<SettingsPage/>}/></Route><Route path="*" element={<div className="empty-panel panel"><h1>页面不存在</h1><NavLink to="/">返回监控首页</NavLink></div>}/></Routes></Suspense></main><footer className="site-footer"><div><span className="footer-brand">Relay Lab.</span><span>让每一个模型的表现，都有据可依。</span></div><span className="footer-side">BUILT FOR CLARITY <ArrowUpOutlined aria-hidden="true" rotate={45}/></span></footer></>}
+ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><ConfigProvider locale={zhCN} theme={{token:{colorPrimary:'#15796f',colorInfo:'#15796f',colorSuccess:'#2c9a78',colorWarning:'#d49a39',colorError:'#d66a69',colorText:'#20313e',colorTextSecondary:'#7b8791',colorBgLayout:'#f7f8f6',colorBorder:'#e2e7e4',borderRadius:8,fontFamily:'"Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif',fontSize:13,controlHeight:36},components:{Button:{primaryShadow:'none'},Table:{headerBg:'#f6f8f7',headerColor:'#829089',rowHoverBg:'#f6faf8'},Tabs:{itemSelectedColor:'#15796f'},Modal:{paddingContentHorizontalLG:24}}}}><AntApp><QueryClientProvider client={client}><BrowserRouter><Shell/></BrowserRouter></QueryClientProvider></AntApp></ConfigProvider></React.StrictMode>);
