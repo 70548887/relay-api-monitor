@@ -79,8 +79,8 @@ func TestActualBinaryUpgradeAndRecovery(t *testing.T) {
 	if err = cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+	done := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(done) }()
 	client := &http.Client{Timeout: 5 * time.Second}
 	var control, token string
 	request := func(method, url string, body any, auth string) (int, map[string]any, error) {
@@ -106,12 +106,39 @@ func TestActualBinaryUpgradeAndRecovery(t *testing.T) {
 		return res.StatusCode, value, e
 	}
 	defer func() {
+		accepted := false
 		if control != "" {
-			_, _, _ = request("POST", control+"/control/shutdown", map[string]any{}, token)
+			deadline := time.Now().Add(20 * time.Second)
+			for time.Now().Before(deadline) {
+				select {
+				case <-done:
+					accepted = true
+				default:
+				}
+				if accepted {
+					break
+				}
+				status, _, err := request("POST", control+"/control/shutdown", map[string]any{}, token)
+				if err == nil && (status == http.StatusAccepted || status == http.StatusOK) {
+					accepted = true
+					break
+				}
+				// A durable terminal journal can be visible just before the
+				// operation lock is released. A 409 is a retryable refusal.
+				time.Sleep(200 * time.Millisecond)
+			}
+		}
+		if !accepted {
+			t.Error("test launcher did not acknowledge shutdown; stopping owned fixture children")
+			_ = os.WriteFile(filepath.Join(data, "stop.request"), []byte("integration cleanup"), 0600)
+			time.Sleep(time.Second)
 		}
 		select {
 		case <-done:
-		case <-time.After(15 * time.Second):
+		case <-time.After(30 * time.Second):
+			t.Error("test launcher did not exit after shutdown")
+			_ = os.WriteFile(filepath.Join(data, "stop.request"), []byte("integration cleanup"), 0600)
+			time.Sleep(time.Second)
 			cancel()
 			<-done
 		}
