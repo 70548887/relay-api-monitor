@@ -24,6 +24,10 @@ func TestHundredModelsRespectIndependentAndSharedConcurrency(t *testing.T) {
 		violations                                         []string
 	}
 	stats := &observations{activeChannels: map[int]int{}, maxChannels: map[int]int{}, completed: map[string]int{}}
+	// Hold the first wave until both pools and all three channel budgets are
+	// occupied. A 12ms response alone cannot guarantee saturation on a runner
+	// instrumented with -race; the concurrency invariant must not depend on CPU speed.
+	firstWave := make(chan struct{})
 	w, st, ctx, baseChannel, baseModel := workerFixture(t, func(rw http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Model    string `json:"model"`
@@ -65,6 +69,13 @@ func TestHundredModelsRespectIndependentAndSharedConcurrency(t *testing.T) {
 		if stats.activeProbe > 4 || stats.activeArtifact > 2 || stats.activeChannels[channel] > 2 {
 			stats.violations = append(stats.violations, fmt.Sprintf("probe=%d artifact=%d channel%d=%d", stats.activeProbe, stats.activeArtifact, channel, stats.activeChannels[channel]))
 		}
+		select {
+		case <-firstWave:
+		default:
+			if stats.activeProbe == 4 && stats.activeArtifact == 2 {
+				close(firstWave)
+			}
+		}
 		stats.Unlock()
 		defer func() {
 			stats.Lock()
@@ -77,6 +88,11 @@ func TestHundredModelsRespectIndependentAndSharedConcurrency(t *testing.T) {
 			}
 			stats.completed[fmt.Sprintf("%s/%s", body.Model, kind)]++
 		}()
+		select {
+		case <-firstWave:
+		case <-r.Context().Done():
+			return
+		}
 		delay := time.Duration(12+index%7) * time.Millisecond
 		if kind == "artifact" {
 			delay = time.Duration(35+index%17) * time.Millisecond
@@ -124,7 +140,7 @@ func TestHundredModelsRespectIndependentAndSharedConcurrency(t *testing.T) {
 	}
 	started := time.Now()
 	runCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
+	defer func() { cancel(); w.wg.Wait() }()
 	for {
 		if err = w.tick(runCtx, time.Now().UTC()); err != nil {
 			t.Fatalf("scheduler or SQLite operation failed: %v", err)
