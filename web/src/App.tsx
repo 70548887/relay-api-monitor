@@ -4,6 +4,8 @@ import { Spin } from 'antd';
 import { PublicLayout } from './layouts/PublicLayout';
 import { RequireMember } from './layouts/UserGuard';
 
+const Connections = lazy(() => import('./pages/Connections'));
+const TestRecords = lazy(() => import('./pages/TestRecords'));
 const Monitor = lazy(() => import('./pages/Monitor'));
 const Gallery = lazy(() => import('./pages/Gallery'));
 const OnlineTest = lazy(() => import('./pages/OnlineTest'));
@@ -33,6 +35,8 @@ export function AppRoutes() {
       <Route path="settings" element={<SettingsPage/>}/>
       <Route path="updates" element={<UpdatesPage/>}/>
       <Route path="users" element={<UsersPage/>}/>
+ <Route path="user-connections" element={<Connections admin/>}/>
+ <Route path="test-records" element={<TestRecords admin/>}/>
       <Route path="*" element={<div className="empty-panel panel"><h1>管理页面不存在</h1><NavLink to="/admin">返回管理总览</NavLink></div>}/>
     </Route>
     <Route element={<PublicLayout/>}>
@@ -42,6 +46,9 @@ export function AppRoutes() {
       <Route path="login" element={<UserLoginPage/>}/>
       <Route path="register" element={<UserRegisterPage/>}/>
       <Route path="account" element={<UserAccountPage/>}/>
+ <Route path="account/connections" element={<RequireMember><Connections/></RequireMember>}/>
+ <Route path="account/tests" element={<RequireMember><TestRecords/></RequireMember>}/>
+ <Route path="account/tests/:id" element={<RequireMember><TestRecords/></RequireMember>}/>
       <Route path="*" element={<div className="empty-panel panel"><h1>页面不存在</h1><NavLink to="/">返回监控首页</NavLink></div>}/>
     </Route>
   </Routes></Suspense>;

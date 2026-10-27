@@ -134,7 +134,11 @@ func htmlDocument(text string) (string, bool) {
 			}
 		case html.StartTagToken:
 			name, _ := tokenizer.TagName()
-			if string(name) == "html" && start < 0 {
+			if string(name) == "html" {
+				// A second real root before the first closes starts a new
+				// candidate. Providers can abandon a partial document and
+				// restart it; merging the prefix into the complete document
+				// can trap all of its SVG under unfinished defs/gradients.
 				start = begin
 				if doctype >= 0 && strings.TrimSpace(text[doctypeEnd:begin]) == "" {
 					start = doctype

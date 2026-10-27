@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api,setSession } from './api';
-import { refreshUserSession,safeUserNext,setUserSession,userApi,userRequestHeaders } from './userApi';
+import { refreshUserSession,safeUserNext,setUserSession,userApi,userRequestHeaders,onUserSessionCleared } from './userApi';
 
 afterEach(()=>{setUserSession(null);setSession(null);vi.unstubAllGlobals()});
 describe('ordinary user API session isolation',()=>{
+ it('clears private state when switching between member identities',()=>{setUserSession({user:{id:'a',username:'alice'},csrf_token:'a'});const clear=vi.fn();const unsubscribe=onUserSessionCleared(clear);setUserSession({user:{id:'b',username:'bob'},csrf_token:'b'});expect(clear).toHaveBeenCalledOnce();unsubscribe()});
  it('uses the ordinary CSRF token for tests and preserves the administrator token separately',async()=>{
   setSession({user:{id:'admin',username:'admin'},csrf_token:'admin-csrf'});
   setUserSession({user:{id:'member',username:'member'},csrf_token:'member-csrf'});
@@ -30,6 +31,8 @@ describe('ordinary user API session isolation',()=>{
  });
  it('only permits member return destinations',()=>{
   expect(safeUserNext('/test?mode=svg#preview')).toBe('/test?mode=svg#preview');
+  expect(safeUserNext('/account/connections')).toBe('/account/connections');
+  expect(safeUserNext('/account/tests/'+ 'a'.repeat(32))).toBe('/account/tests/'+ 'a'.repeat(32));
   for(const value of ['//evil.test','/admin','/admin/settings','https://evil.test','/\\evil.test','/%2f%2fevil.test','/login?next=/test'])expect(safeUserNext(value)).toBe('/account');
  });
 });

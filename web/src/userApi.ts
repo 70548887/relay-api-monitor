@@ -8,7 +8,7 @@ let generation=0;
 const listeners=new Set<()=>void>();
 const clearListeners=new Set<()=>void>();
 export function onUserSessionCleared(callback:()=>void){clearListeners.add(callback);return()=>clearListeners.delete(callback)}
-export function setUserSession(next:UserSession|null){const cleared=!!session&&!next;generation++;session=next;if(cleared)clearListeners.forEach(fn=>fn());listeners.forEach(fn=>fn())}
+export function setUserSession(next:UserSession|null){const cleared=!!session&&(!next||session.user.id!==next.user.id);generation++;session=next;if(cleared)clearListeners.forEach(fn=>fn());listeners.forEach(fn=>fn())}
 export const useUserSession=()=>useSyncExternalStore(callback=>{listeners.add(callback);return()=>listeners.delete(callback)},()=>session);
 export function userRequestHeaders(init?:HeadersInit){const headers=new Headers(init);if(session)headers.set('X-CSRF-Token',session.csrf_token);return headers}
 export async function userApi<T>(path:string,init:RequestInit={}):Promise<T>{
@@ -30,5 +30,5 @@ export const userPost=<T,>(path:string,body?:unknown)=>userApi<T>(path,{method:'
 // a different guard and never accepts this member login as authorization.
 export function safeUserNext(value:string|null):string{
  if(!value||!value.startsWith('/')||value.startsWith('//')||/[\\\u0000-\u001f]/.test(value))return '/account';
- try{const url=new URL(value,'https://relaylab.invalid');if(url.origin!=='https://relaylab.invalid'||!['/','/test','/intelligence','/account'].includes(url.pathname))return '/account';return url.pathname+url.search+url.hash}catch{return '/account'}
+ try{const url=new URL(value,'https://relaylab.invalid');if(url.origin!=='https://relaylab.invalid'||(!['/','/test','/intelligence','/account','/account/connections','/account/tests'].includes(url.pathname)&&!/^\/account\/tests\/[a-f0-9]{32}$/.test(url.pathname)))return '/account';return url.pathname+url.search+url.hash}catch{return '/account'}
 }

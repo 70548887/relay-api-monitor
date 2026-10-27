@@ -59,7 +59,7 @@ func TestSchemaOneAccountMigrationPreservesAdminAndSession(t *testing.T) {
 		t.Fatal("member namespace was not independently created", err)
 	}
 	var version int
-	if err = s.DB.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 2 {
+	if err = s.DB.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 3 {
 		t.Fatal("migration version", version, err)
 	}
 }

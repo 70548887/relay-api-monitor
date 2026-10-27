@@ -168,7 +168,18 @@ func (w *Worker) execute(parent context.Context, j domain.Job) error {
 			return failBeforeDispatch("canceled", "任务已取消")
 		}
 		if errors.Is(err, store.ErrConflict) {
-			return fmt.Errorf("%w: dispatch %s", ErrLeaseLost, j.ID)
+			// A claim can expire or be recovered before dispatch while this
+			// process still owns the worker lease. Leave that unsent job to
+			// normal recovery instead of stopping every execution pool.
+			if w.running.Load() {
+				leaseCtx, leaseCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				leaseErr := w.st.CheckWorkerLease(leaseCtx, w.owner)
+				leaseCancel()
+				if leaseErr != nil {
+					return fmt.Errorf("%w: dispatch %s: %v", ErrLeaseLost, j.ID, leaseErr)
+				}
+			}
+			return fmt.Errorf("worker: unsent job %s: %w", j.ID, err)
 		}
 		return err
 	}

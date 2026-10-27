@@ -23,7 +23,7 @@ var ErrConflict = errors.New("store: conflicting state or stale lease")
 
 var ErrConfigurationChanged = fmt.Errorf("%w: job configuration changed", ErrConflict)
 
-const schemaVersion = 2
+const schemaVersion = 3
 
 const timeFormat = "2006-01-02T15:04:05.000000000Z"
 const WorkerLeaseDuration = 45 * time.Second
@@ -42,6 +42,9 @@ var migration string
 
 //go:embed migrations/002_admin_accounts.sql
 var adminAccountsMigration string
+
+//go:embed migrations/003_private_tests.sql
+var privateTestsMigration string
 
 func Open(path string) (*Store, error) {
 	if path == "" {
@@ -183,6 +186,9 @@ func (s *Store) Migrate(ctx context.Context) error {
 		if err := migrateAdminAccounts(ctx, tx); err != nil {
 			return err
 		}
+		if _, err := tx.ExecContext(ctx, privateTestsMigration); err != nil {
+			return err
+		}
 		settings, e := data(domain.DefaultSettings())
 		if e != nil {
 			return e
@@ -202,7 +208,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 		if err := validateSchema(ctx, tx); err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, "PRAGMA user_version=2")
+		_, err := tx.ExecContext(ctx, "PRAGMA user_version=3")
 		return err
 	})
 }
@@ -223,6 +229,8 @@ func validateSchema(ctx context.Context, q queryer) error {
 		return err
 	}
 	return validateSchemaColumns(ctx, q, []string{
+		"id,user_id,encrypted_key,fingerprint,revision,data FROM user_connections",
+		"id,user_id,connection_id,client_request_id,request_hash,state,process_id,created_at,finished_at,data FROM online_test_runs",
 		"id,username,password_hash,disabled,created_at FROM admins",
 		"id,username,password_hash,disabled,created_at FROM users", "token_hash,user_id,csrf_token,expires_at FROM user_sessions",
 	})
@@ -513,6 +521,9 @@ func (s *Store) GetSettings(ctx context.Context) (domain.Settings, error) {
 	return normalizedSettings(*v), nil
 }
 func normalizedSettings(v domain.Settings) domain.Settings {
+	if v.OnlineTestRetentionDays < 1 || v.OnlineTestRetentionDays > 365 {
+		v.OnlineTestRetentionDays = 30
+	}
 	if v.ArtifactHistoryScope != "model" {
 		v.ArtifactHistoryScope = "group"
 	}

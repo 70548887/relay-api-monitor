@@ -14,6 +14,7 @@ func TestExtractCompleteBlocks(t *testing.T) {
 		{"preferred fence", "```svg\n<svg/>\n```\n```html\n<html><body>preferred</body></html>\n```", "html", "html", "preferred"},
 		{"multiple matching blocks", "```html\n<html><body>first</body></html>\n```\n```html\n<html><body>second</body></html>\n```", "html", "html", "first"},
 		{"skip incomplete block", "```html\n<html><body>bad\n```\n```html\n<html><body>good</body></html>\n```", "html", "html", "good"},
+		{"restart inside unfinished fence", "```html\n<!doctype html><html><body><svg><defs><linearGradient>unfinished\n```html\n<!doctype html><html><body><svg><circle r=\"3\"/></svg>restarted</body></html>\n```", "html", "html", "restarted"},
 		{"svg fallback", "```xml\n<svg><text>fallback</text></svg>\n```", "html", "svg", "fallback"},
 		{"script closing html string", `<html><body><script>let x="</html>";</script>actual</body></html>`, "html", "html", "actual"},
 		{"comment fake root", `<!-- <html>fake</html> --><!doctype html><html><body>actual</body></html>`, "html", "html", "actual"},
@@ -24,6 +25,25 @@ func TestExtractCompleteBlocks(t *testing.T) {
 				t.Fatalf("%q %q %v", code, kind, err)
 			}
 		})
+	}
+}
+
+func TestExtractRestartedHTMLDoesNotMergeAbandonedPrefix(t *testing.T) {
+	complete := `<!DOCTYPE html><html><head><style>svg{display:block}</style></head><body><svg><circle r="3"/></svg></body></html>`
+	for _, raw := range []string{
+		`<html><body><svg><defs><linearGradient id="abandoned">` + complete,
+		"```html\n<html><body><svg><defs><linearGradient id=\"abandoned\">\nHere is the document:\n```html\n" + complete + "\n```",
+	} {
+		code, kind, err := Extract(raw, "html")
+		if err != nil || kind != "html" || code != complete {
+			t.Fatalf("restarted document was merged with incomplete prefix: kind=%s err=%v code=%q", kind, err, code)
+		}
+	}
+	// A complete earlier response remains the first matching candidate.
+	first := `<html><body>first</body></html>`
+	code, _, err := Extract(first+complete, "html")
+	if err != nil || code != first {
+		t.Fatalf("first complete document was replaced: %q %v", code, err)
 	}
 }
 

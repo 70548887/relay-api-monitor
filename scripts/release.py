@@ -136,7 +136,7 @@ def create_release(root, binary_dir, output, version, commit, build_time, target
         for name in names[-3:]:
             path = output / name
             assets.append(dict(name=name, os=goos, arch=arch, size=path.stat().st_size, sha256=digest(path)))
-    manifest = dict(version=version, commit=commit, build_time=build_time, launcher_protocol=2, usage_guard=1, database_schema=2, min_database_schema=1, assets=assets)
+    manifest = dict(version=version, commit=commit, build_time=build_time, launcher_protocol=2, usage_guard=1, database_schema=3, min_database_schema=1, assets=assets)
     atomic_write(output / 'manifest.json', (json.dumps(manifest, ensure_ascii=False, indent=2) + '\n').encode('utf-8'))
     names.append('manifest.json')
     atomic_write(output / 'SHA256SUMS', ''.join(f'{digest(output / name)}  {name}\n' for name in sorted(names)).encode('ascii'))
@@ -147,7 +147,7 @@ def create_release(root, binary_dir, output, version, commit, build_time, target
 def validate_release(output, version, targets=TARGETS):
     manifest = json.loads((output / 'manifest.json').read_text(encoding='utf-8'))
     validate_metadata(manifest['commit'], manifest['build_time'])
-    if manifest['version'] != version or manifest['launcher_protocol'] != 2 or manifest.get('usage_guard') != 1 or manifest['database_schema'] != 2 or manifest['min_database_schema'] != 1:
+    if manifest['version'] != version or manifest['launcher_protocol'] != 2 or manifest.get('usage_guard') != 1 or manifest['database_schema'] != 3 or manifest['min_database_schema'] != 1:
         raise ValueError('invalid release manifest compatibility contract')
     expected = {filename(program, goos, arch) for goos, arch in targets for program in PROGRAMS}
     expected |= {f'relaylab-{goos}-{arch}-{version}' + ('.zip' if goos == 'windows' else '.tar.gz') for goos, arch in targets}

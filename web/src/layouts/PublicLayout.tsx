@@ -1,10 +1,13 @@
+import { useEffect } from 'react';
 import { ArrowUpOutlined } from '@ant-design/icons';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery,useQueryClient } from '@tanstack/react-query';
 import { NavLink, Outlet } from 'react-router-dom';
 import { refreshUserSession, useUserSession } from '../userApi';
 
 export function PublicLayout() {
   const session = useUserSession();
+ const client=useQueryClient();
+ useEffect(()=>()=>{client.removeQueries({predicate:q=>String(q.queryKey[0]).startsWith('private-')})},[client,session?.user.id]);
   useQuery({ queryKey: ['user-session'], queryFn: ({ signal }) => refreshUserSession(signal), retry: false });
   return <div className="public-portal">
     <header className="site-header">

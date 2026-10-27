@@ -8,7 +8,7 @@ export function requestContextLabel(parameters?:string|Record<string,unknown>){
  if(parameters==='independent')return '独立请求（无历史）';
  try{const value=typeof parameters==='string'?JSON.parse(parameters):parameters;return value?.context_policy==='independent'?'独立请求（无历史）':'未记录'}catch{return '未记录'}
 }
-export function thinkingLabel(mode?:string,budget?:number){return !mode||mode==='default'?'上游默认':mode==='enabled'?`enabled · ${budget||0} tokens`:mode}
+export function thinkingLabel(mode?:string,budget?:number){return !mode||mode==='default'?'上游默认':mode==='enabled'?`enabled · ${budget||0} tokens`:mode==='disabled'?'disabled · 关闭思考':mode==='between_tools'?'between_tools · 仅工具间思考':mode}
 export function verificationLabel(v?:GroupVerification){
  if(v?.status==='verified'&&v.group&&v.group!=='auto')return `令牌绑定组：${v.group}`;
  if(v?.group==='auto')return '自动分组 · 未确认实际命中';

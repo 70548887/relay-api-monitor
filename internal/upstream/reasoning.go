@@ -30,7 +30,7 @@ func ResolveReasoning(m domain.Model, c domain.Channel) (effort, mode string, bu
 	effort, mode = reasoningValue(effort), reasoningValue(mode)
 	if reasoningValue(m.ThinkingMode) == "" && strings.TrimSpace(m.ThinkingMode) != "" {
 		budget = 0
-	} else if reasoningValue(m.ThinkingMode) == "adaptive" && m.ThinkingBudget == 0 {
+	} else if mode != "enabled" && strings.TrimSpace(m.ThinkingMode) != "" && m.ThinkingBudget == 0 {
 		budget = 0
 	}
 	return
@@ -68,7 +68,7 @@ func ValidateReasoning(p, effort, thinkingMode string, budget, maxTokens int) er
 		maxTokens = 4096
 	}
 	switch thinkingMode {
-	case "", "adaptive":
+	case "", "adaptive", "disabled", "between_tools":
 		if budget != 0 {
 			return invalid("Thinking budget is only valid with enabled thinking")
 		}
@@ -77,7 +77,7 @@ func ValidateReasoning(p, effort, thinkingMode string, budget, maxTokens int) er
 			return invalid("Enabled thinking requires a budget of at least 1024 and less than max tokens")
 		}
 	default:
-		return invalid("Thinking mode must be default, adaptive or enabled")
+		return invalid("Thinking mode must be default, adaptive, enabled, disabled or between_tools")
 	}
 	return nil
 }

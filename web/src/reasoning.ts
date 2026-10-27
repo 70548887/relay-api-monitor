@@ -9,6 +9,8 @@ export const thinkingOptions=(inherit=false)=>[
  {value:'',label:inherit?'继承分组':'上游默认'},
  ...(inherit?[{value:'default',label:'上游默认（覆盖分组）'}]:[]),
  {value:'adaptive',label:'adaptive · 自适应'},{value:'enabled',label:'enabled · 指定预算'},
+ {value:'disabled',label:'disabled · 关闭思考（需模型支持）'},
+ {value:'between_tools',label:'between_tools · 仅工具间思考（需模型支持）'},
 ];
 /** A protocol change never carries a setting unsupported by the new protocol. */
 export function compatibleReasoning(protocol:Protocol,values:{reasoning_effort?:string;thinking_mode?:string;thinking_budget?:number}){

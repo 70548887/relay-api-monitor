@@ -165,6 +165,7 @@ export interface Job {
 }
 
 export interface Settings {
+  online_test_retention_days: number;
   probe_concurrency: number;
   artifact_concurrency: number;
   channel_concurrency: number;
@@ -205,5 +206,77 @@ export interface AuditEvent {
   entity_id: string;
   detail: string;
   created_at: string;
+}
+
+export interface UserConnection {
+  id: string;
+  user_id: string;
+  username?: string;
+  name: string;
+  base_url: string;
+  protocol: string;
+  discovery_protocol: string;
+  models_path: string;
+  generate_path: string;
+  anthropic_version: string;
+  chat_token_field: string;
+  key_mask: string;
+  revision: number;
+  disabled: boolean;
+  created_at: string;
+  updated_at: string;
+  last_models_at: string | null;
+  last_models_count: number;
+  last_models_error: string;
+}
+
+export interface OnlineTestRun {
+  id: string;
+  user_id: string;
+  username?: string;
+  connection_id: string;
+  connection_revision: number;
+  client_request_id: string;
+  connection_name: string;
+  base_url: string;
+  protocol: string;
+  models_path: string;
+  generate_path: string;
+  anthropic_version: string;
+  chat_token_field: string;
+  model: string;
+  returned_model: string;
+  prompt?: string;
+  template_id: string;
+  template_version: number;
+  max_tokens: number;
+  timeout_seconds: number;
+  reasoning_effort: string;
+  thinking_mode: string;
+  thinking_budget: number;
+  state: string;
+  text?: string;
+  code?: string;
+  kind: string;
+  preview_status: string;
+  usage: Usage;
+  http_status: number;
+  first_text_ms: number | null;
+  duration_ms: number;
+  finish_reason: string;
+  error_code: string;
+  error_message: string;
+  heartbeat_at: string;
+  deadline: string;
+  created_at: string;
+  started_at: string;
+  finished_at: string | null;
+}
+
+export interface OnlineTestPage {
+  items: Array<OnlineTestRun>;
+  total: number;
+  page: number;
+  page_size: number;
 }
 

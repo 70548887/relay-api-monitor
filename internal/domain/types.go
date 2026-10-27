@@ -128,6 +128,7 @@ type PromptTemplate struct {
 }
 
 type Settings struct {
+	OnlineTestRetentionDays     int    `json:"online_test_retention_days"`
 	ProbeConcurrency            int    `json:"probe_concurrency"`
 	ArtifactConcurrency         int    `json:"artifact_concurrency"`
 	ChannelConcurrency          int    `json:"channel_concurrency"`
@@ -146,7 +147,7 @@ type Settings struct {
 }
 
 func DefaultSettings() Settings {
-	return Settings{ProbeConcurrency: 4, ArtifactConcurrency: 2, ChannelConcurrency: 2, ProbeIntervalSeconds: 300, ArtifactIntervalSeconds: 1800, ProbeTimeoutSeconds: 60, ArtifactTimeoutSeconds: 600, ArtifactHistoryScope: "group", DiscoveryTimeoutSeconds: 20, SlowThresholdMS: 10000, RetentionDays: 30, VisitorConcurrency: 8, VisitorIPConcurrency: 2, VisitorModelsPerMinute: 5, VisitorGenerationsPerMinute: 10}
+	return Settings{OnlineTestRetentionDays: 30, ProbeConcurrency: 4, ArtifactConcurrency: 2, ChannelConcurrency: 2, ProbeIntervalSeconds: 300, ArtifactIntervalSeconds: 1800, ProbeTimeoutSeconds: 60, ArtifactTimeoutSeconds: 600, ArtifactHistoryScope: "group", DiscoveryTimeoutSeconds: 20, SlowThresholdMS: 10000, RetentionDays: 30, VisitorConcurrency: 8, VisitorIPConcurrency: 2, VisitorModelsPerMinute: 5, VisitorGenerationsPerMinute: 10}
 }
 
 type Schedule struct {

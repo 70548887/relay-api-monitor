@@ -41,6 +41,9 @@ type Server struct {
 	launcherManaged  bool
 	launcherProtocol int
 	updates          *update.Manager
+	privateProcess   string
+	privateLifecycle sync.Mutex
+	privateCancels   map[string]context.CancelFunc
 }
 type rateBucket struct {
 	Start time.Time
@@ -48,7 +51,7 @@ type rateBucket struct {
 }
 
 func New(st *store.Store, v *security.Vault) *Server {
-	return &Server{Store: st, Vault: v, Client: upstream.New(), rates: map[string]*rateBucket{}, active: map[string]int{}, authSlots: make(chan struct{}, 2)}
+	return &Server{privateProcess: domain.NewID(), privateCancels: map[string]context.CancelFunc{}, Store: st, Vault: v, Client: upstream.New(), rates: map[string]*rateBucket{}, active: map[string]int{}, authSlots: make(chan struct{}, 2)}
 }
 
 // SetUpdateManager wires the online updater without changing the existing
@@ -108,6 +111,18 @@ func (s *Server) Handler() http.Handler {
 	memberAuth.GET("/me", s.memberMe)
 	memberAuth.POST("/logout", s.memberLogout)
 	memberAuth.POST("/password", s.memberPassword)
+	private := a.Group("/user")
+	private.Use(s.requireMemberAuth)
+	private.GET("/connections", s.connections)
+	private.POST("/connections", s.saveConnection)
+	private.PUT("/connections/:id", s.saveConnection)
+	private.DELETE("/connections/:id", s.deleteConnection)
+	private.GET("/test-records", s.testRecords)
+	private.GET("/test-records/:id", s.testRecord)
+	private.GET("/test-records/:id/source", s.testRecordSource)
+	private.DELETE("/test-records/:id", s.deleteTestRecords)
+	private.POST("/test-records/batch-delete", s.deleteTestRecords)
+	private.POST("/test-records/:id/cancel", s.cancelTestRecord)
 	auth := a.Group("/auth")
 	auth.Use(s.requireAuth)
 	auth.GET("/me", s.me)
@@ -123,6 +138,13 @@ func (s *Server) Handler() http.Handler {
 	admin.POST("/members", s.createAdminMember)
 	admin.PATCH("/members/:id", s.updateAdminMember)
 	admin.POST("/members/:id/reset-password", s.resetAdminMemberPassword)
+	admin.GET("/test-records", s.testRecords)
+	admin.GET("/test-records/:id", s.testRecord)
+	admin.GET("/test-records/:id/source", s.testRecordSource)
+	admin.DELETE("/test-records/:id", s.deleteTestRecords)
+	admin.POST("/test-records/batch-delete", s.deleteTestRecords)
+	admin.GET("/user-connections", s.connections)
+	admin.PATCH("/user-connections/:id/status", s.connectionStatus)
 	admin.GET("/overview", s.overview)
 	admin.GET("/platforms", s.platforms)
 	admin.POST("/platforms", s.savePlatform)

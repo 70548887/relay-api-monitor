@@ -31,7 +31,7 @@ const (
 	maxReleaseBody          = 4 << 20
 	maxDownloadSize         = 2 << 30
 	LauncherProtocol        = 2
-	DatabaseSchema          = 2
+	DatabaseSchema          = 3
 	RequiredUsageGuard      = 1
 	metadataRequestTimeout  = 2 * time.Minute
 	artifactDownloadTimeout = 15 * time.Minute

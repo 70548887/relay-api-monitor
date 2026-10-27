@@ -1,0 +1,5 @@
+import {ApiOutlined,ExperimentOutlined,HistoryOutlined,FileTextOutlined,ArrowUpOutlined} from '@ant-design/icons';
+export function PrivateTestNav({active='test',recordID}:{active?:'test'|'connections'|'history';recordID?:string}){
+ const entries=[{id:'test',href:'/test',label:'在线测试',icon:<ExperimentOutlined aria-hidden="true"/>},{id:'connections',href:'/account/connections',label:'保存的连接',icon:<ApiOutlined aria-hidden="true"/>},{id:'history',href:'/account/tests',label:'我的测试记录',icon:<HistoryOutlined aria-hidden="true"/>}];
+ return <nav className="private-test-nav" aria-label="私有测试导航"><div className="private-test-nav-main">{entries.map(item=><a key={item.id} href={item.href} aria-current={active===item.id?'page':undefined}>{item.icon}<span>{item.label}</span></a>)}</div>{recordID&&<a className="private-test-current" href={`/account/tests/${encodeURIComponent(recordID)}`}><FileTextOutlined aria-hidden="true"/><span>查看本次记录</span><ArrowUpOutlined aria-hidden="true" rotate={45}/></a>}</nav>;
+}

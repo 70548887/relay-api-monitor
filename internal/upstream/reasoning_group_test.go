@@ -26,6 +26,8 @@ func TestReasoningWireSnapshots(t *testing.T) {
 		{"responses xhigh", "responses", "xhigh", "", `{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}]}`, "/v1/responses", `{"model":"requested","stream":true,"input":"hello","max_output_tokens":4096,"reasoning":{"effort":"xhigh"}}`, 0},
 		{"claude adaptive high", "anthropic", "high", "adaptive", `{"type":"message","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}`, "/v1/messages", `{"model":"requested","stream":true,"messages":[{"role":"user","content":"hello"}],"max_tokens":4096,"output_config":{"effort":"high"},"thinking":{"type":"adaptive"}}`, 0},
 		{"claude enabled max", "anthropic", "max", "enabled", `{"type":"message","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}`, "/v1/messages", `{"model":"requested","stream":true,"messages":[{"role":"user","content":"hello"}],"max_tokens":4096,"output_config":{"effort":"max"},"thinking":{"type":"enabled","budget_tokens":1024}}`, 1024},
+		{"claude disabled", "anthropic", "", "disabled", `{"type":"message","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}`, "/v1/messages", `{"model":"requested","stream":true,"messages":[{"role":"user","content":"hello"}],"max_tokens":4096,"thinking":{"type":"disabled"}}`, 0},
+		{"claude between tools", "anthropic", "", "between_tools", `{"type":"message","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}`, "/v1/messages", `{"model":"requested","stream":true,"messages":[{"role":"user","content":"hello"}],"max_tokens":4096,"thinking":{"type":"between_tools"}}`, 0},
 		{"default omitted", "chat", "default", "default", `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`, "/v1/chat/completions", `{"model":"requested","stream":true,"messages":[{"role":"user","content":"hello"}],"max_completion_tokens":4096,"stream_options":{"include_usage":true}}`, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -74,7 +76,8 @@ func TestInvalidReasoningRejectedBeforeDispatch(t *testing.T) {
 		budget, max            int
 	}{
 		{"chat", "ultra", "", 0, 4096}, {"responses", "adaptive", "", 0, 4096}, {"chat", "high", "enabled", 1024, 4096},
-		{"anthropic", "minimal", "", 0, 4096}, {"anthropic", "high", "disabled", 0, 4096}, {"anthropic", "high", "enabled", 1023, 4096},
+		{"anthropic", "minimal", "", 0, 4096}, {"anthropic", "high", "unknown", 0, 4096}, {"anthropic", "high", "enabled", 1023, 4096},
+		{"anthropic", "", "disabled", 1024, 4096}, {"anthropic", "", "between_tools", 1024, 4096},
 		{"anthropic", "high", "enabled", 4096, 4096}, {"anthropic", "high", "adaptive", 1024, 4096}, {"anthropic", "high", "", -1, 4096},
 	} {
 		_, err := NewTestClient(server.Client()).Generate(context.Background(), Request{Config: Config{BaseURL: server.URL, Protocol: tc.protocol}, Model: "m", Prompt: "p", MaxTokens: tc.max, ReasoningEffort: tc.effort, ThinkingMode: tc.mode, ThinkingBudget: tc.budget}, nil)
@@ -97,6 +100,8 @@ func TestResolveReasoningOverrides(t *testing.T) {
 		{domain.Model{}, "high", "enabled", 2048},
 		{domain.Model{ReasoningEffort: "default", ThinkingMode: "default"}, "", "", 0},
 		{domain.Model{ReasoningEffort: "low", ThinkingMode: "adaptive"}, "low", "adaptive", 0},
+		{domain.Model{ThinkingMode: "disabled"}, "high", "disabled", 0},
+		{domain.Model{ThinkingMode: "between_tools"}, "high", "between_tools", 0},
 		{domain.Model{ThinkingBudget: 1024}, "high", "enabled", 1024},
 	} {
 		effort, mode, budget := ResolveReasoning(tc.model, channel)

@@ -113,7 +113,7 @@ func TestRestoreMigratesSchemaOneBackupAndPreservesAccountsAndKeys(t *testing.T)
 	}
 	defer s.Close()
 	var version int
-	if err = s.DB.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 2 {
+	if err = s.DB.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 3 {
 		t.Fatal("restored schema version", version, err)
 	}
 	admin, err := s.GetAdminByUsername(ctx, "legacy")
@@ -152,7 +152,7 @@ func TestRestoreRejectsInvalidSchemaOneBackupsBeforePublishing(t *testing.T) {
 	}{
 		{name: "wrong key", wrongKey: true, want: "解密"},
 		{name: "future database", mutate: func(db *sql.DB) {
-			if _, err := db.Exec("PRAGMA user_version=3"); err != nil {
+			if _, err := db.Exec("PRAGMA user_version=4"); err != nil {
 				t.Fatal(err)
 			}
 		}, want: "unsupported database schema"},

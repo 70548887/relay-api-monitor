@@ -236,6 +236,15 @@ func channelConfig(ch domain.Channel, key string) upstream.Config {
 	return upstream.Config{BaseURL: ch.BaseURL, APIKey: key, Protocol: ch.Protocol, DiscoveryProtocol: ch.DiscoveryProtocol, ModelsPath: ch.ModelsPath, GeneratePath: ch.GeneratePath, AnthropicVersion: ch.AnthropicVersion, ChatTokenField: ch.ChatTokenField}
 }
 func (s *Server) syncModels(c *gin.Context) {
+	// Clients may POST an empty JSON object. Consume it before writing the
+	// potentially large catalogue so closing connections do not discard the
+	// response while unread request bytes remain in the socket.
+	if c.Request.ContentLength != 0 {
+		var body struct{}
+		if !bind(c, &body) {
+			return
+		}
+	}
 	ctx := c.Request.Context()
 	ch, e := s.Store.GetChannel(ctx, c.Param("id"))
 	if e != nil {
@@ -331,7 +340,7 @@ func (s *Server) saveModel(c *gin.Context) {
 		fail(c, 400, "invalid_reasoning", e.Error())
 		return
 	}
-	if b.ThinkingBudget < 0 || (b.ThinkingBudget > 0 && (b.ThinkingMode == "adaptive" || b.ThinkingMode == "default")) {
+	if b.ThinkingBudget < 0 || (b.ThinkingBudget > 0 && b.ThinkingMode != "" && b.ThinkingMode != "enabled") {
 		fail(c, 400, "invalid_reasoning", "思考预算仅适用于 enabled 模式")
 		return
 	}
@@ -441,7 +450,10 @@ func (s *Server) saveSettings(c *gin.Context) {
 		fail(c, 400, "invalid_settings", "作品历史范围须为 group 或 model")
 		return
 	}
-	if b.ProbeConcurrency < 1 || b.ProbeConcurrency > 32 || b.ArtifactConcurrency < 1 || b.ArtifactConcurrency > 16 || b.ChannelConcurrency < 1 || b.ChannelConcurrency > 16 || b.ProbeIntervalSeconds < 30 || b.ProbeIntervalSeconds > 86400 || b.ArtifactIntervalSeconds < 60 || b.ArtifactIntervalSeconds > 604800 || b.ProbeTimeoutSeconds < 5 || b.ProbeTimeoutSeconds > 600 || b.ArtifactTimeoutSeconds < 5 || b.ArtifactTimeoutSeconds > 600 || b.DiscoveryTimeoutSeconds < 1 || b.DiscoveryTimeoutSeconds > 120 || b.RetentionDays < 1 || b.RetentionDays > 365 || b.SlowThresholdMS < 100 || b.SlowThresholdMS > 600000 || b.VisitorConcurrency < 1 || b.VisitorConcurrency > 64 || b.VisitorIPConcurrency < 1 || b.VisitorIPConcurrency > 8 || b.VisitorModelsPerMinute < 1 || b.VisitorModelsPerMinute > 120 || b.VisitorGenerationsPerMinute < 1 || b.VisitorGenerationsPerMinute > 120 {
+	if b.OnlineTestRetentionDays == 0 {
+		b.OnlineTestRetentionDays = 30
+	}
+	if b.ProbeConcurrency < 1 || b.ProbeConcurrency > 32 || b.ArtifactConcurrency < 1 || b.ArtifactConcurrency > 16 || b.ChannelConcurrency < 1 || b.ChannelConcurrency > 16 || b.ProbeIntervalSeconds < 30 || b.ProbeIntervalSeconds > 86400 || b.ArtifactIntervalSeconds < 60 || b.ArtifactIntervalSeconds > 604800 || b.ProbeTimeoutSeconds < 5 || b.ProbeTimeoutSeconds > 600 || b.ArtifactTimeoutSeconds < 5 || b.ArtifactTimeoutSeconds > 600 || b.DiscoveryTimeoutSeconds < 1 || b.DiscoveryTimeoutSeconds > 120 || b.OnlineTestRetentionDays < 1 || b.OnlineTestRetentionDays > 365 || b.RetentionDays < 1 || b.RetentionDays > 365 || b.SlowThresholdMS < 100 || b.SlowThresholdMS > 600000 || b.VisitorConcurrency < 1 || b.VisitorConcurrency > 64 || b.VisitorIPConcurrency < 1 || b.VisitorIPConcurrency > 8 || b.VisitorModelsPerMinute < 1 || b.VisitorModelsPerMinute > 120 || b.VisitorGenerationsPerMinute < 1 || b.VisitorGenerationsPerMinute > 120 {
 		fail(c, 400, "invalid_settings", "设置超出允许范围")
 		return
 	}

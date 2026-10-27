@@ -11,6 +11,8 @@ const destinations = [
   { to: '/admin/models', label: '模型配置', icon: <AppstoreOutlined aria-hidden="true"/> },
   { to: '/admin/jobs', label: '任务与作品', icon: <FileTextOutlined aria-hidden="true"/> },
   { to: '/admin/updates', label: '在线升级', icon: <CloudDownloadOutlined aria-hidden="true"/> },
+  { to: '/admin/user-connections', label: '用户连接', icon: <ApiOutlined aria-hidden="true"/> },
+  { to: '/admin/test-records', label: '在线测试记录', icon: <FileTextOutlined aria-hidden="true"/> },
   { to: '/admin/users', label: '用户管理', icon: <UserOutlined aria-hidden="true"/> },
   { to: '/admin/settings', label: '系统设置', icon: <SettingOutlined aria-hidden="true"/> },
 ];

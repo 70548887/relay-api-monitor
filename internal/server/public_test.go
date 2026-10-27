@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"relaylab/internal/domain"
+	"relaylab/internal/security"
 	"relaylab/internal/store"
 )
 
@@ -30,7 +31,11 @@ func publicFixture(t *testing.T) (*Server, domain.Platform, domain.Channel, doma
 			t.Fatal(err)
 		}
 	}
-	return New(db, nil), p, ch, model
+	vault, e := security.LoadVault(t.TempDir(), false)
+	if e != nil {
+		t.Fatal(e)
+	}
+	return New(db, vault), p, ch, model
 }
 
 func publicGET(t *testing.T, s *Server, path string) *httptest.ResponseRecorder {

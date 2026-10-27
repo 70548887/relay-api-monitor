@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -48,22 +49,27 @@ func publicError(err error) string {
 }
 
 type visitorRequest struct {
-	BaseURL           string `json:"base_url"`
-	APIKey            string `json:"api_key"`
-	Protocol          string `json:"protocol"`
-	DiscoveryProtocol string `json:"discovery_protocol"`
-	ModelsPath        string `json:"models_path"`
-	GeneratePath      string `json:"generate_path"`
-	AnthropicVersion  string `json:"anthropic_version"`
-	ChatTokenField    string `json:"chat_token_field"`
-	Model             string `json:"model"`
-	Prompt            string `json:"prompt"`
-	TemplateID        string `json:"template_id"`
-	MaxTokens         int    `json:"max_tokens"`
-	TimeoutSeconds    int    `json:"timeout_seconds"`
-	ReasoningEffort   string `json:"reasoning_effort"`
-	ThinkingMode      string `json:"thinking_mode"`
-	ThinkingBudget    int    `json:"thinking_budget"`
+	ConnectionID       string `json:"connection_id"`
+	ConnectionRevision int    `json:"connection_revision"`
+	TemplateVersion    *int   `json:"template_version"`
+	SourceRecordID     string `json:"source_record_id"`
+	ClientRequestID    string `json:"client_request_id"`
+	BaseURL            string `json:"base_url"`
+	APIKey             string `json:"api_key"`
+	Protocol           string `json:"protocol"`
+	DiscoveryProtocol  string `json:"discovery_protocol"`
+	ModelsPath         string `json:"models_path"`
+	GeneratePath       string `json:"generate_path"`
+	AnthropicVersion   string `json:"anthropic_version"`
+	ChatTokenField     string `json:"chat_token_field"`
+	Model              string `json:"model"`
+	Prompt             string `json:"prompt"`
+	TemplateID         string `json:"template_id"`
+	MaxTokens          int    `json:"max_tokens"`
+	TimeoutSeconds     int    `json:"timeout_seconds"`
+	ReasoningEffort    string `json:"reasoning_effort"`
+	ThinkingMode       string `json:"thinking_mode"`
+	ThinkingBudget     int    `json:"thinking_budget"`
 }
 
 func (b visitorRequest) config() upstream.Config {
@@ -156,6 +162,10 @@ func (s *Server) testModels(c *gin.Context) {
 		return
 	}
 	defer func() { b.APIKey = "" }()
+	connection, resolved := s.resolveTestConnection(c, &b)
+	if !resolved {
+		return
+	}
 	if b.DiscoveryProtocol == "" {
 		b.DiscoveryProtocol = "openai"
 	}
@@ -178,7 +188,11 @@ func (s *Server) testModels(c *gin.Context) {
 		if c.Request.Context().Err() != nil {
 			return
 		}
-		fail(c, 502, "upstream_error", strings.ReplaceAll(publicError(err), b.APIKey, "[redacted]"))
+		message := strings.ReplaceAll(publicError(err), b.APIKey, "[redacted]")
+		updateCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = s.Store.UpdateUserConnectionDiscovery(updateCtx, memberID(c), connection.ID, connection.Revision, 0, message)
+		stop()
+		fail(c, 502, "upstream_error", message)
 		return
 	}
 	if models == nil {
@@ -187,7 +201,8 @@ func (s *Server) testModels(c *gin.Context) {
 	for index := range models {
 		models[index] = strings.ReplaceAll(models[index], b.APIKey, "[redacted]")
 	}
-	c.JSON(200, gin.H{"models": models, "duration_ms": time.Since(started).Milliseconds()})
+	_ = s.Store.UpdateUserConnectionDiscovery(ctx, memberID(c), connection.ID, connection.Revision, len(models), "")
+	c.JSON(200, gin.H{"models": models, "duration_ms": time.Since(started).Milliseconds(), "connection_id": connection.ID})
 }
 
 type keyRedactor struct{ key, pending string }
@@ -224,6 +239,14 @@ func (s *Server) testGenerate(c *gin.Context) {
 		return
 	}
 	defer func() { b.APIKey = "" }()
+	var connection *domain.UserConnection
+	if b.ConnectionID != "" {
+		var ok bool
+		connection, ok = s.resolveTestConnection(c, &b)
+		if !ok {
+			return
+		}
+	}
 	if b.Protocol == "" {
 		b.Protocol = "chat"
 	}
@@ -253,8 +276,67 @@ func (s *Server) testGenerate(c *gin.Context) {
 	if !validateVisitor(c, b) {
 		return
 	}
+	if connection == nil {
+		var ok bool
+		connection, ok = s.resolveTestConnection(c, &b)
+		if !ok {
+			return
+		}
+	}
+	if b.ClientRequestID == "" {
+		b.ClientRequestID = domain.NewID()
+	}
+	if len(b.ClientRequestID) > 100 || strings.TrimSpace(b.ClientRequestID) == "" {
+		fail(c, 400, "invalid_request_id", "请求标识不正确")
+		return
+	}
+	user := memberID(c)
+	now := time.Now().UTC()
+	snapshot := b
+	snapshot.APIKey = ""
+	snapshot.ClientRequestID = ""
+	requestHash := privateHash([]any{snapshot, connection.Revision})
+	version, valid := s.privateTemplateVersion(c, b)
+	if !valid {
+		return
+	}
+	run := domain.OnlineTestRun{ID: domain.NewID(), UserID: user, ConnectionID: connection.ID, ConnectionRevision: connection.Revision, ClientRequestID: b.ClientRequestID, RequestHash: requestHash, ConnectionName: connection.Name, BaseURL: b.BaseURL, Protocol: b.Protocol, ModelsPath: b.ModelsPath, GeneratePath: b.GeneratePath, AnthropicVersion: b.AnthropicVersion, ChatTokenField: b.ChatTokenField, Model: b.Model, Prompt: redactPrivate(b.Prompt, b.APIKey), TemplateID: b.TemplateID, TemplateVersion: version, MaxTokens: b.MaxTokens, TimeoutSeconds: b.TimeoutSeconds, ReasoningEffort: b.ReasoningEffort, ThinkingMode: b.ThinkingMode, ThinkingBudget: b.ThinkingBudget, State: "created", PreviewStatus: "none", ProcessID: s.privateProcess, HeartbeatAt: now, Deadline: now.Add(time.Duration(b.TimeoutSeconds) * time.Second), CreatedAt: now, StartedAt: now}
+	s.privateLifecycle.Lock()
+	saved, created, e := s.Store.CreateOnlineTestRun(c.Request.Context(), run)
+	if e != nil {
+		s.privateLifecycle.Unlock()
+		dbError(c, e)
+		return
+	}
+	if !created {
+		s.privateLifecycle.Unlock()
+		c.JSON(200, gin.H{"record_id": saved.ID, "saved": true, "reused": true, "state": saved.State})
+		return
+	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), time.Duration(b.TimeoutSeconds)*time.Second)
 	defer cancel()
+	s.mu.Lock()
+	s.privateCancels[run.ID] = cancel
+	s.mu.Unlock()
+	s.privateLifecycle.Unlock()
+	defer func() { s.mu.Lock(); delete(s.privateCancels, run.ID); s.mu.Unlock() }()
+	run.State = "running"
+	if e = s.Store.UpdateOnlineTestRun(ctx, run); e != nil {
+		if ctx.Err() != nil {
+			run.State = "canceled"
+			run.ErrorCode = "canceled_before_dispatch"
+			run.ErrorMessage = "请求在发送前已取消"
+			finished := time.Now().UTC()
+			run.FinishedAt = &finished
+			saveCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = s.Store.UpdateOnlineTestRun(saveCtx, run)
+			stop()
+		} else {
+			_ = s.interruptPrivateRun(run, "请求尚未发送，记录状态写入失败；可重新发起测试")
+		}
+		dbError(c, e)
+		return
+	}
 	c.Header("Content-Type", "text/event-stream; charset=utf-8")
 	c.Header("Cache-Control", "no-cache, no-store")
 	c.Header("X-Accel-Buffering", "no")
@@ -267,7 +349,7 @@ func (s *Server) testGenerate(c *gin.Context) {
 		if err := c.Request.Context().Err(); err != nil {
 			return err
 		}
-		data, err := json.Marshal(value)
+		encoded, err := json.Marshal(value)
 		if err != nil {
 			return err
 		}
@@ -277,70 +359,176 @@ func (s *Server) testGenerate(c *gin.Context) {
 			return err
 		}
 		defer func() { _ = controller.SetWriteDeadline(time.Time{}) }()
-		if _, err = fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", event, data); err != nil {
+		if _, err = fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", event, encoded); err != nil {
 			outputErr = err
 			return err
 		}
 		outputErr = controller.Flush()
 		return outputErr
 	}
+	var mu sync.Mutex
+	var persistMu sync.Mutex
+	stopProgress := make(chan struct{})
+	progressDone := make(chan struct{})
+	var persistErr error
+	persist := func() error {
+		persistMu.Lock()
+		defer persistMu.Unlock()
+		mu.Lock()
+		copy := run
+		mu.Unlock()
+		copy.HeartbeatAt = time.Now().UTC()
+		saveCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
+		defer stop()
+		return s.Store.UpdateOnlineTestRun(saveCtx, copy)
+	}
+	go func() {
+		defer close(progressDone)
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopProgress:
+				return
+			case <-ticker.C:
+				if err := persist(); err != nil {
+					mu.Lock()
+					persistErr = err
+					mu.Unlock()
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	sentBytes := 0
+	recordErr := send("record", gin.H{"record_id": run.ID, "saved": true})
 	redactor := keyRedactor{key: b.APIKey}
-	result, err := s.Client.Generate(ctx, upstream.Request{Config: b.config(), Model: b.Model, Prompt: b.Prompt, MaxTokens: b.MaxTokens, Timeout: time.Duration(b.TimeoutSeconds) * time.Second, ReasoningEffort: b.ReasoningEffort, ThinkingMode: b.ThinkingMode, ThinkingBudget: b.ThinkingBudget}, func(event upstream.Event) error {
-		switch event.Type {
-		case "meta":
-			return send("meta", gin.H{"http_status": event.HTTPStatus, "protocol": b.Protocol, "reasoning_effort": event.ReasoningEffort, "thinking_mode": event.ThinkingMode, "thinking_budget": event.ThinkingBudget})
-		case "text":
-			text := redactor.push(event.Text)
-			if text != "" {
+	result := upstream.Result{}
+	var requestErr error
+	if recordErr != nil {
+		requestErr = recordErr
+	} else {
+		result, requestErr = s.Client.Generate(ctx, upstream.Request{Config: b.config(), Model: b.Model, Prompt: b.Prompt, MaxTokens: b.MaxTokens, Timeout: time.Duration(b.TimeoutSeconds) * time.Second, ReasoningEffort: b.ReasoningEffort, ThinkingMode: b.ThinkingMode, ThinkingBudget: b.ThinkingBudget}, func(event upstream.Event) error {
+			switch event.Type {
+			case "meta":
+				mu.Lock()
+				run.HTTPStatus = event.HTTPStatus
+				mu.Unlock()
+				return send("meta", gin.H{"record_id": run.ID, "requested_model": b.Model, "protocol": b.Protocol, "http_status": event.HTTPStatus, "reasoning_effort": event.ReasoningEffort, "thinking_mode": event.ThinkingMode, "thinking_budget": event.ThinkingBudget})
+			case "text":
+				text := redactor.push(event.Text)
+				if text == "" {
+					return nil
+				}
+				mu.Lock()
+				run.Text += text
+				if run.FirstTextMS == nil {
+					ms := time.Since(now).Milliseconds()
+					run.FirstTextMS = &ms
+				}
+				needSave := len(run.Text)-sentBytes >= 64<<10
+				if needSave {
+					sentBytes = len(run.Text)
+				}
+				mu.Unlock()
+				if needSave {
+					if err := persist(); err != nil {
+						mu.Lock()
+						persistErr = err
+						mu.Unlock()
+						return err
+					}
+				}
 				return send("delta", gin.H{"text": text})
+			case "usage":
+				if event.Usage != nil {
+					mu.Lock()
+					run.Usage = *event.Usage
+					mu.Unlock()
+					return send("usage", event.Usage)
+				}
 			}
-		case "usage":
-			if event.Usage != nil {
-				return send("usage", event.Usage)
+			return nil
+		})
+	}
+	close(stopProgress)
+	<-progressDone
+	// Read the adapter's final accumulated text even when downstream delivery was
+	// canceled. No additional upstream request is issued to reconstruct it.
+	tail := redactor.finish()
+	run.Text = redactPrivate(result.Text, b.APIKey)
+	run.ReturnedModel = redactPrivate(result.ReturnedModel, b.APIKey)
+	run.Usage = result.Usage
+	run.HTTPStatus = result.HTTPStatus
+	run.DurationMS = result.DurationMS
+	if run.DurationMS == 0 {
+		run.DurationMS = time.Since(now).Milliseconds()
+	}
+	run.FirstTextMS = result.FirstTextMS
+	run.FinishReason = result.FinishReason
+	run.State = "succeeded"
+	if requestErr != nil || !result.Complete {
+		run.State = "failed"
+		run.ErrorCode = "incomplete_stream"
+		run.ErrorMessage = "上游响应未完整结束"
+		if requestErr != nil {
+			run.ErrorMessage = redactPrivate(publicError(requestErr), b.APIKey)
+			var typed *upstream.Error
+			if errors.As(requestErr, &typed) {
+				run.ErrorCode = typed.Code
 			}
 		}
-		return nil
-	})
-	if c.Request.Context().Err() != nil || outputErr != nil {
-		return
-	}
-	if tail := redactor.finish(); tail != "" {
-		if writeErr := send("delta", gin.H{"text": tail}); writeErr != nil {
-			return
+		if errors.Is(ctx.Err(), context.Canceled) || c.Request.Context().Err() != nil || outputErr != nil {
+			run.State = "canceled"
+			run.ErrorCode = "canceled"
+			run.ErrorMessage = "测试已停止；仅保存已接收内容，上游是否停止计费由提供方决定"
 		}
 	}
-	if err != nil {
-		code := "upstream_error"
-		var typed *upstream.Error
-		if errors.As(err, &typed) {
-			code = typed.Code
-		}
-		_ = send("error", gin.H{"code": code, "message": strings.ReplaceAll(publicError(err), b.APIKey, "[redacted]")})
-		return
-	}
-	if !result.Complete {
-		code := "incomplete"
-		message := "上游响应未完成"
-		if b.Protocol == "anthropic" {
-			code = "anthropic_missing_terminal"
-			message = "Anthropic 流缺少 message_stop/stop_reason，作品不会发布；可把 Thinking 设置为上游默认后重试"
-		}
-		_ = send("error", gin.H{"code": code, "message": message})
-		return
-	}
-	if b.TemplateID != "" {
+	if run.State == "succeeded" && b.TemplateID != "" {
 		kind := "html"
 		if b.TemplateID == "en_svg" {
 			kind = "svg"
 		}
-		code, actualKind, extractErr := artifact.Extract(strings.ReplaceAll(result.Text, b.APIKey, "[redacted]"), kind)
+		code, actualKind, extractErr := artifact.Extract(run.Text, kind)
 		if extractErr != nil {
-			_ = send("error", gin.H{"code": "invalid_artifact", "message": "生成响应不包含完整的 HTML 或 SVG 作品"})
-			return
+			run.State = "failed"
+			run.ErrorCode = "invalid_artifact"
+			run.ErrorMessage = "响应不包含完整 HTML/SVG，正文已保存"
+			run.PreviewStatus = "invalid"
+		} else {
+			run.Code, run.Kind, run.PreviewStatus = code, actualKind, "ready"
 		}
-		if send("artifact", gin.H{"code": code, "kind": actualKind, "preview_document": artifact.Preview(code, actualKind)}) != nil {
+	}
+	finished := time.Now().UTC()
+	run.FinishedAt = &finished
+	run.HeartbeatAt = finished
+	saveCtx, stopSave := context.WithTimeout(context.Background(), 5*time.Second)
+	saveErr := s.Store.UpdateOnlineTestRun(saveCtx, run)
+	stopSave()
+	if persistErr != nil || saveErr != nil {
+		if saveErr != nil {
+			_ = s.interruptPrivateRun(run, "最终结果保存失败；已保留可写入的接收内容，不会自动重新调用")
+		}
+		_ = send("error", gin.H{"record_id": run.ID, "saved": false, "code": "history_save_failed", "message": "结果保存失败，请检查测试记录；不会重新调用上游"})
+		return
+	}
+	if c.Request.Context().Err() != nil || outputErr != nil {
+		return
+	}
+	if tail != "" {
+		if err := send("delta", gin.H{"text": tail}); err != nil {
 			return
 		}
 	}
-	_ = send("done", gin.H{"first_text_ms": result.FirstTextMS, "duration_ms": result.DurationMS, "usage": result.Usage, "finish_reason": result.FinishReason, "returned_model": strings.ReplaceAll(result.ReturnedModel, b.APIKey, "[redacted]"), "http_status": result.HTTPStatus, "reasoning_effort": result.ReasoningEffort, "thinking_mode": result.ThinkingMode, "thinking_budget": result.ThinkingBudget})
+	if run.State != "succeeded" {
+		_ = send("error", gin.H{"record_id": run.ID, "saved": true, "code": run.ErrorCode, "message": run.ErrorMessage})
+		return
+	}
+	if run.Code != "" {
+		if send("artifact", gin.H{"code": run.Code, "kind": run.Kind, "preview_document": artifact.Preview(run.Code, run.Kind)}) != nil {
+			return
+		}
+	}
+	_ = send("done", gin.H{"record_id": run.ID, "saved": true, "requested_model": run.Model, "first_text_ms": run.FirstTextMS, "duration_ms": run.DurationMS, "usage": run.Usage, "finish_reason": run.FinishReason, "returned_model": run.ReturnedModel, "http_status": run.HTTPStatus, "reasoning_effort": result.ReasoningEffort, "thinking_mode": result.ThinkingMode, "thinking_budget": result.ThinkingBudget})
 }

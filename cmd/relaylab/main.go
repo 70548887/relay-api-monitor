@@ -74,7 +74,7 @@ func runUpdateChecks(ctx context.Context, manager *update.Manager, interval time
 }
 
 func buildMetadata() runtimecontrol.Build {
-	return runtimecontrol.Build{Version: version, Commit: commit, BuildTime: buildTime, OS: runtime.GOOS, Arch: runtime.GOARCH, LauncherProtocol: runtimecontrol.Protocol, DatabaseSchema: 2, MinDatabaseSchema: 1, UsageGuard: 1}
+	return runtimecontrol.Build{Version: version, Commit: commit, BuildTime: buildTime, OS: runtime.GOOS, Arch: runtime.GOARCH, LauncherProtocol: runtimecontrol.Protocol, DatabaseSchema: 3, MinDatabaseSchema: 1, UsageGuard: 1}
 }
 
 func run(args []string) error {
@@ -189,6 +189,9 @@ func run(args []string) error {
 			}
 		}
 	}
+	if e = validateUserConnectionKeys(st, vault); e != nil {
+		return e
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	if args[0] == "serve" || args[0] == "worker" {
@@ -255,6 +258,9 @@ func run(args []string) error {
 			return e
 		}
 		app.SetMaintenanceFile(filepath.Join(cfg.DataDir, "maintenance.request"))
+		if e = app.StartPrivateTestMaintenance(ctx); e != nil {
+			return e
+		}
 		updater, updateErr := update.New(cfg.Update, cfg.DataDir, update.BuildInfo{Version: version, Commit: commit, BuildTime: buildTime, OS: runtime.GOOS, Arch: runtime.GOARCH})
 		if updateErr != nil {
 			return updateErr
@@ -505,6 +511,9 @@ func restore(dataDir, input string) error {
 		}
 	}
 	if e == nil {
+		e = validateUserConnectionKeys(st, v)
+	}
+	if e == nil {
 		var message string
 		e = st.DB.QueryRow("PRAGMA integrity_check").Scan(&message)
 		if e == nil && message != "ok" {
@@ -526,5 +535,18 @@ func restore(dataDir, input string) error {
 		return e
 	}
 	fmt.Println("恢复完成：" + dataDir)
+	return nil
+}
+
+func validateUserConnectionKeys(st *store.Store, v *security.Vault) error {
+	connections, err := st.ListUserConnections(context.Background(), "")
+	if err != nil {
+		return err
+	}
+	for _, c := range connections {
+		if _, err = v.DecryptUserConnection(c.UserID, c.ID, c.EncryptedKey); err != nil {
+			return err
+		}
+	}
 	return nil
 }

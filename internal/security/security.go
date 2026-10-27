@@ -20,6 +20,33 @@ import (
 
 type Vault struct{ aead cipher.AEAD }
 
+func (v *Vault) EncryptUserConnection(userID, connectionID, plain string) (string, error) {
+	if v == nil || userID == "" || connectionID == "" {
+		return "", errors.New("用户连接加密上下文缺失")
+	}
+	nonce := make([]byte, v.aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
+	aad := []byte("relaylab/user-connection/v1\x00" + userID + "\x00" + connectionID)
+	return base64.RawStdEncoding.EncodeToString(v.aead.Seal(nonce, nonce, []byte(plain), aad)), nil
+}
+func (v *Vault) DecryptUserConnection(userID, connectionID, encoded string) (string, error) {
+	if v == nil {
+		return "", errors.New("用户连接主密钥未加载")
+	}
+	b, err := base64.RawStdEncoding.DecodeString(encoded)
+	if err != nil || len(b) < v.aead.NonceSize() {
+		return "", errors.New("用户连接密文损坏")
+	}
+	n := v.aead.NonceSize()
+	plain, err := v.aead.Open(nil, b[:n], b[n:], []byte("relaylab/user-connection/v1\x00"+userID+"\x00"+connectionID))
+	if err != nil {
+		return "", errors.New("用户连接解密失败，请核对主密钥及连接归属")
+	}
+	return string(plain), nil
+}
+
 func LoadVault(dataDir string, existing bool) (*Vault, error) {
 	resolved, err := filepath.Abs(dataDir)
 	if err != nil {
