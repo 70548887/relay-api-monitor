@@ -357,6 +357,9 @@ func saveChannelConfiguration(ctx context.Context, tx queryer, v domain.Channel)
 		// Group scheduling is edited by its dedicated atomic operation. A
 		// stale general configuration form must not overwrite a newer plan.
 		v.IntelligenceSchedule = old.IntelligenceSchedule
+		if v.ModelControls == nil {
+			v.ModelControls = old.ModelControls
+		}
 		if v.EncryptedKey == "" {
 			v.EncryptedKey = old.EncryptedKey
 		}
@@ -474,8 +477,20 @@ func (s *Store) SyncModels(ctx context.Context, channelID string, upstreamIDs []
 				return e
 			}
 		}
+		var defaults domain.Settings
+		if len(seen) > 0 {
+			cfg, err := load[domain.Settings](ctx, tx, "SELECT data FROM settings WHERE id=1")
+			if err != nil {
+				return err
+			}
+			defaults = *cfg
+		}
+		controls := domain.DefaultModelControls()
+		if c.ModelControls != nil {
+			controls = *c.ModelControls
+		}
 		for id := range seen {
-			m := domain.Model{ID: domain.NewID(), ChannelID: channelID, UpstreamID: id, DisplayName: id, Source: "sync", CreatedAt: nowUTC()}
+			m := domain.Model{ID: domain.NewID(), ChannelID: channelID, UpstreamID: id, DisplayName: id, Source: "sync", Public: c.Public, ProbeEnabled: controls.ProbeEnabled, ArtifactChinese: controls.ArtifactChinese, ArtifactEnglish: controls.ArtifactEnglish, MaxTokens: 8192, TimeoutSeconds: defaults.ArtifactTimeoutSeconds, ProbeIntervalSeconds: defaults.ProbeIntervalSeconds, ArtifactIntervalSeconds: defaults.ArtifactIntervalSeconds, CreatedAt: nowUTC()}
 			if e = saveModel(ctx, tx, m); e != nil {
 				return e
 			}
@@ -483,6 +498,9 @@ func (s *Store) SyncModels(ctx context.Context, channelID string, upstreamIDs []
 		n := nowUTC()
 		c.LastSyncAt = &n
 		c.SyncError = ""
+		if _, e = bindSelectedModel(ctx, tx, c, false); e != nil {
+			return e
+		}
 		if e = saveChannel(ctx, tx, *c); e != nil {
 			return e
 		}

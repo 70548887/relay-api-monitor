@@ -228,7 +228,7 @@ func TestPublicArtifactAndAttemptExposeOnlyComparisonParameters(t *testing.T) {
 	if strings.Contains(string(encoded), "secret-parameter") || strings.Contains(string(encoded), "private-url") {
 		t.Fatal("transport parameter leak")
 	}
-	stale := groupVerification(domain.Channel{Revision: 5, GroupVerificationRevision: 4, VerifiedGroup: "stale", GroupVerificationStatus: "verified"})
+	stale := groupVerification(domain.Channel{GroupProvider: "newapi", Revision: 5, GroupVerificationRevision: 4, VerifiedGroup: "stale", GroupVerificationStatus: "verified"})
 	if stale["status"] != "unverified" || stale["group"] != "" || stale["checked_at"] != (*time.Time)(nil) {
 		t.Fatalf("stale verification presented as current %+v", stale)
 	}

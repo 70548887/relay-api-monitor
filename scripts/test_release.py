@@ -17,7 +17,7 @@ class PackagingTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.binaries, self.output = self.root / 'bin', self.root / 'dist'
         self.binaries.mkdir()
-        files = ('README.md', 'config.example.yaml', 'docs/UPDATES.md', 'docs/RELEASE.md', 'docs/releases/v9.9.9.md', 'release/THIRD_PARTY_NOTICES.txt', 'deploy/relaylab-launcher.service', 'deploy/relaylab.env.example', *[f'scripts/{name}' for name in release.SCRIPT_NAMES])
+        files = ('README.md', 'config.example.yaml', 'docs/UPDATES.md', 'docs/RELEASE.md', 'docs/DOCKER.md', 'docs/releases/v9.9.9.md', 'release/THIRD_PARTY_NOTICES.txt', 'deploy/relaylab-launcher.service', 'deploy/relaylab.env.example', '.dockerignore', *release.DOCKER_RUNTIME_FILES.values(), *[f'scripts/{name}' for name in release.SCRIPT_NAMES])
         for name in files:
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -26,7 +26,7 @@ class PackagingTests(unittest.TestCase):
         for goos, arch in release.TARGETS:
             for program in release.PROGRAMS:
                 (self.binaries / release.filename(program, goos, arch)).write_bytes(f'{program}/{goos}/{arch}'.encode())
-        for name in ('config.yaml', '.env.production', 'data/master.key', 'deploy/relaylab.env', 'deploy/private.json'):
+        for name in ('config.yaml', '.env.production', 'data/master.key', 'deploy/relaylab.env', 'deploy/private.json', 'deploy/docker/private.env'):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('PRIVATE MUST NOT SHIP')
@@ -52,9 +52,15 @@ class PackagingTests(unittest.TestCase):
                     files = archive.getnames()
                     self.assertEqual(archive.getmember(stem + '/bin/relaylab').mode, 0o755)
             ext = '.exe' if goos == 'windows' else ''
-            for required in (f'bin/relaylab{ext}', f'bin/relaylab-launcher{ext}', 'VERSION', 'config.example.yaml', 'scripts/start.ps1', 'scripts/stop.ps1', 'scripts/start.sh', 'docs/UPDATES.md', 'docs/RELEASE.md', 'deploy/relaylab-launcher.service', 'deploy/relaylab.env.example', 'THIRD_PARTY_NOTICES.txt'):
+            for required in (f'bin/relaylab{ext}', f'bin/relaylab-launcher{ext}', 'VERSION', 'config.example.yaml', 'scripts/start.ps1', 'scripts/stop.ps1', 'scripts/start.sh', 'docs/UPDATES.md', 'docs/RELEASE.md', 'docs/DOCKER.md', 'deploy/relaylab-launcher.service', 'deploy/relaylab.env.example', 'THIRD_PARTY_NOTICES.txt'):
                 self.assertIn(f'{stem}/{required}', files)
-            self.assertFalse(any(name.endswith(('config.yaml', 'master.key', '.env.production', 'relaylab.env', 'private.json')) for name in files))
+            if goos == 'linux':
+                for required in release.DOCKER_RUNTIME_FILES:
+                    self.assertIn(f'{stem}/{required}', files)
+            else:
+                self.assertNotIn(f'{stem}/Dockerfile', files)
+                self.assertNotIn(f'{stem}/compose.yaml', files)
+            self.assertFalse(any(name.endswith(('config.yaml', 'master.key', '.env.production', 'relaylab.env', 'private.json', 'private.env')) for name in files))
         self.assertNotIn('dist/', (self.output / 'SHA256SUMS').read_text())
         release.validate_release(self.output, '9.9.9')
 
@@ -72,6 +78,18 @@ class PackagingTests(unittest.TestCase):
                 path.write_text(json.dumps(manifest))
                 with self.assertRaisesRegex(ValueError, 'compatibility contract'):
                     release.validate_release(self.output, '9.9.9')
+
+    def test_complete_linux_package_uses_prebuilt_binary_docker_recipe(self):
+        (self.root / 'Dockerfile').write_text('source build requires source tree')
+        (self.root / 'compose.yaml').write_text('source compose')
+        (self.root / 'deploy/docker/Dockerfile.release').write_text('COPY bin/relaylab /app/relaylab')
+        (self.root / 'deploy/docker/compose.release.yaml').write_text('prebuilt binary compose')
+        self.package()
+        with tarfile.open(self.output / 'relaylab-linux-amd64-9.9.9.tar.gz') as package:
+            prefix = 'relaylab-linux-amd64-9.9.9/'
+            self.assertEqual(package.extractfile(prefix + 'Dockerfile').read(), b'COPY bin/relaylab /app/relaylab')
+            self.assertEqual(package.extractfile(prefix + 'compose.yaml').read(), b'prebuilt binary compose')
+            self.assertNotIn(prefix + 'deploy/docker/private.env', package.getnames())
 
     def test_tampering_or_incomplete_release_is_rejected(self):
         self.package()

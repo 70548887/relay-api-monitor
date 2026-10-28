@@ -113,7 +113,7 @@ func (s *Server) login(c *gin.Context) {
 		dbError(c, e)
 		return
 	}
-	http.SetCookie(c.Writer, &http.Cookie{Name: "relaylab_session", Value: token, Path: "/", HttpOnly: true, Secure: c.Request.TLS != nil, SameSite: http.SameSiteStrictMode, MaxAge: 28800})
+	http.SetCookie(c.Writer, &http.Cookie{Name: "relaylab_session", Value: token, Path: "/", HttpOnly: true, Secure: secureSessionCookie(c), SameSite: http.SameSiteStrictMode, MaxAge: 28800})
 	c.JSON(200, gin.H{"user": gin.H{"id": u.ID, "username": u.Username}, "csrf_token": ss.CSRFToken})
 }
 
@@ -169,7 +169,7 @@ func (s *Server) logout(c *gin.Context) {
 		dbError(c, e)
 		return
 	}
-	http.SetCookie(c.Writer, &http.Cookie{Name: "relaylab_session", Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1})
+	http.SetCookie(c.Writer, &http.Cookie{Name: "relaylab_session", Value: "", Path: "/", HttpOnly: true, Secure: secureSessionCookie(c), SameSite: http.SameSiteStrictMode, MaxAge: -1})
 	c.JSON(200, gin.H{"ok": true})
 }
 func (s *Server) password(c *gin.Context) {
@@ -203,6 +203,6 @@ func (s *Server) password(c *gin.Context) {
 		return
 	}
 	s.auditEvent(c.Request.Context(), "password_changed", u.ID, "管理员修改密码")
-	http.SetCookie(c.Writer, &http.Cookie{Name: "relaylab_session", Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1})
+	http.SetCookie(c.Writer, &http.Cookie{Name: "relaylab_session", Value: "", Path: "/", HttpOnly: true, Secure: secureSessionCookie(c), SameSite: http.SameSiteStrictMode, MaxAge: -1})
 	c.JSON(200, gin.H{"ok": true})
 }

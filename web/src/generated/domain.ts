@@ -4,6 +4,7 @@ export interface Platform {
   id: string;
   name: string;
   description: string;
+  website_url?: string;
   public: boolean;
   archived: boolean;
   sort: number;
@@ -27,6 +28,7 @@ export interface Channel {
   thinking_budget: number;
   intelligence_model_id: string;
   intelligence_schedule?: IntelligenceSchedule | null;
+  model_controls?: ModelControls | null;
   group_provider: string;
   group_path: string;
   group_field: string;
@@ -45,9 +47,21 @@ export interface Channel {
   created_at: string;
 }
 
+export interface ModelControls {
+  probe_enabled: boolean;
+  artifact_chinese: boolean;
+  artifact_english: boolean;
+}
+
+export interface ArtifactOverrides {
+  chinese?: boolean | null;
+  english?: boolean | null;
+}
+
 export interface IntelligenceSchedule {
   enabled: boolean;
   model_id: string;
+  model_scope?: string;
   template_ids: Array<string>;
   interval_seconds: number;
 }
@@ -70,6 +84,7 @@ export interface Model {
   probe_enabled: boolean;
   artifact_chinese: boolean;
   artifact_english: boolean;
+  artifact_overrides?: ArtifactOverrides | null;
   probe_interval_seconds: number;
   artifact_interval_seconds: number;
   timeout_seconds: number;
@@ -146,6 +161,9 @@ export interface Job {
   channel_id: string;
   kind: string;
   template_id: string;
+  reasoning_effort?: string;
+  thinking_mode?: string;
+  thinking_budget?: number;
   state: string;
   channel_revision: number;
   owner: string;
@@ -159,6 +177,13 @@ export interface Job {
   error_code: string;
   error_message: string;
   snapshot: string;
+  received_bytes: number;
+  text_bytes: number;
+  first_text_ms: number | null;
+  duration_ms: number;
+  http_status: number;
+  finish_reason: string;
+  usage: Usage;
   progress_chars: number;
   progress_at: string | null;
   returned_model: string;
@@ -262,6 +287,9 @@ export interface OnlineTestRun {
   usage: Usage;
   http_status: number;
   first_text_ms: number | null;
+  received_bytes: number;
+  text_bytes: number;
+  context_policy: string;
   duration_ms: number;
   finish_reason: string;
   error_code: string;
@@ -278,5 +306,34 @@ export interface OnlineTestPage {
   total: number;
   page: number;
   page_size: number;
+}
+
+export interface IntelligencePlanStatus {
+  model_id: string;
+  requested_model: string;
+  template_id: string;
+  source: string;
+  enabled: boolean;
+  interval_seconds: number;
+  next_run_at: string | null;
+  state: string;
+  blocking_reason: string;
+  visibility_reasons: Array<string>;
+}
+
+export interface IntelligenceGroupStatus {
+  channel_id: string;
+  channel_name: string;
+  platform_id: string;
+  platform_name: string;
+  visibility_reasons: Array<string>;
+  plans: Array<IntelligencePlanStatus>;
+}
+
+export interface IntelligenceStatusResponse {
+  updated_at: string;
+  worker_online: boolean;
+  maintenance: boolean;
+  groups: Array<IntelligenceGroupStatus>;
 }
 

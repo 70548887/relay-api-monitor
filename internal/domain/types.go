@@ -21,6 +21,7 @@ type Platform struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
+	WebsiteURL  string    `json:"website_url,omitempty"`
 	Public      bool      `json:"public"`
 	Archived    bool      `json:"archived"`
 	Sort        int       `json:"sort"`
@@ -45,6 +46,7 @@ type Channel struct {
 	ThinkingBudget            int                   `json:"thinking_budget"`
 	IntelligenceModelID       string                `json:"intelligence_model_id"`
 	IntelligenceSchedule      *IntelligenceSchedule `json:"intelligence_schedule,omitempty"`
+	ModelControls             *ModelControls        `json:"model_controls,omitempty"`
 	GroupProvider             string                `json:"group_provider"`
 	GroupPath                 string                `json:"group_path"`
 	GroupField                string                `json:"group_field"`
@@ -68,13 +70,69 @@ type Channel struct {
 type IntelligenceSchedule struct {
 	Enabled         bool     `json:"enabled"`
 	ModelID         string   `json:"model_id"`
+	ModelScope      string   `json:"model_scope,omitempty"`
 	TemplateIDs     []string `json:"template_ids"`
 	IntervalSeconds int      `json:"interval_seconds"`
 }
 
+// Nil controls preserve existing installations' per-model and selected-model
+// plans. New groups explicitly save their defaults so later model discovery
+// can inherit them without resetting administrator edits on existing models.
+type ModelControls struct {
+	ProbeEnabled    bool `json:"probe_enabled"`
+	ArtifactChinese bool `json:"artifact_chinese"`
+	ArtifactEnglish bool `json:"artifact_english"`
+}
+
+func DefaultModelControls() ModelControls {
+	return ModelControls{ProbeEnabled: true, ArtifactChinese: true, ArtifactEnglish: true}
+}
+
+// Pointer values distinguish a deliberate individual opt-out from old model
+// booleans that were ignored by a group-owned intelligence plan.
+type ArtifactOverrides struct {
+	Chinese *bool `json:"chinese,omitempty"`
+	English *bool `json:"english,omitempty"`
+}
+
+func (c Channel) ScheduledProbeEnabled(m Model) bool {
+	if plan := c.IntelligenceSchedule; plan != nil && plan.ModelScope != "all" && plan.ModelID != m.ID {
+		return false
+	}
+	return m.ProbeEnabled && (c.ModelControls == nil || c.ModelControls.ProbeEnabled)
+}
+
 func (c Channel) ScheduledArtifactEnabled(m Model, template string) bool {
+	var modelEnabled bool
+	var override *bool
+	switch template {
+	case "cn_html":
+		modelEnabled = m.ArtifactChinese
+		if m.ArtifactOverrides != nil {
+			override = m.ArtifactOverrides.Chinese
+		}
+		if c.ModelControls != nil && !c.ModelControls.ArtifactChinese {
+			return false
+		}
+	case "en_svg":
+		modelEnabled = m.ArtifactEnglish
+		if m.ArtifactOverrides != nil {
+			override = m.ArtifactOverrides.English
+		}
+		if c.ModelControls != nil && !c.ModelControls.ArtifactEnglish {
+			return false
+		}
+	default:
+		return false
+	}
+	if override != nil && !*override {
+		return false
+	}
+	if c.ModelControls != nil && !modelEnabled {
+		return false
+	}
 	if plan := c.IntelligenceSchedule; plan != nil {
-		if !plan.Enabled || plan.ModelID != m.ID {
+		if !plan.Enabled || (plan.ModelScope != "all" && plan.ModelID != m.ID) {
 			return false
 		}
 		for _, id := range plan.TemplateIDs {
@@ -84,7 +142,7 @@ func (c Channel) ScheduledArtifactEnabled(m Model, template string) bool {
 		}
 		return false
 	}
-	return (c.IntelligenceModelID == "" || c.IntelligenceModelID == m.ID) && ((template == "cn_html" && m.ArtifactChinese) || (template == "en_svg" && m.ArtifactEnglish))
+	return (c.ModelControls != nil || c.IntelligenceModelID == "" || c.IntelligenceModelID == m.ID) && modelEnabled
 }
 
 func (c Channel) ArtifactInterval(m Model) int {
@@ -95,28 +153,29 @@ func (c Channel) ArtifactInterval(m Model) int {
 }
 
 type Model struct {
-	ID                      string    `json:"id"`
-	ChannelID               string    `json:"channel_id"`
-	UpstreamID              string    `json:"upstream_id"`
-	DisplayName             string    `json:"display_name"`
-	Source                  string    `json:"source"`
-	Public                  bool      `json:"public"`
-	Archived                bool      `json:"archived"`
-	Missing                 bool      `json:"missing"`
-	Protocol                string    `json:"protocol"`
-	GeneratePath            string    `json:"generate_path"`
-	MaxTokens               int       `json:"max_tokens"`
-	ReasoningEffort         string    `json:"reasoning_effort"`
-	ThinkingMode            string    `json:"thinking_mode"`
-	ThinkingBudget          int       `json:"thinking_budget"`
-	ProbeEnabled            bool      `json:"probe_enabled"`
-	ArtifactChinese         bool      `json:"artifact_chinese"`
-	ArtifactEnglish         bool      `json:"artifact_english"`
-	ProbeIntervalSeconds    int       `json:"probe_interval_seconds"`
-	ArtifactIntervalSeconds int       `json:"artifact_interval_seconds"`
-	TimeoutSeconds          int       `json:"timeout_seconds"`
-	Sort                    int       `json:"sort"`
-	CreatedAt               time.Time `json:"created_at"`
+	ID                      string             `json:"id"`
+	ChannelID               string             `json:"channel_id"`
+	UpstreamID              string             `json:"upstream_id"`
+	DisplayName             string             `json:"display_name"`
+	Source                  string             `json:"source"`
+	Public                  bool               `json:"public"`
+	Archived                bool               `json:"archived"`
+	Missing                 bool               `json:"missing"`
+	Protocol                string             `json:"protocol"`
+	GeneratePath            string             `json:"generate_path"`
+	MaxTokens               int                `json:"max_tokens"`
+	ReasoningEffort         string             `json:"reasoning_effort"`
+	ThinkingMode            string             `json:"thinking_mode"`
+	ThinkingBudget          int                `json:"thinking_budget"`
+	ProbeEnabled            bool               `json:"probe_enabled"`
+	ArtifactChinese         bool               `json:"artifact_chinese"`
+	ArtifactEnglish         bool               `json:"artifact_english"`
+	ArtifactOverrides       *ArtifactOverrides `json:"artifact_overrides,omitempty"`
+	ProbeIntervalSeconds    int                `json:"probe_interval_seconds"`
+	ArtifactIntervalSeconds int                `json:"artifact_interval_seconds"`
+	TimeoutSeconds          int                `json:"timeout_seconds"`
+	Sort                    int                `json:"sort"`
+	CreatedAt               time.Time          `json:"created_at"`
 }
 
 type PromptTemplate struct {
@@ -167,6 +226,9 @@ type Job struct {
 	ChannelID       string     `json:"channel_id"`
 	Kind            string     `json:"kind"`
 	TemplateID      string     `json:"template_id"`
+	ReasoningEffort string     `json:"reasoning_effort,omitempty"`
+	ThinkingMode    string     `json:"thinking_mode,omitempty"`
+	ThinkingBudget  int        `json:"thinking_budget,omitempty"`
 	State           string     `json:"state"`
 	ChannelRevision int        `json:"channel_revision"`
 	Owner           string     `json:"owner"`
@@ -181,6 +243,13 @@ type Job struct {
 	ErrorCode       string     `json:"error_code"`
 	ErrorMessage    string     `json:"error_message"`
 	Snapshot        string     `json:"snapshot"`
+	ReceivedBytes   int64      `json:"received_bytes"`
+	TextBytes       int64      `json:"text_bytes"`
+	FirstTextMS     *int64     `json:"first_text_ms"`
+	DurationMS      int64      `json:"duration_ms"`
+	HTTPStatus      int        `json:"http_status"`
+	FinishReason    string     `json:"finish_reason"`
+	Usage           Usage      `json:"usage"`
 	ProgressChars   int64      `json:"progress_chars"`
 	ProgressAt      *time.Time `json:"progress_at"`
 	ReturnedModel   string     `json:"returned_model"`

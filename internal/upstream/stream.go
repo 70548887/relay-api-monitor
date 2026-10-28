@@ -20,10 +20,11 @@ func (e *callbackError) Unwrap() error { return e.err }
 // readSSE follows the event-stream line algorithm, including CR, CRLF and multiline data.
 // The entire decoded response is bounded, so a stream of heartbeats cannot run unbounded.
 func readSSE(reader io.Reader, consume func(string, string) error) error {
-	r := bufio.NewReaderSize(io.LimitReader(reader, maxResponseBytes+1), 4096)
+	r := bufio.NewReaderSize(io.LimitReader(reader, maxStreamBytes+1), 4096)
 	var event string
 	var lines []string
 	total := 0
+	eventBytes := 0
 	first := true
 	skipLF := false
 	dispatch := func() error {
@@ -50,8 +51,12 @@ func readSSE(reader io.Reader, consume func(string, string) error) error {
 				break
 			}
 			total++
-			if total > maxResponseBytes {
-				return &Error{Code: "response_too_large", Message: "Upstream response exceeds 2 MiB"}
+			if total > maxStreamBytes {
+				return &Error{Code: "response_stream_too_large", Message: "上游流式传输总量超过 32 MiB，已停止接收并保留部分正文"}
+			}
+			eventBytes++
+			if eventBytes > maxEventBytes || line.Len() >= maxEventBytes {
+				return &Error{Code: "response_event_too_large", Message: "上游单个 SSE 事件或数据行超过 4 MiB，已停止接收"}
 			}
 			if skipLF {
 				skipLF = false
@@ -83,6 +88,7 @@ func readSSE(reader io.Reader, consume func(string, string) error) error {
 			return nil
 		}
 		if value == "" {
+			eventBytes = 0
 			if err := dispatch(); err != nil {
 				if errors.Is(err, errStreamDone) {
 					return nil
@@ -166,11 +172,21 @@ func (s *generationState) appendText(value string) error {
 	if value == "" {
 		return nil
 	}
+	exceeded := s.textBuffer.Len()+len(value) > maxTextBytes
+	if exceeded {
+		value = value[:maxTextBytes-s.textBuffer.Len()]
+		for !utf8.ValidString(value) {
+			value = value[:len(value)-1]
+		}
+	}
 	s.textBuffer.WriteString(value)
-	if s.callback != nil {
+	if s.callback != nil && value != "" {
 		if err := s.callback(Event{Type: "text", Text: value, ReturnedModel: s.redact(s.result.ReturnedModel), HTTPStatus: s.result.HTTPStatus}); err != nil {
 			return &callbackError{err}
 		}
+	}
+	if exceeded {
+		return &Error{Code: "response_text_too_large", Message: "生成正文超过 2 MiB，已停止接收并保留部分正文"}
 	}
 	return nil
 }

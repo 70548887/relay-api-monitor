@@ -59,6 +59,9 @@ type OnlineTestRun struct {
 	Usage              Usage      `json:"usage"`
 	HTTPStatus         int        `json:"http_status"`
 	FirstTextMS        *int64     `json:"first_text_ms"`
+	ReceivedBytes      int64      `json:"received_bytes"`
+	TextBytes          int64      `json:"text_bytes"`
+	ContextPolicy      string     `json:"context_policy"`
 	DurationMS         int64      `json:"duration_ms"`
 	FinishReason       string     `json:"finish_reason"`
 	ErrorCode          string     `json:"error_code"`

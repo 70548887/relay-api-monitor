@@ -91,26 +91,35 @@ func reconcileSchedules(ctx context.Context, tx queryer, m domain.Model) error {
 		return e
 	}
 	available := !m.Archived && !m.Missing && !c.Archived && c.Enabled && !p.Archived
-	desired := []domain.Schedule{{ModelID: m.ID, Kind: "probe", IntervalSeconds: pi, Enabled: available && m.ProbeEnabled}, {ModelID: m.ID, Kind: "artifact", TemplateID: "cn_html", IntervalSeconds: ai, Enabled: available && c.ScheduledArtifactEnabled(m, "cn_html")}, {ModelID: m.ID, Kind: "artifact", TemplateID: "en_svg", IntervalSeconds: ai, Enabled: available && c.ScheduledArtifactEnabled(m, "en_svg")}}
+	desired := []domain.Schedule{{ModelID: m.ID, Kind: "probe", IntervalSeconds: pi, Enabled: available && c.ScheduledProbeEnabled(m)}, {ModelID: m.ID, Kind: "artifact", TemplateID: "cn_html", IntervalSeconds: ai, Enabled: available && c.ScheduledArtifactEnabled(m, "cn_html")}, {ModelID: m.ID, Kind: "artifact", TemplateID: "en_svg", IntervalSeconds: ai, Enabled: available && c.ScheduledArtifactEnabled(m, "en_svg")}}
 	n := nowUTC()
 	for _, want := range desired {
 		key := want.Kind + ":" + want.TemplateID
 		if prior, ok := byKey[key]; ok {
 			want.ID = prior.ID
 			want.NextRunAt = prior.NextRunAt
-			if want.Enabled && (!prior.Enabled || prior.IntervalSeconds != want.IntervalSeconds) {
-				want.NextRunAt = n.Add(stagger(want.ID, want.IntervalSeconds))
+			if want.Enabled && !prior.Enabled {
+				if want.Kind == "artifact" {
+					want.NextRunAt = n
+				} else {
+					want.NextRunAt = n.Add(stagger(want.ID, want.IntervalSeconds))
+				}
+			} else if want.Enabled && prior.IntervalSeconds != want.IntervalSeconds {
+				want.NextRunAt = n.Add(time.Duration(want.IntervalSeconds) * time.Second)
 			}
 		} else {
 			want.ID = domain.NewID()
 			want.NextRunAt = n.Add(stagger(want.ID, want.IntervalSeconds))
+			if want.Enabled && want.Kind == "artifact" {
+				want.NextRunAt = n
+			}
 		}
 		if e = saveSchedule(ctx, tx, want); e != nil {
 			return e
 		}
 		if !want.Enabled {
 			where := "schedule_id=?"
-			if c.IntelligenceSchedule != nil && want.Kind == "artifact" && available {
+			if available && (c.ModelControls != nil || c.IntelligenceSchedule != nil) {
 				where += " AND state IN ('queued','claimed')"
 			}
 			if e = cancelJobs(ctx, tx, where, want.ID); e != nil {
@@ -143,7 +152,7 @@ func (s *Store) TickSchedules(ctx context.Context, now time.Time) (int, error) {
 			if e != nil {
 				return e
 			}
-			enabled := !m.Archived && !m.Missing && !c.Archived && c.Enabled && !p.Archived && ((v.Kind == "probe" && m.ProbeEnabled) || (v.Kind == "artifact" && c.ScheduledArtifactEnabled(*m, v.TemplateID)))
+			enabled := !m.Archived && !m.Missing && !c.Archived && c.Enabled && !p.Archived && ((v.Kind == "probe" && c.ScheduledProbeEnabled(*m)) || (v.Kind == "artifact" && c.ScheduledArtifactEnabled(*m, v.TemplateID)))
 			if enabled {
 				job := domain.Job{ID: domain.NewID(), ScheduleID: v.ID, ModelID: m.ID, ChannelID: c.ID, ChannelRevision: c.Revision, Kind: v.Kind, TemplateID: v.TemplateID, State: "queued", ScheduledAt: v.NextRunAt, CreatedAt: now}
 				if e = enqueue(ctx, tx, &job, now); e == nil {
@@ -151,17 +160,11 @@ func (s *Store) TickSchedules(ctx context.Context, now time.Time) (int, error) {
 				} else if e != ErrConflict {
 					return e
 				} else if v.Kind == "artifact" {
-					// A sibling template cannot run concurrently on this model.
-					// Keep its current slot due rather than discarding it for an
-					// entire interval. Same-template work still coalesces below.
-					var sameTemplate int
-					if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM jobs WHERE model_id=? AND kind='artifact' AND json_extract(data,'$.template_id')=? AND (state IN ('queued','claimed','dispatching') OR (state='uncertain' AND deadline>?))", m.ID, v.TemplateID, ts(now.Add(-30*time.Second))).Scan(&sameTemplate); err != nil {
-						return err
-					}
-					if sameTemplate == 0 {
-						continue
-					}
+					// Keep one due slot while manual or scheduled same-model work is
+					// active. The next tick enqueues once the execution fence clears.
+					continue
 				}
+
 			}
 			if v.IntervalSeconds < 1 {
 				v.IntervalSeconds = 300

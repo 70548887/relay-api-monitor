@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
@@ -81,7 +82,7 @@ func (w *Worker) execute(parent context.Context, j domain.Job) error {
 		return failBeforeDispatch("disabled", "模型已缺失或分组已停用，请检查配置")
 	}
 	if j.ScheduleID != "" {
-		enabled := c.Enabled && !m.Missing && ((j.Kind == "probe" && m.ProbeEnabled) || (j.Kind == "artifact" && c.ScheduledArtifactEnabled(*m, j.TemplateID)))
+		enabled := c.Enabled && !m.Missing && ((j.Kind == "probe" && c.ScheduledProbeEnabled(*m)) || (j.Kind == "artifact" && c.ScheduledArtifactEnabled(*m, j.TemplateID)))
 		if !enabled {
 			return failBeforeDispatch("schedule_disabled", "定时任务已停用")
 		}
@@ -129,6 +130,17 @@ func (w *Worker) execute(parent context.Context, j domain.Job) error {
 	effort, thinkingMode, thinkingBudget := "", "", 0
 	if j.Kind == "artifact" {
 		effort, thinkingMode, thinkingBudget = upstream.ResolveReasoning(*m, *c)
+		if strings.TrimSpace(j.ReasoningEffort) != "" {
+			effort = j.ReasoningEffort
+		}
+		if strings.TrimSpace(j.ThinkingMode) != "" {
+			thinkingMode = j.ThinkingMode
+		}
+		if j.ThinkingBudget != 0 {
+			thinkingBudget = j.ThinkingBudget
+		} else if strings.TrimSpace(j.ThinkingMode) != "" {
+			thinkingBudget = 0
+		}
 		if err = upstream.ValidateReasoning(protocol, effort, thinkingMode, thinkingBudget, maxTokens); err != nil {
 			code, message := errorDetails(err)
 			return failBeforeDispatch(code, message)
@@ -222,6 +234,8 @@ func (w *Worker) execute(parent context.Context, j domain.Job) error {
 		lastProgress = n
 		return nil
 	})
+	j.ReceivedBytes, j.TextBytes = result.ReceivedBytes, result.TextBytes
+	j.FirstTextMS, j.DurationMS, j.HTTPStatus, j.FinishReason, j.Usage = result.FirstTextMS, result.DurationMS, result.HTTPStatus, result.FinishReason, result.Usage
 	if chars := int64(utf8.RuneCountInString(result.Text)); chars > j.ProgressChars {
 		j.ProgressChars = chars
 	}

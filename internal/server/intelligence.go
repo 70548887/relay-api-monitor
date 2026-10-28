@@ -62,9 +62,15 @@ func groupVerification(ch domain.Channel) gin.H {
 	case "unsupported":
 		message = "提供方未提供可用的分组验证信息"
 	case "failed":
-		message = "分组元信息验证失败；此状态不代表模型 Key 不可用"
+		message = "仅分组信息查询失败；不影响模型调用、定时任务和作品公开"
 	default:
 		status, group, message = "unverified", "", "尚未验证 Token 绑定分组"
+	}
+	if ch.GroupProvider == "" || ch.GroupProvider == "none" {
+		status = "unconfigured"
+		group = ""
+		checkedAt = nil
+		message = "未配置，可选；仅查询令牌绑定组，不影响调用、定时或公开展示"
 	}
 	return gin.H{"status": status, "group": group, "checked_at": checkedAt, "message": message, "provider": ch.GroupProvider, "scope": "token_binding"}
 }
@@ -131,6 +137,13 @@ func (s *Server) intelligence(c *gin.Context) {
 		dbError(c, err)
 		return
 	}
+	activeJobs, err := s.Store.ListActiveJobs(ctx)
+	if err != nil {
+		dbError(c, err)
+		return
+	}
+	now := time.Now().UTC()
+	paused := s.Maintenance()
 	groups := []gin.H{}
 	for _, ch := range catalog.channels {
 		if channelID != "" && ch.ID != channelID {
@@ -154,14 +167,14 @@ func (s *Server) intelligence(c *gin.Context) {
 				selected = candidate
 			}
 		}
-		if modelID == "" && ch.IntelligenceSchedule != nil && ch.IntelligenceSchedule.ModelID != "" {
+		if modelID == "" && ch.IntelligenceSchedule != nil && ch.IntelligenceSchedule.ModelScope != "all" && ch.IntelligenceSchedule.ModelID != "" {
 			if candidate, ok := catalog.modelByID[ch.IntelligenceSchedule.ModelID]; ok && candidate.ChannelID == ch.ID {
 				selected = candidate
 			}
 		}
 		if selected.ID == "" {
 			for _, candidate := range candidates {
-				enabled := (templateID == "cn_html" && candidate.ArtifactChinese) || (templateID == "en_svg" && candidate.ArtifactEnglish)
+				enabled := ch.ScheduledArtifactEnabled(candidate, templateID)
 				if enabled && !candidate.Missing {
 					selected = candidate
 					break
@@ -183,6 +196,22 @@ func (s *Server) intelligence(c *gin.Context) {
 				at := schedule.NextRunAt
 				nextRun = &at
 			}
+		}
+		plan := scheduleByModel[selected.ID]
+		publicSchedule := planStatus(catalog.platformByID[ch.PlatformID], ch, selected, plan, activeJobs, health.Online, paused, now)
+		hiddenPlan := selected.ID == ""
+		if ch.IntelligenceSchedule != nil && ch.IntelligenceSchedule.ModelScope != "all" && ch.IntelligenceSchedule.ModelID != "" {
+			_, visible := catalog.modelByID[ch.IntelligenceSchedule.ModelID]
+			if !visible {
+				hiddenPlan = true
+			}
+		}
+		if hiddenPlan {
+			publicSchedule.State = "no_public_plan"
+			publicSchedule.BlockingReason = "暂无公开测试计划"
+			nextRun = nil
+			automatic = false
+			interval = 0
 		}
 		var values []domain.Artifact
 		var jobs []domain.Job
@@ -230,7 +259,7 @@ func (s *Server) intelligence(c *gin.Context) {
 		}
 		effort, mode, budget := upstream.ResolveReasoning(selected, ch)
 		p := catalog.platformByID[ch.PlatformID]
-		groups = append(groups, gin.H{"id": ch.ID, "channel_id": ch.ID, "channel_name": ch.Name, "platform_id": p.ID, "platform_name": p.Name, "model_id": selected.ID, "requested_model": selected.UpstreamID, "protocol": modelProtocol(selected, ch), "models": models, "group_verification": groupVerification(ch), "reasoning_effort": effort, "thinking_mode": mode, "thinking_budget": budget, "interval_seconds": interval, "next_run_at": nextRun, "automatic_enabled": automatic, "latest_attempt": latest, "history": history})
+		groups = append(groups, gin.H{"id": ch.ID, "channel_id": ch.ID, "channel_name": ch.Name, "platform_id": p.ID, "platform_name": p.Name, "model_id": selected.ID, "requested_model": selected.UpstreamID, "protocol": modelProtocol(selected, ch), "models": models, "group_verification": groupVerification(ch), "reasoning_effort": effort, "thinking_mode": mode, "thinking_budget": budget, "interval_seconds": interval, "next_run_at": nextRun, "automatic_enabled": automatic, "schedule_state": publicSchedule.State, "schedule_message": publicSchedule.BlockingReason, "maintenance": paused, "context_policy": "independent", "latest_attempt": latest, "history": history})
 	}
-	c.JSON(200, gin.H{"groups": groups, "history_scope": scope, "updated_at": time.Now().UTC(), "worker_online": health.Online})
+	c.JSON(200, gin.H{"groups": groups, "history_scope": scope, "updated_at": time.Now().UTC(), "worker_online": health.Online, "maintenance": paused})
 }

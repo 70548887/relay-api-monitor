@@ -39,8 +39,8 @@ func TestGroupPlanOwnsOnlySelectedModelAndTemplate(t *testing.T) {
 				t.Fatalf("wrong artifact plan %+v", plan)
 			}
 		}
-		if plan.Kind == "probe" && !plan.Enabled {
-			t.Fatal("group artifact plan disabled monitoring")
+		if plan.Kind == "probe" && plan.Enabled != (plan.ModelID == m.ID) {
+			t.Fatal("monitoring must use only the selected model", plan)
 		}
 	}
 	if activeArtifacts != 1 {

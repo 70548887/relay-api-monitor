@@ -18,6 +18,12 @@ ROOT = Path(__file__).resolve().parents[1]
 TARGETS = (('windows', 'amd64'), ('linux', 'amd64'), ('linux', 'arm64'))
 PROGRAMS = ('relaylab', 'relaylab-launcher')
 SCRIPT_NAMES = ('start.ps1', 'stop.ps1', 'process-common.ps1', 'backup.ps1', 'restore.ps1', 'start.sh')
+DOCKER_RUNTIME_FILES = {
+    'Dockerfile': 'deploy/docker/Dockerfile.release',
+    'compose.yaml': 'deploy/docker/compose.release.yaml',
+    '.dockerignore': '.dockerignore',
+    'deploy/docker/config.container.yaml': 'deploy/docker/config.container.yaml',
+}
 
 
 def read_version(root=ROOT):
@@ -69,8 +75,13 @@ def package_files(root, goos, arch, binary_dir, local_names=False):
         files[name] = (root / name, 0o644)
     for name in SCRIPT_NAMES:
         files[f'scripts/{name}'] = (root / 'scripts' / name, 0o755 if name.endswith('.sh') else 0o644)
-    for name in ('UPDATES.md', 'RELEASE.md'):
+    for name in ('UPDATES.md', 'RELEASE.md', 'DOCKER.md'):
         files[f'docs/{name}'] = (root / 'docs' / name, 0o644)
+    if goos == 'linux':
+        # Complete Linux archives have binaries but no Go/React source tree.
+        # Use the runtime-only recipe, rather than the source-build Dockerfile.
+        for installed, source in DOCKER_RUNTIME_FILES.items():
+            files[installed] = (root / source, 0o644)
     notes = root / 'docs' / 'releases' / f'v{read_version(root)}.md'
     files[f'docs/releases/{notes.name}'] = (notes, 0o644)
     for path in sorted((root / 'deploy').glob('*')):

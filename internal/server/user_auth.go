@@ -110,7 +110,7 @@ func (s *Server) startMemberSession(c *gin.Context, u *domain.Member, passwordHa
 		}
 		return false
 	}
-	http.SetCookie(c.Writer, &http.Cookie{Name: memberSessionCookie, Value: token, Path: "/", HttpOnly: true, Secure: c.Request.TLS != nil, SameSite: http.SameSiteStrictMode, MaxAge: 28800})
+	http.SetCookie(c.Writer, &http.Cookie{Name: memberSessionCookie, Value: token, Path: "/", HttpOnly: true, Secure: secureSessionCookie(c), SameSite: http.SameSiteStrictMode, MaxAge: 28800})
 	c.JSON(status, gin.H{"user": u, "csrf_token": ss.CSRFToken})
 	return true
 }
@@ -149,7 +149,7 @@ func (s *Server) memberMe(c *gin.Context) {
 }
 
 func clearMemberCookie(c *gin.Context) {
-	http.SetCookie(c.Writer, &http.Cookie{Name: memberSessionCookie, Value: "", Path: "/", HttpOnly: true, Secure: c.Request.TLS != nil, SameSite: http.SameSiteStrictMode, MaxAge: -1})
+	http.SetCookie(c.Writer, &http.Cookie{Name: memberSessionCookie, Value: "", Path: "/", HttpOnly: true, Secure: secureSessionCookie(c), SameSite: http.SameSiteStrictMode, MaxAge: -1})
 }
 
 func (s *Server) memberLogout(c *gin.Context) {

@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -25,9 +27,16 @@ func (s *Server) platforms(c *gin.Context) {
 	c.JSON(200, v)
 }
 func (s *Server) savePlatform(c *gin.Context) {
-	var b domain.Platform
-	if !bind(c, &b) {
+	var request struct {
+		domain.Platform
+		WebsiteURL *string `json:"website_url"`
+	}
+	if !bind(c, &request) {
 		return
+	}
+	b := request.Platform
+	if request.WebsiteURL != nil {
+		b.WebsiteURL = *request.WebsiteURL
 	}
 	if e := security.ValidateName(b.Name); e != nil {
 		fail(c, 400, "invalid_name", e.Error())
@@ -41,10 +50,19 @@ func (s *Server) savePlatform(c *gin.Context) {
 		}
 		b.ID = old.ID
 		b.CreatedAt = old.CreatedAt
+		if request.WebsiteURL == nil {
+			b.WebsiteURL = old.WebsiteURL
+		}
 	} else {
 		b.ID = domain.NewID()
 		b.CreatedAt = time.Now().UTC()
 	}
+	website, err := normalizePlatformWebsite(b.WebsiteURL)
+	if err != nil {
+		fail(c, 400, "invalid_website_url", err.Error())
+		return
+	}
+	b.WebsiteURL = website
 	if e := s.Store.SavePlatform(c.Request.Context(), b); e != nil {
 		dbError(c, e)
 		return
@@ -91,13 +109,23 @@ func (s *Server) channels(c *gin.Context) {
 	c.JSON(200, v)
 }
 func (s *Server) saveChannel(c *gin.Context) {
-	var b struct {
+	var request struct {
 		domain.Channel
-		APIKey string `json:"api_key"`
+		APIKey             string `json:"api_key"`
+		Enabled            *bool  `json:"enabled"`
+		Public             *bool  `json:"public"`
+		ApplyModelControls bool   `json:"apply_model_controls"`
+		SelectedModelOnly  bool   `json:"selected_model_only"`
 	}
-	if !bind(c, &b) {
+	if !bind(c, &request) {
 		return
 	}
+	b := struct {
+		domain.Channel
+		APIKey string
+	}{request.Channel, request.APIKey}
+	b.Enabled = boolOr(request.Enabled, true)
+	b.Public = boolOr(request.Public, true)
 	b.ReasoningEffort = strings.ToLower(strings.TrimSpace(b.ReasoningEffort))
 	b.ThinkingMode = strings.ToLower(strings.TrimSpace(b.ThinkingMode))
 	if security.ValidateName(b.Name) != nil || b.PlatformID == "" || !safeProtocol(b.Protocol) {
@@ -145,6 +173,7 @@ func (s *Server) saveChannel(c *gin.Context) {
 	}
 	b.BaseURL = strings.TrimRight(strings.TrimSpace(b.BaseURL), "/")
 	ctx := c.Request.Context()
+	preserveSelectedTarget := false
 	if id := c.Param("id"); id != "" {
 		old, e := s.Store.GetChannel(ctx, id)
 		if e != nil {
@@ -152,7 +181,13 @@ func (s *Server) saveChannel(c *gin.Context) {
 			return
 		}
 		b.ID = old.ID
+		preserveSelectedTarget = b.IntelligenceModelID != "" && (b.IntelligenceModelID == old.IntelligenceModelID || old.IntelligenceSchedule != nil && b.IntelligenceModelID == old.IntelligenceSchedule.ModelID)
 		b.CreatedAt = old.CreatedAt
+		b.Enabled = boolOr(request.Enabled, old.Enabled)
+		b.Public = boolOr(request.Public, old.Public)
+		if b.ModelControls == nil {
+			b.ModelControls = old.ModelControls
+		}
 		b.Revision = old.Revision + 1
 		b.EncryptedKey = old.EncryptedKey
 		b.KeyMask = old.KeyMask
@@ -164,14 +199,18 @@ func (s *Server) saveChannel(c *gin.Context) {
 		b.ID = domain.NewID()
 		b.CreatedAt = time.Now().UTC()
 		b.Revision = 1
+		if b.ModelControls == nil {
+			controls := domain.DefaultModelControls()
+			b.ModelControls = &controls
+		}
 		b.IntelligenceSchedule = nil
 		b.VerifiedGroup, b.GroupVerificationStatus, b.GroupVerificationError = "", "unverified", ""
 		b.GroupVerifiedAt, b.GroupVerificationRevision = nil, 0
 	}
 	if b.IntelligenceModelID != "" {
 		m, e := s.Store.GetModel(ctx, b.IntelligenceModelID)
-		if e != nil || m.ChannelID != b.ID || m.Archived {
-			fail(c, 400, "invalid_intelligence_model", "代表测试模型必须属于当前分组且未归档")
+		if e != nil && !(preserveSelectedTarget && errors.Is(e, sql.ErrNoRows)) || e == nil && (m.ChannelID != b.ID || !preserveSelectedTarget && (m.Archived || m.Missing)) {
+			fail(c, 400, "invalid_intelligence_model", "指定测试模型必须属于当前分组且未归档、未缺失")
 			return
 		}
 	}
@@ -188,7 +227,7 @@ func (s *Server) saveChannel(c *gin.Context) {
 		fail(c, 400, "missing_key", "请填写 API Key")
 		return
 	}
-	if e := s.Store.SaveChannelWithSchedules(ctx, b.Channel); e != nil {
+	if e := s.Store.SaveChannelWithModelControls(ctx, b.Channel, request.ApplyModelControls, request.SelectedModelOnly); e != nil {
 		dbError(c, e)
 		return
 	}
@@ -297,10 +336,15 @@ func (s *Server) models(c *gin.Context) {
 	c.JSON(200, v)
 }
 func (s *Server) saveModel(c *gin.Context) {
-	var b domain.Model
-	if !bind(c, &b) {
+	var request modelWriteRequest
+	if !bind(c, &request) {
 		return
 	}
+	if _, valid := modelControlChanges(request); !valid {
+		fail(c, 400, "invalid_model_controls", "模型开关变更字段无效或缺少对应值")
+		return
+	}
+	b := request.Model
 	b.ReasoningEffort = strings.ToLower(strings.TrimSpace(b.ReasoningEffort))
 	b.ThinkingMode = strings.ToLower(strings.TrimSpace(b.ThinkingMode))
 	if b.ChannelID == "" || strings.TrimSpace(b.UpstreamID) == "" || len(b.UpstreamID) > 256 {
@@ -354,21 +398,52 @@ func (s *Server) saveModel(c *gin.Context) {
 			fail(c, 400, "immutable_model", "模型所属分组和上游 ID 不可修改，请新增模型")
 			return
 		}
+		controls := resolveModelControls(request, *ch, old)
+		b.Public, b.ProbeEnabled, b.ArtifactChinese, b.ArtifactEnglish, b.ArtifactOverrides = controls.Public, controls.ProbeEnabled, controls.ArtifactChinese, controls.ArtifactEnglish, controls.ArtifactOverrides
 		b.ID = old.ID
 		b.CreatedAt = old.CreatedAt
 		b.Source = old.Source
 		b.Missing = old.Missing
 	} else {
+		controls := resolveModelControls(request, *ch, nil)
+		b.Public, b.ProbeEnabled, b.ArtifactChinese, b.ArtifactEnglish, b.ArtifactOverrides = controls.Public, controls.ProbeEnabled, controls.ArtifactChinese, controls.ArtifactEnglish, controls.ArtifactOverrides
 		b.ID = domain.NewID()
 		b.CreatedAt = time.Now().UTC()
 		b.Source = "manual"
+		settings, err := s.Store.GetSettings(ctx)
+		if err != nil {
+			dbError(c, err)
+			return
+		}
+		if b.MaxTokens == 0 {
+			b.MaxTokens = 8192
+		}
+		if b.TimeoutSeconds == 0 {
+			b.TimeoutSeconds = settings.ArtifactTimeoutSeconds
+		}
+		if b.ProbeIntervalSeconds == 0 {
+			b.ProbeIntervalSeconds = settings.ProbeIntervalSeconds
+		}
+		if b.ArtifactIntervalSeconds == 0 {
+			b.ArtifactIntervalSeconds = settings.ArtifactIntervalSeconds
+		}
 	}
 	if b.DisplayName == "" {
 		b.DisplayName = b.UpstreamID
 	}
-	if (b.ProbeEnabled || b.ArtifactChinese || b.ArtifactEnglish) && (!ch.Enabled || ch.Archived) {
+	if (b.ProbeEnabled || b.ArtifactChinese || b.ArtifactEnglish) && ch.Archived {
 		fail(c, 400, "channel_disabled", "请先启用所属分组")
 		return
+	}
+	if ch.ModelControls != nil {
+		changes, _ := modelControlChanges(request)
+		requested := func(name string, value *bool) bool {
+			return value != nil && *value && (c.Param("id") == "" || request.ControlChanges == nil || changes[name])
+		}
+		if requested("probe_enabled", request.ProbeEnabled) && !ch.ModelControls.ProbeEnabled || requested("artifact_chinese", request.ArtifactChinese) && !ch.ModelControls.ArtifactChinese || requested("artifact_english", request.ArtifactEnglish) && !ch.ModelControls.ArtifactEnglish {
+			fail(c, 400, "model_controls_disabled", "请先在分组编辑中开启对应主开关，再单独开启模型")
+			return
+		}
 	}
 	if e = s.Store.SaveModelWithSchedules(ctx, b); e != nil {
 		dbError(c, e)
@@ -483,13 +558,21 @@ func (s *Server) jobs(c *gin.Context) {
 		dbError(c, e)
 		return
 	}
-	c.JSON(200, v)
+	views, err := s.adminJobViews(c.Request.Context(), v)
+	if err != nil {
+		dbError(c, err)
+		return
+	}
+	c.JSON(200, views)
 }
 func (s *Server) enqueue(c *gin.Context) {
 	var b struct {
-		ModelID    string `json:"model_id"`
-		Kind       string `json:"kind"`
-		TemplateID string `json:"template_id"`
+		ModelID         string `json:"model_id"`
+		Kind            string `json:"kind"`
+		TemplateID      string `json:"template_id"`
+		ReasoningEffort string `json:"reasoning_effort"`
+		ThinkingMode    string `json:"thinking_mode"`
+		ThinkingBudget  int    `json:"thinking_budget"`
 	}
 	if !bind(c, &b) {
 		return
@@ -530,7 +613,16 @@ func (s *Server) enqueue(c *gin.Context) {
 		b.TemplateID = ""
 	}
 	now := time.Now().UTC()
-	j := domain.Job{ID: domain.NewID(), ModelID: m.ID, ChannelID: ch.ID, Kind: b.Kind, TemplateID: b.TemplateID, State: "queued", ChannelRevision: ch.Revision, ScheduledAt: now, CreatedAt: now}
+	protocol := modelProtocol(*m, *ch)
+	maxTokens := m.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = 8192
+	}
+	if err := upstream.ValidateReasoning(protocol, b.ReasoningEffort, b.ThinkingMode, b.ThinkingBudget, maxTokens); err != nil {
+		fail(c, 400, "invalid_reasoning", err.Error())
+		return
+	}
+	j := domain.Job{ID: domain.NewID(), ModelID: m.ID, ChannelID: ch.ID, Kind: b.Kind, TemplateID: b.TemplateID, ReasoningEffort: b.ReasoningEffort, ThinkingMode: b.ThinkingMode, ThinkingBudget: b.ThinkingBudget, State: "queued", ChannelRevision: ch.Revision, ScheduledAt: now, CreatedAt: now}
 	j, e = s.Store.EnqueueJob(ctx, j)
 	if e != nil {
 		dbError(c, e)

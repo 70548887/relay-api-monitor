@@ -300,7 +300,7 @@ func (s *Server) testGenerate(c *gin.Context) {
 	if !valid {
 		return
 	}
-	run := domain.OnlineTestRun{ID: domain.NewID(), UserID: user, ConnectionID: connection.ID, ConnectionRevision: connection.Revision, ClientRequestID: b.ClientRequestID, RequestHash: requestHash, ConnectionName: connection.Name, BaseURL: b.BaseURL, Protocol: b.Protocol, ModelsPath: b.ModelsPath, GeneratePath: b.GeneratePath, AnthropicVersion: b.AnthropicVersion, ChatTokenField: b.ChatTokenField, Model: b.Model, Prompt: redactPrivate(b.Prompt, b.APIKey), TemplateID: b.TemplateID, TemplateVersion: version, MaxTokens: b.MaxTokens, TimeoutSeconds: b.TimeoutSeconds, ReasoningEffort: b.ReasoningEffort, ThinkingMode: b.ThinkingMode, ThinkingBudget: b.ThinkingBudget, State: "created", PreviewStatus: "none", ProcessID: s.privateProcess, HeartbeatAt: now, Deadline: now.Add(time.Duration(b.TimeoutSeconds) * time.Second), CreatedAt: now, StartedAt: now}
+	run := domain.OnlineTestRun{ID: domain.NewID(), UserID: user, ConnectionID: connection.ID, ConnectionRevision: connection.Revision, ClientRequestID: b.ClientRequestID, RequestHash: requestHash, ConnectionName: connection.Name, BaseURL: b.BaseURL, Protocol: b.Protocol, ModelsPath: b.ModelsPath, GeneratePath: b.GeneratePath, AnthropicVersion: b.AnthropicVersion, ChatTokenField: b.ChatTokenField, Model: b.Model, Prompt: redactPrivate(b.Prompt, b.APIKey), TemplateID: b.TemplateID, TemplateVersion: version, MaxTokens: b.MaxTokens, TimeoutSeconds: b.TimeoutSeconds, ReasoningEffort: b.ReasoningEffort, ThinkingMode: b.ThinkingMode, ThinkingBudget: b.ThinkingBudget, State: "created", ContextPolicy: "independent", PreviewStatus: "none", ProcessID: s.privateProcess, HeartbeatAt: now, Deadline: now.Add(time.Duration(b.TimeoutSeconds) * time.Second), CreatedAt: now, StartedAt: now}
 	s.privateLifecycle.Lock()
 	saved, created, e := s.Store.CreateOnlineTestRun(c.Request.Context(), run)
 	if e != nil {
@@ -461,6 +461,8 @@ func (s *Server) testGenerate(c *gin.Context) {
 	run.ReturnedModel = redactPrivate(result.ReturnedModel, b.APIKey)
 	run.Usage = result.Usage
 	run.HTTPStatus = result.HTTPStatus
+	run.ReceivedBytes, run.TextBytes = result.ReceivedBytes, result.TextBytes
+	run.ContextPolicy = "independent"
 	run.DurationMS = result.DurationMS
 	if run.DurationMS == 0 {
 		run.DurationMS = time.Since(now).Milliseconds()
@@ -510,7 +512,10 @@ func (s *Server) testGenerate(c *gin.Context) {
 		if saveErr != nil {
 			_ = s.interruptPrivateRun(run, "最终结果保存失败；已保留可写入的接收内容，不会自动重新调用")
 		}
-		_ = send("error", gin.H{"record_id": run.ID, "saved": false, "code": "history_save_failed", "message": "结果保存失败，请检查测试记录；不会重新调用上游"})
+		payload := privateResultEvent(run, false)
+		payload["code"] = "history_save_failed"
+		payload["message"] = "结果保存失败，请检查测试记录；不会重新调用上游"
+		_ = send("error", payload)
 		return
 	}
 	if c.Request.Context().Err() != nil || outputErr != nil {
@@ -522,7 +527,7 @@ func (s *Server) testGenerate(c *gin.Context) {
 		}
 	}
 	if run.State != "succeeded" {
-		_ = send("error", gin.H{"record_id": run.ID, "saved": true, "code": run.ErrorCode, "message": run.ErrorMessage})
+		_ = send("error", privateResultEvent(run, true))
 		return
 	}
 	if run.Code != "" {
@@ -530,5 +535,9 @@ func (s *Server) testGenerate(c *gin.Context) {
 			return
 		}
 	}
-	_ = send("done", gin.H{"record_id": run.ID, "saved": true, "requested_model": run.Model, "first_text_ms": run.FirstTextMS, "duration_ms": run.DurationMS, "usage": run.Usage, "finish_reason": run.FinishReason, "returned_model": run.ReturnedModel, "http_status": run.HTTPStatus, "reasoning_effort": result.ReasoningEffort, "thinking_mode": result.ThinkingMode, "thinking_budget": result.ThinkingBudget})
+	_ = send("done", privateResultEvent(run, true))
+}
+
+func privateResultEvent(run domain.OnlineTestRun, saved bool) gin.H {
+	return gin.H{"record_id": run.ID, "saved": saved, "state": run.State, "code": run.ErrorCode, "message": run.ErrorMessage, "requested_model": run.Model, "returned_model": run.ReturnedModel, "first_text_ms": run.FirstTextMS, "duration_ms": run.DurationMS, "http_status": run.HTTPStatus, "usage": run.Usage, "finish_reason": run.FinishReason, "reasoning_effort": run.ReasoningEffort, "thinking_mode": run.ThinkingMode, "thinking_budget": run.ThinkingBudget, "context_policy": "independent", "received_bytes": run.ReceivedBytes, "text_bytes": run.TextBytes}
 }

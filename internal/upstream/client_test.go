@@ -293,12 +293,12 @@ func TestTerminalDoesNotWaitForConnectionClose(t *testing.T) {
 }
 
 func TestResponseSizeLimit(t *testing.T) {
-	_, err := fixture(strings.Repeat("x", maxResponseBytes+1), "application/json", 200).Generate(context.Background(), request("chat"), nil)
-	if errorCode(err) != "response_too_large" {
+	_, err := fixture(strings.Repeat("x", maxGenerationJSONBytes+1), "application/json", 200).Generate(context.Background(), request("chat"), nil)
+	if errorCode(err) != "response_json_too_large" {
 		t.Fatalf("%v", err)
 	}
-	err = readSSE(strings.NewReader(strings.Repeat(": heartbeat\n\n", maxResponseBytes/10)), func(string, string) error { return nil })
-	if errorCode(err) != "response_too_large" {
+	err = readSSE(strings.NewReader(strings.Repeat(": heartbeat\n\n", maxStreamBytes/10)), func(string, string) error { return nil })
+	if errorCode(err) != "response_stream_too_large" {
 		t.Fatalf("%v", err)
 	}
 }

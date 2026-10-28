@@ -60,7 +60,7 @@ function nextDestination(page: Page) {
 test('public monitor and gallery have member entry links and never initialize an administrator session', async ({ page }) => {
   const state = await mockPortal(page, { authenticated: true });
   for (const [path, heading] of [
-    ['/', '每一次请求，都值得被看见。'],
+    ['/', '中转 API 监控'],
     ['/intelligence', '同一道题，看看模型如何作答。'],
   ]) {
     await page.goto(path);
@@ -102,7 +102,7 @@ test('an authenticated member can open online testing without initializing an ad
 test('an ordinary member session shows the account link and cannot unlock the administrator workspace', async ({ page }) => {
   const state = await mockPortal(page, { memberAuthenticated: true });
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: '每一次请求，都值得被看见。', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '中转 API 监控', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: '我的账号', exact: true })).toHaveAttribute('href', '/account');
   await expect(page.locator('a[href^="/admin"]')).toHaveCount(0);
   expect(state.requests).toContain('/api/v1/user/auth/me');
@@ -184,6 +184,7 @@ test('an expired workspace session redirects to login and keeps the current dest
   const destination = '/admin?view=recent#queue';
   await page.goto(destination);
   await expect(page.getByRole('heading', { name: '工作台', exact: true })).toBeVisible();
+  await expect(page.locator('.worker-state')).toHaveText('在线');
   state.authenticated = false;
   await page.getByRole('button', { name: '刷新', exact: true }).click();
   await expect(page).toHaveURL(/\/admin\/login\?/);

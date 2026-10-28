@@ -101,8 +101,8 @@ func TestSyncModelsPreservesConfigurationAndRollsBack(t *testing.T) {
 			if v.DisplayName != m.DisplayName || !v.ProbeEnabled || !v.Public || v.MaxTokens != m.MaxTokens {
 				t.Fatal("manual fields overwritten")
 			}
-		} else if v.Public || v.ProbeEnabled || v.ArtifactChinese || v.ArtifactEnglish {
-			t.Fatal("discovered model enabled by default")
+		} else if !v.Public || !v.ProbeEnabled || !v.ArtifactChinese || !v.ArtifactEnglish || v.MaxTokens != 8192 {
+			t.Fatal("discovered model did not inherit enabled defaults")
 		}
 	}
 	ch, e = s.GetChannel(ctx, c.ID)

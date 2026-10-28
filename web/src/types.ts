@@ -8,9 +8,12 @@ export type Model = Omit<Domain.Model,'protocol'> & {protocol:Protocol|''};
 export type Usage = Domain.Usage;
 export type ProbeResult = Domain.ProbeResult;
 export type PromptTemplate = Domain.PromptTemplate;
-export type Job = Domain.Job;
+export type Job = Domain.Job & {requested_model?:string;channel_name?:string;context_policy?:string;visibility_reasons?:string[]};
 export type Settings = Domain.Settings;
 export type Schedule = Domain.Schedule;
+export type IntelligencePlanStatus=Domain.IntelligencePlanStatus;
+export type IntelligenceGroupStatus=Domain.IntelligenceGroupStatus;
+export type IntelligenceStatusResponse=Domain.IntelligenceStatusResponse;
 
 /** Public/admin lists omit source and raw payloads; detail endpoints add them. */
 export interface Artifact extends Omit<Domain.Artifact,'code'|'raw_response'> {
@@ -43,7 +46,7 @@ export interface MonitorData {
 }
 export interface Session {user:{id:string;username:string};csrf_token:string}
 export interface Overview {worker:Pick<Domain.WorkerHealth,'online'|'heartbeat_at'>;counts:{queued:number;running:number;failed:number};recent_jobs:Job[]}
-export interface TestDone {first_text_ms:number|null;duration_ms:number;usage:Usage;finish_reason:string;returned_model:string;http_status:number;requested_model?:string;reasoning_effort?:string;thinking_mode?:string;thinking_budget?:number}
+export interface TestDone {context_policy?:string;received_bytes?:number;text_bytes?:number;state?:string;first_text_ms:number|null;duration_ms:number;usage:Usage;finish_reason:string;returned_model:string;http_status:number;requested_model?:string;reasoning_effort?:string;thinking_mode?:string;thinking_budget?:number}
 
 /** Public intelligence responses contain no credentials or unrestricted snapshots. */
 export interface GroupVerification {status:string;group?:string;checked_at?:string|null;message?:string;provider?:string;scope?:'token_binding'}
@@ -58,6 +61,7 @@ export interface IntelligenceGroup {
  id:string;channel_id:string;channel_name:string;platform_id:string;platform_name:string;model_id:string;requested_model:string;
  models:{id:string;upstream_id:string;display_name:string;protocol:string}[];group_verification:GroupVerification;
  reasoning_effort:string;thinking_mode:string;thinking_budget:number;interval_seconds:number;next_run_at:string|null;automatic_enabled:boolean;
+ schedule_state?:string;schedule_message?:string;maintenance?:boolean;context_policy?:string;
  latest_attempt:PublicAttempt|null;history:Artifact[];
 }
 export interface IntelligenceData {groups:IntelligenceGroup[];history_scope:'group'|'model';updated_at:string;worker_online:boolean}

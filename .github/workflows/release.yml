@@ -39,8 +39,11 @@ jobs:
         if: runner.os == 'Windows'
         run: powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/test-stop.ps1
 
+  docker-verify:
+    uses: ./.github/workflows/docker.yml
+
   release:
-    needs: actual-binaries
+    needs: [actual-binaries, docker-verify]
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:

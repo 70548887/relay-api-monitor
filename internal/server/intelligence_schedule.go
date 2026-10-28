@@ -14,6 +14,7 @@ func (s *Server) saveIntelligenceSchedule(c *gin.Context) {
 		ModelID         string   `json:"model_id"`
 		TemplateIDs     []string `json:"template_ids"`
 		IntervalSeconds int      `json:"interval_seconds"`
+		ModelScope      string   `json:"model_scope"`
 	}
 	if !bind(c, &body) {
 		return
@@ -22,7 +23,10 @@ func (s *Server) saveIntelligenceSchedule(c *gin.Context) {
 		fail(c, 400, "invalid_schedule", "请指定是否开启分组定时测试")
 		return
 	}
-	plan := domain.IntelligenceSchedule{Enabled: *body.Enabled, ModelID: body.ModelID, TemplateIDs: body.TemplateIDs, IntervalSeconds: body.IntervalSeconds}
+	if body.ModelScope == "" {
+		body.ModelScope = "selected"
+	}
+	plan := domain.IntelligenceSchedule{Enabled: *body.Enabled, ModelID: body.ModelID, ModelScope: body.ModelScope, TemplateIDs: body.TemplateIDs, IntervalSeconds: body.IntervalSeconds}
 	saved, err := s.Store.SetIntelligenceSchedule(c.Request.Context(), c.Param("id"), plan)
 	if errors.Is(err, store.ErrInvalidIntelligenceSchedule) {
 		fail(c, 400, "invalid_schedule", err.Error())

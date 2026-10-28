@@ -1,6 +1,9 @@
 server:
   address: "127.0.0.1:42783"
   data_dir: "./data"
+  # Browser-facing origin for HTTPS reverse proxies, e.g. https://relay.example.com.
+  # Keep empty for direct local access. Do not include a path or credentials.
+  public_url: ""
 
 # Optional DNS-over-HTTPS JSON resolver for proxy Fake-IP environments.
 # Only synthetic DNS answers use this fallback; private addresses remain blocked.

@@ -40,8 +40,9 @@ test('isolated administrator setup, CRUD, queue cancellation and password change
   await choose(page,'所属分组',channel);
   await page.getByLabel('上游模型 ID',{exact:true}).fill('e2e-placeholder-model');
   await page.getByLabel('显示名称',{exact:true}).fill(model);
-  await expect(page.getByLabel('周期健康检测',{exact:true})).not.toBeChecked();
-  await expect(page.getByText('保存后预计每日自动请求约 0 次',{exact:true})).toBeVisible();
+  for(const label of ['公开展示','周期健康检测','中文 HTML 创作','英文 SVG 创作'])await expect(page.getByLabel(label,{exact:true})).toBeChecked();
+  const estimate=await page.getByText(/保存后预计每日自动请求约 \d+ 次/).textContent();
+  expect(Number(estimate?.match(/约 (\d+) 次/)?.[1])).toBeGreaterThan(0);
   await confirmModal(page);
   const modelRow=page.getByRole('row').filter({hasText:model});
   await expect(modelRow).toBeVisible();
@@ -79,4 +80,4 @@ test('isolated administrator setup, CRUD, queue cancellation and password change
   await expect(page.getByRole('heading',{name:'欢迎回来',exact:true})).toBeVisible();
 });
 async function choose(page:Page,label:string,text:string){await page.getByLabel(label,{exact:true}).click();await page.getByTitle(text,{exact:true}).click()}
-async function confirmModal(page:Page){const dialog=page.getByRole('dialog');await dialog.getByRole('button',{name:/确\s*定$/}).click();await expect(dialog).not.toBeVisible()}
+async function confirmModal(page:Page){const dialog=page.getByRole('dialog');await dialog.locator('.ant-modal-footer').getByRole('button',{name:/^(确\s*定|保存更改)$/}).click();await expect(dialog).not.toBeVisible()}

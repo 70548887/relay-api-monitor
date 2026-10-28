@@ -1,0 +1,31 @@
+# Packaged as compose.yaml at the root of each Linux complete release.
+name: relaylab
+services:
+  relaylab:
+    image: relay-api-monitor:${RELAYLAB_VERSION:-1.4.1}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 12m
+    ports:
+      - "${RELAYLAB_BIND_IP:-127.0.0.1}:${RELAYLAB_PORT:-42783}:42783"
+    environment:
+      RELAYLAB_ADDR: 0.0.0.0:42783
+      RELAYLAB_DATA_DIR: /var/lib/relaylab/data
+      RELAYLAB_UPDATE_ENABLED: "false"
+      RELAYLAB_PUBLIC_URL: ${RELAYLAB_PUBLIC_URL:-}
+      RELAYLAB_UPSTREAM_DNS_OVER_HTTPS: ${RELAYLAB_UPSTREAM_DNS_OVER_HTTPS:-}
+    volumes:
+      - relaylab-data:/var/lib/relaylab
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+volumes:
+  relaylab-data:

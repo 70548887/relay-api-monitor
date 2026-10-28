@@ -55,6 +55,36 @@
         },
         "type": "object"
       },
+      "AdminJobView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Job"
+          },
+          {
+            "properties": {
+              "channel_name": {
+                "type": "string"
+              },
+              "context_policy": {
+                "enum": [
+                  "independent"
+                ],
+                "type": "string"
+              },
+              "requested_model": {
+                "type": "string"
+              },
+              "visibility_reasons": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
       "Artifact": {
         "properties": {
           "channel_id": {
@@ -173,6 +203,32 @@
           "started_at",
           "created_at"
         ],
+        "type": "object"
+      },
+      "ArtifactOverrides": {
+        "properties": {
+          "chinese": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "english": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [],
         "type": "object"
       },
       "ArtifactVisibility": {
@@ -300,6 +356,16 @@
               }
             ]
           },
+          "model_controls": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelControls"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "models_path": {
             "type": "string"
           },
@@ -382,6 +448,10 @@
             "type": "string",
             "writeOnly": true
           },
+          "apply_model_controls": {
+            "description": "显式将分组开关应用到全部未归档模型；普通保存仅应用变化的开关",
+            "type": "boolean"
+          },
           "archived": {
             "type": "boolean"
           },
@@ -412,6 +482,16 @@
           "intelligence_model_id": {
             "type": "string"
           },
+          "model_controls": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelControls"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "models_path": {
             "type": "string"
           },
@@ -429,6 +509,10 @@
           },
           "reasoning_effort": {
             "type": "string"
+          },
+          "selected_model_only": {
+            "description": "编辑器显式使用单模型范围；按 intelligence_model_id 绑定目标，留空精确匹配 gpt-6.1-sol，未找到则等待；省略时兼容原计划",
+            "type": "boolean"
           },
           "sort": {
             "type": "integer"
@@ -814,6 +898,101 @@
         },
         "type": "object"
       },
+      "IntelligenceGroupStatus": {
+        "properties": {
+          "channel_id": {
+            "type": "string"
+          },
+          "channel_name": {
+            "type": "string"
+          },
+          "plans": {
+            "items": {
+              "$ref": "#/components/schemas/IntelligencePlanStatus"
+            },
+            "type": "array"
+          },
+          "platform_id": {
+            "type": "string"
+          },
+          "platform_name": {
+            "type": "string"
+          },
+          "visibility_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "channel_id",
+          "channel_name",
+          "platform_id",
+          "platform_name",
+          "visibility_reasons",
+          "plans"
+        ],
+        "type": "object"
+      },
+      "IntelligencePlanStatus": {
+        "properties": {
+          "blocking_reason": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "interval_seconds": {
+            "type": "integer"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "next_run_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requested_model": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "template_id": {
+            "type": "string"
+          },
+          "visibility_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "model_id",
+          "requested_model",
+          "template_id",
+          "source",
+          "enabled",
+          "interval_seconds",
+          "next_run_at",
+          "state",
+          "blocking_reason",
+          "visibility_reasons"
+        ],
+        "type": "object"
+      },
       "IntelligenceResponse": {
         "properties": {
           "groups": {
@@ -850,6 +1029,9 @@
           "model_id": {
             "type": "string"
           },
+          "model_scope": {
+            "type": "string"
+          },
           "template_ids": {
             "items": {
               "type": "string"
@@ -876,6 +1058,15 @@
           "model_id": {
             "type": "string"
           },
+          "model_scope": {
+            "default": "selected",
+            "description": "selected仅运行指定模型，为新增配置默认；all仅兼容旧全部模型计划",
+            "enum": [
+              "all",
+              "selected"
+            ],
+            "type": "string"
+          },
           "template_ids": {
             "items": {
               "type": "string"
@@ -885,6 +1076,33 @@
         },
         "required": [
           "enabled"
+        ],
+        "type": "object"
+      },
+      "IntelligenceStatusResponse": {
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/IntelligenceGroupStatus"
+            },
+            "type": "array"
+          },
+          "maintenance": {
+            "type": "boolean"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "worker_online": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "updated_at",
+          "worker_online",
+          "maintenance",
+          "groups"
         ],
         "type": "object"
       },
@@ -914,10 +1132,16 @@
               }
             ]
           },
+          "duration_ms": {
+            "type": "integer"
+          },
           "error_code": {
             "type": "string"
           },
           "error_message": {
+            "type": "string"
+          },
+          "finish_reason": {
             "type": "string"
           },
           "finished_at": {
@@ -930,6 +1154,19 @@
                 "type": "null"
               }
             ]
+          },
+          "first_text_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "http_status": {
+            "type": "integer"
           },
           "id": {
             "type": "string"
@@ -968,6 +1205,12 @@
           "progress_chars": {
             "type": "integer"
           },
+          "reasoning_effort": {
+            "type": "string"
+          },
+          "received_bytes": {
+            "type": "integer"
+          },
           "returned_model": {
             "type": "string"
           },
@@ -997,6 +1240,18 @@
           },
           "template_id": {
             "type": "string"
+          },
+          "text_bytes": {
+            "type": "integer"
+          },
+          "thinking_budget": {
+            "type": "integer"
+          },
+          "thinking_mode": {
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/Usage"
           }
         },
         "required": [
@@ -1019,6 +1274,13 @@
           "error_code",
           "error_message",
           "snapshot",
+          "received_bytes",
+          "text_bytes",
+          "first_text_ms",
+          "duration_ms",
+          "http_status",
+          "finish_reason",
+          "usage",
           "progress_chars",
           "progress_at",
           "returned_model"
@@ -1037,10 +1299,29 @@
           "model_id": {
             "type": "string"
           },
+          "reasoning_effort": {
+            "description": "可选；留空继承模型／分组设置，default 表示覆盖为上游默认",
+            "type": "string"
+          },
           "template_id": {
             "enum": [
               "cn_html",
               "en_svg"
+            ],
+            "type": "string"
+          },
+          "thinking_budget": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "thinking_mode": {
+            "enum": [
+              "",
+              "default",
+              "adaptive",
+              "enabled",
+              "disabled",
+              "between_tools"
             ],
             "type": "string"
           }
@@ -1091,6 +1372,16 @@
           },
           "artifact_interval_seconds": {
             "type": "integer"
+          },
+          "artifact_overrides": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactOverrides"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "channel_id": {
             "type": "string"
@@ -1174,6 +1465,25 @@
         ],
         "type": "object"
       },
+      "ModelControls": {
+        "properties": {
+          "artifact_chinese": {
+            "type": "boolean"
+          },
+          "artifact_english": {
+            "type": "boolean"
+          },
+          "probe_enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "probe_enabled",
+          "artifact_chinese",
+          "artifact_english"
+        ],
+        "type": "object"
+      },
       "ModelWrite": {
         "properties": {
           "archived": {
@@ -1188,6 +1498,16 @@
           "artifact_interval_seconds": {
             "type": "integer"
           },
+          "artifact_overrides": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactOverrides"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "channel_id": {
             "type": "string"
           },
@@ -1199,6 +1519,19 @@
           },
           "max_tokens": {
             "type": "integer"
+          },
+          "model_control_changes": {
+            "description": "本次实际变更的开关；空数组保留模型已有例外",
+            "items": {
+              "enum": [
+                "public",
+                "probe_enabled",
+                "artifact_chinese",
+                "artifact_english"
+              ],
+              "type": "string"
+            },
+            "type": "array"
           },
           "probe_enabled": {
             "type": "boolean"
@@ -1289,6 +1622,9 @@
           "connection_revision": {
             "type": "integer"
           },
+          "context_policy": {
+            "type": "string"
+          },
           "created_at": {
             "format": "date-time",
             "type": "string"
@@ -1371,6 +1707,9 @@
           "reasoning_effort": {
             "type": "string"
           },
+          "received_bytes": {
+            "type": "integer"
+          },
           "returned_model": {
             "type": "string"
           },
@@ -1389,6 +1728,9 @@
           },
           "text": {
             "type": "string"
+          },
+          "text_bytes": {
+            "type": "integer"
           },
           "thinking_budget": {
             "type": "integer"
@@ -1437,6 +1779,9 @@
           "usage",
           "http_status",
           "first_text_ms",
+          "received_bytes",
+          "text_bytes",
+          "context_policy",
           "duration_ms",
           "finish_reason",
           "error_code",
@@ -1489,6 +1834,11 @@
           },
           "sort": {
             "type": "integer"
+          },
+          "website_url": {
+            "description": "可选的官网 HTTP/HTTPS 链接；空字符串清除，更新时省略则保留",
+            "maxLength": 2048,
+            "type": "string"
           }
         },
         "required": [
@@ -1518,6 +1868,11 @@
           },
           "sort": {
             "type": "integer"
+          },
+          "website_url": {
+            "description": "可选的官网 HTTP/HTTPS 链接；空字符串清除，更新时省略则保留",
+            "maxLength": 2048,
+            "type": "string"
           }
         },
         "required": [
@@ -2416,7 +2771,7 @@
   "info": {
     "description": "中转监控、公开分组作品与实时状态、用户加密连接及私有在线测试历史。所有时间为UTC ISO8601。管理写操作需要X-CSRF-Token。JSON请求体必须是单个完整对象且不超过2MiB；浏览器Origin必须同源，非浏览器JSON CLI可省略Origin。默认本机端口42783。分组核验仅标记Token绑定，不证明实际路由或账号身份。",
     "title": "Relay Lab API",
-    "version": "1.4.0"
+    "version": "1.4.1"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -3188,6 +3543,54 @@
         "summary": "核验上游Token绑定分组；不推断实际账号或路由"
       }
     },
+    "/admin/intelligence-status": {
+      "get": {
+        "operationId": "admin_intelligence-status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntelligenceStatusResponse"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "分组定时计划与预计触发状态"
+      }
+    },
     "/admin/jobs": {
       "get": {
         "operationId": "admin_jobs_get",
@@ -3197,7 +3600,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/Job"
+                    "$ref": "#/components/schemas/AdminJobView"
                   },
                   "type": "array"
                 }
@@ -6395,7 +6798,7 @@
                 }
               }
             },
-            "description": "POST SSE；事件 record、meta、delta、usage、artifact、done、error；record_id 标识私有记录，终态 saved 指示保存结果；重复请求返回JSON已有record_id；客户端断开即取消"
+            "description": "POST SSE；事件 record、meta、delta、usage、artifact、done、error；record_id 标识私有记录，终态 saved 指示保存结果；error 与 done 均返回实际耗时、HTTP状态、用量、字节数和独立请求标识，error不代表成功；重复请求返回JSON已有record_id；客户端断开即取消"
           },
           "400": {
             "content": {

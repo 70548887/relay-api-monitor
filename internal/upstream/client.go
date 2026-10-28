@@ -24,7 +24,13 @@ import (
 	"relaylab/internal/domain"
 )
 
-const maxResponseBytes = 2 << 20
+const (
+	maxResponseBytes       = 2 << 20
+	maxStreamBytes         = 32 << 20
+	maxEventBytes          = 4 << 20
+	maxTextBytes           = 2 << 20
+	maxGenerationJSONBytes = 8 << 20
+)
 
 type Config struct {
 	BaseURL, APIKey, Protocol, DiscoveryProtocol               string
@@ -58,6 +64,7 @@ type Result struct {
 	DurationMS                                  int64
 	Usage                                       domain.Usage
 	Complete                                    bool
+	ReceivedBytes, TextBytes                    int64
 	ReasoningEffort, ThinkingMode               string
 	ThinkingBudget                              int
 }
@@ -263,7 +270,7 @@ func (c *Client) do(ctx context.Context, req *http.Request) (*http.Response, err
 
 func normalizeTransport(ctx context.Context, err error) error {
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) {
-		return &Error{Code: "timeout", Message: "Upstream request timed out"}
+		return &Error{Code: "timeout", Message: "上游请求达到总超时上限，已停止等待"}
 	}
 	if errors.Is(ctx.Err(), context.Canceled) || errors.Is(err, context.Canceled) {
 		return &Error{Code: "canceled", Message: "Upstream request was canceled"}
@@ -274,7 +281,11 @@ func normalizeTransport(ctx context.Context, err error) error {
 	}
 	var ne net.Error
 	if errors.As(err, &ne) && ne.Timeout() {
-		return &Error{Code: "timeout", Message: "Upstream request timed out"}
+		var op *net.OpError
+		if errors.As(err, &op) && op.Op == "dial" {
+			return &Error{Code: "connection_timeout", Message: "连接上游超时，尚未建立模型请求连接"}
+		}
+		return &Error{Code: "timeout", Message: "连接上游或读取响应超时，可能早于配置的总超时"}
 	}
 	return &Error{Code: "network_error", Message: "Upstream connection failed"}
 }
@@ -311,7 +322,7 @@ func readLimited(body io.Reader) ([]byte, error) {
 		return nil, err
 	}
 	if len(b) > maxResponseBytes {
-		return nil, &Error{Code: "response_too_large", Message: "Upstream response exceeds 2 MiB"}
+		return nil, &Error{Code: "response_too_large", Message: "上游目录或查询响应超过 2 MiB 限制"}
 	}
 	return b, nil
 }
@@ -546,13 +557,17 @@ func (c *Client) Generate(ctx context.Context, req Request, onEvent func(Event) 
 	}
 	defer resp.Body.Close()
 	result.HTTPStatus = resp.StatusCode
+	counter := &countingReader{reader: resp.Body}
+	defer func() { result.ReceivedBytes = counter.bytes }()
 	if onEvent != nil {
 		if err = onEvent(Event{Type: "meta", HTTPStatus: resp.StatusCode, ReasoningEffort: result.ReasoningEffort, ThinkingMode: result.ThinkingMode, ThinkingBudget: result.ThinkingBudget}); err != nil {
 			return result, err
 		}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return result, httpError(resp, req.Config.APIKey)
+		errorResponse := *resp
+		errorResponse.Body = io.NopCloser(counter)
+		return result, httpError(&errorResponse, req.Config.APIKey)
 	}
 	state := generationState{result: &result, started: started, callback: onEvent, key: req.Config.APIKey}
 	defer func() {
@@ -561,18 +576,20 @@ func (c *Client) Generate(ctx context.Context, req Request, onEvent func(Event) 
 			result.Complete = false
 		}
 		result.Text = state.textBuffer.String()
+		result.ReceivedBytes = counter.bytes
+		result.TextBytes = int64(len(result.Text))
 		result.ReturnedModel = state.redact(result.ReturnedModel)
 		result.FinishReason = state.redact(result.FinishReason)
 	}()
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	if strings.Contains(contentType, "application/json") || strings.Contains(contentType, "+json") {
 		var data []byte
-		data, err = readLimited(resp.Body)
+		data, err = readGenerationJSON(counter)
 		if err == nil {
 			err = state.consumeJSON(data)
 		}
 	} else {
-		err = readSSE(resp.Body, func(event, data string) error { return state.consumeSSE(event, data) })
+		err = readSSE(counter, func(event, data string) error { return state.consumeSSE(event, data) })
 	}
 	if err != nil {
 		return result, normalizeRead(ctx, err)

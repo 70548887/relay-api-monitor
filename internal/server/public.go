@@ -251,7 +251,7 @@ func (s *Server) monitor(c *gin.Context) {
 	for _, m := range catalog.models {
 		ch := catalog.channelByID[m.ChannelID]
 		p := catalog.platformByID[ch.PlatformID]
-		v := publicModel{ID: m.ID, ChannelID: m.ChannelID, UpstreamID: m.UpstreamID, DisplayName: m.DisplayName, Missing: m.Missing, Protocol: m.Protocol, ProbeEnabled: m.ProbeEnabled, ArtifactChinese: m.ArtifactChinese, ArtifactEnglish: m.ArtifactEnglish, Sort: m.Sort, CreatedAt: m.CreatedAt, PlatformID: p.ID, PlatformName: p.Name, ChannelName: ch.Name, Status: "unknown", Running: running[m.ID], Timeline: make([]hourlyBucket, 24)}
+		v := publicModel{ID: m.ID, ChannelID: m.ChannelID, UpstreamID: m.UpstreamID, DisplayName: m.DisplayName, Missing: m.Missing, Protocol: m.Protocol, ProbeEnabled: ch.ScheduledProbeEnabled(m), ArtifactChinese: ch.ScheduledArtifactEnabled(m, "cn_html"), ArtifactEnglish: ch.ScheduledArtifactEnabled(m, "en_svg"), Sort: m.Sort, CreatedAt: m.CreatedAt, PlatformID: p.ID, PlatformName: p.Name, ChannelName: ch.Name, Status: "unknown", Running: running[m.ID], Timeline: make([]hourlyBucket, 24)}
 		for index := range v.Timeline {
 			v.Timeline[index] = hourlyBucket{At: hourStart.Add(time.Duration(index) * time.Hour), Status: "unknown"}
 		}
@@ -272,7 +272,7 @@ func (s *Server) monitor(c *gin.Context) {
 				}
 			}
 		}
-		if !ch.Enabled || !m.ProbeEnabled {
+		if !ch.Enabled || !ch.ScheduledProbeEnabled(m) {
 			v.Status = "disabled"
 			v.Running = false
 		} else {
@@ -371,7 +371,29 @@ func publicAttempt(job domain.Job) gin.H {
 	if snapshot.ThinkingBudget == 0 {
 		snapshot.ThinkingBudget = snapshot.Parameters.ThinkingBudget
 	}
-	return gin.H{"id": job.ID, "model_id": job.ModelID, "channel_id": job.ChannelID, "template_id": job.TemplateID, "kind": job.Kind, "state": job.State, "created_at": job.CreatedAt, "started_at": job.StartedAt, "finished_at": job.FinishedAt, "error_code": job.ErrorCode, "error_message": message, "progress_chars": job.ProgressChars, "progress_at": job.ProgressAt, "returned_model": job.ReturnedModel, "requested_model": snapshot.RequestedModel, "protocol": snapshot.Protocol, "context_policy": snapshot.Parameters.ContextPolicy, "reasoning_effort": snapshot.ReasoningEffort, "thinking_mode": snapshot.ThinkingMode, "thinking_budget": snapshot.ThinkingBudget}
+	out := gin.H{"id": job.ID, "model_id": job.ModelID, "channel_id": job.ChannelID, "template_id": job.TemplateID, "kind": job.Kind, "state": job.State, "created_at": job.CreatedAt, "started_at": job.StartedAt, "finished_at": job.FinishedAt, "error_code": job.ErrorCode, "error_message": message, "first_text_ms": job.FirstTextMS, "duration_ms": job.DurationMS, "http_status": job.HTTPStatus, "usage": job.Usage, "finish_reason": job.FinishReason, "received_bytes": job.ReceivedBytes, "text_bytes": job.TextBytes, "progress_chars": job.ProgressChars, "progress_at": job.ProgressAt, "returned_model": job.ReturnedModel, "requested_model": snapshot.RequestedModel, "protocol": snapshot.Protocol, "context_policy": snapshot.Parameters.ContextPolicy, "reasoning_effort": snapshot.ReasoningEffort, "thinking_mode": snapshot.ThinkingMode, "thinking_budget": snapshot.ThinkingBudget}
+	if job.DurationMS <= 0 {
+		delete(out, "duration_ms")
+	}
+	if job.HTTPStatus <= 0 {
+		delete(out, "http_status")
+	}
+	if job.FirstTextMS == nil {
+		delete(out, "first_text_ms")
+	}
+	if job.Usage.InputTokens == nil && job.Usage.OutputTokens == nil && job.Usage.TotalTokens == nil {
+		delete(out, "usage")
+	}
+	if job.FinishReason == "" {
+		delete(out, "finish_reason")
+	}
+	if job.ReceivedBytes == 0 {
+		delete(out, "received_bytes")
+	}
+	if job.TextBytes == 0 {
+		delete(out, "text_bytes")
+	}
+	return out
 }
 func publicArtifactMap(a domain.Artifact, catalog publicCatalog, full bool) map[string]any {
 	// Select public fields rather than copying an internal persistence document.

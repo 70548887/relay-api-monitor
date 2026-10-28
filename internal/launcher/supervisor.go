@@ -40,6 +40,7 @@ var (
 
 type Options struct {
 	RelayLabPath, DataDir, Address, ControlAddress, ControlToken, ConfigPath, WorkingDir, BackupDir, LauncherVersion string
+	PublicURL                                                                                                        *string
 	GracePeriod, StartupTimeout, DrainTimeout                                                                        time.Duration
 }
 
@@ -444,11 +445,18 @@ func (s *Supervisor) startChild(role string, m BinaryMetadata) (*child, error) {
 	env := make([]string, 0, len(os.Environ())+6)
 	for _, v := range os.Environ() {
 		key, _, _ := strings.Cut(v, "=")
+		if s.opts.PublicURL != nil && strings.EqualFold(key, "RELAYLAB_PUBLIC_URL") {
+			continue
+		}
 		if key != "RELAYLAB_LAUNCHER" && key != "RELAYLAB_LAUNCHER_INSTANCE" && key != "RELAYLAB_LAUNCHER_CONTROL_ADDR" && key != "RELAYLAB_LAUNCHER_TOKEN" && key != "RELAYLAB_CONFIG" && key != "RELAYLAB_CHILD_STARTED_AT" {
 			env = append(env, v)
 		}
 	}
 	cmd.Env = append(env, "RELAYLAB_LAUNCHER=1", "RELAYLAB_LAUNCHER_INSTANCE="+s.instance, "RELAYLAB_LAUNCHER_CONTROL_ADDR="+s.opts.ControlAddress, "RELAYLAB_LAUNCHER_TOKEN="+s.opts.ControlToken)
+	if s.opts.PublicURL != nil {
+		// Environment compatibility keeps older programs startable on rollback.
+		cmd.Env = append(cmd.Env, "RELAYLAB_PUBLIC_URL="+*s.opts.PublicURL)
+	}
 	if s.opts.ConfigPath != "" {
 		cmd.Env = append(cmd.Env, "RELAYLAB_CONFIG="+s.opts.ConfigPath)
 	}

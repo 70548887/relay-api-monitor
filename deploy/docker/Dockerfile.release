@@ -1,0 +1,26 @@
+# Build this Dockerfile from the root of an extracted Linux release package.
+FROM debian:bookworm-slim
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y ca-certificates wget \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 relaylab \
+    && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin relaylab \
+    && mkdir -p /var/lib/relaylab/data /var/lib/relaylab/backups /etc/relaylab \
+    && chown -R 10001:10001 /var/lib/relaylab
+COPY --chmod=0555 bin/relaylab bin/relaylab-launcher /usr/local/bin/
+COPY --chmod=0444 deploy/docker/config.container.yaml /etc/relaylab/config.yaml
+LABEL org.opencontainers.image.title="Relay Lab" \
+      org.opencontainers.image.source="https://github.com/70548887/relay-api-monitor"
+ENV RELAYLAB_CONFIG=/etc/relaylab/config.yaml \
+    RELAYLAB_DATA_DIR=/var/lib/relaylab/data \
+    RELAYLAB_ADDR=0.0.0.0:42783 \
+    RELAYLAB_UPDATE_ENABLED=false
+WORKDIR /var/lib/relaylab
+USER 10001:10001
+VOLUME ["/var/lib/relaylab"]
+EXPOSE 42783
+STOPSIGNAL SIGTERM
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD wget --quiet --output-document=/dev/null http://127.0.0.1:42783/healthz || exit 1
+ENTRYPOINT ["/usr/local/bin/relaylab-launcher"]
+CMD ["--relaylab", "/usr/local/bin/relaylab", "--config", "/etc/relaylab/config.yaml"]

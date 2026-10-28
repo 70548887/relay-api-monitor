@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -28,6 +29,7 @@ type UpdateConfig struct {
 type Config struct {
 	DataDir    string         `yaml:"data_dir" json:"data_dir"`
 	Address    string         `yaml:"address" json:"address"`
+	PublicURL  string         `yaml:"public_url" json:"public_url,omitempty"`
 	ConfigPath string         `yaml:"-" json:"-"`
 	Update     UpdateConfig   `yaml:"update" json:"-"`
 	Upstream   UpstreamConfig `yaml:"upstream" json:"-"`
@@ -86,8 +88,9 @@ type rawConfig struct {
 		DNSOverHTTPS *scalar `yaml:"dns_over_https"`
 	} `yaml:"upstream"`
 	Server struct {
-		Address *scalar `yaml:"address"`
-		DataDir *scalar `yaml:"data_dir"`
+		Address   *scalar `yaml:"address"`
+		DataDir   *scalar `yaml:"data_dir"`
+		PublicURL *scalar `yaml:"public_url"`
 	} `yaml:"server"`
 	Address *scalar   `yaml:"address"`
 	DataDir *scalar   `yaml:"data_dir"`
@@ -132,6 +135,7 @@ func Load(path string) (Config, error) {
 		setString(&cfg.Address, raw.Address, true)
 		setString(&cfg.DataDir, raw.Server.DataDir, false)
 		setString(&cfg.DataDir, raw.DataDir, false)
+		setString(&cfg.PublicURL, raw.Server.PublicURL, true)
 		setString(&cfg.Upstream.DNSOverHTTPS, raw.Upstream.DNSOverHTTPS, true)
 		if err := applyRawUpdate(&cfg.Update, raw.Update); err != nil {
 			return Config{}, err
@@ -215,6 +219,11 @@ func applyEnv(cfg *Config) error {
 			*item.dst = v
 		}
 	}
+	// Unlike optional secrets, an explicitly empty public URL deliberately
+	// clears a YAML value (including a launcher --public-url="" override).
+	if value, present := os.LookupEnv("RELAYLAB_PUBLIC_URL"); present {
+		cfg.PublicURL = value
+	}
 	for _, item := range []struct {
 		name string
 		dst  *bool
@@ -239,6 +248,10 @@ func applyEnv(cfg *Config) error {
 	return nil
 }
 func normalize(cfg Config, base string) (Config, error) {
+	var publicErr error
+	if cfg.PublicURL, publicErr = NormalizePublicURL(cfg.PublicURL); publicErr != nil {
+		return Config{}, publicErr
+	}
 	if strings.TrimSpace(cfg.Address) == "" {
 		return Config{}, errors.New("config: server address is empty")
 	}
@@ -265,4 +278,32 @@ func normalize(cfg Config, base string) (Config, error) {
 		return Config{}, errors.New("config: update.check_interval must be non-negative")
 	}
 	return cfg, nil
+}
+
+// NormalizePublicURL accepts one explicit externally visible origin. This is
+// trusted operator configuration, never a value from forwarding headers.
+func NormalizePublicURL(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	u, err := url.Parse(value)
+	invalid := func() (string, error) {
+		return "", errors.New("config: server.public_url must be an HTTP or HTTPS origin without credentials, path, query or fragment")
+	}
+	if err != nil || u.User != nil || u.Opaque != "" || u.Hostname() == "" || (u.Path != "" && u.Path != "/") || u.RawPath != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return invalid()
+	}
+	u.Scheme = strings.ToLower(u.Scheme)
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return invalid()
+	}
+	if port := u.Port(); port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return invalid()
+		}
+	}
+	u.Host, u.Path = strings.ToLower(u.Host), ""
+	return u.String(), nil
 }

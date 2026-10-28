@@ -15,7 +15,7 @@ Push-Location $projectRoot
 try {
     # Explicit source roots prevent custom data/backup directories from being
     # swept into a source release merely because they are outside data/.
-    $files=@('VERSION','go.mod','go.sum','README.md','.gitignore','config.example.yaml')
+    $files=@('VERSION','go.mod','go.sum','README.md','.gitignore','config.example.yaml','Dockerfile','.dockerignore','compose.yaml','deploy\docker\Dockerfile.release','deploy\docker\compose.release.yaml','deploy\docker\config.container.yaml')
     $sourceFiles=& rg --files --hidden cmd internal scripts docs web/src web/tests .github -g '!*.db' -g '!*.db-*' -g '!*.sqlite*' -g '!*.key' -g '!.env*' -g '!*.log' -g '!*.tmp' -g '!*.pyc' -g '!__pycache__/**'
     if($LASTEXITCODE -ne 0){throw '源码文件枚举失败'}
     $files += $sourceFiles

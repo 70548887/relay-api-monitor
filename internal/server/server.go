@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"relaylab/internal/config"
 	"relaylab/internal/domain"
 	"relaylab/internal/runtimecontrol"
 	"relaylab/internal/security"
@@ -44,6 +45,7 @@ type Server struct {
 	privateProcess   string
 	privateLifecycle sync.Mutex
 	privateCancels   map[string]context.CancelFunc
+	publicOrigin     *url.URL
 }
 type rateBucket struct {
 	Start time.Time
@@ -53,6 +55,22 @@ type rateBucket struct {
 func New(st *store.Store, v *security.Vault) *Server {
 	return &Server{privateProcess: domain.NewID(), privateCancels: map[string]context.CancelFunc{}, Store: st, Vault: v, Client: upstream.New(), rates: map[string]*rateBucket{}, active: map[string]int{}, authSlots: make(chan struct{}, 2)}
 }
+
+// SetPublicURL must be called before Handler. Forwarded headers alone never
+// establish a trusted browser origin or secure cookie policy.
+func (s *Server) SetPublicURL(value string) error {
+	normalized, err := config.NormalizePublicURL(value)
+	if err != nil {
+		return err
+	}
+	s.publicOrigin = nil
+	if normalized != "" {
+		s.publicOrigin, _ = url.Parse(normalized)
+	}
+	return nil
+}
+
+const publicOriginContextKey = "relaylab.configured_public_origin"
 
 // SetUpdateManager wires the online updater without changing the existing
 // constructor used by tests and manually embedded deployments.
@@ -77,6 +95,9 @@ func (s *Server) Handler() http.Handler {
 	r.Use(gin.Recovery())
 	_ = r.SetTrustedProxies(nil)
 	r.Use(func(c *gin.Context) {
+		if s.publicOrigin != nil {
+			c.Set(publicOriginContextKey, s.publicOrigin)
+		}
 		c.Header("X-Request-ID", domain.NewID())
 		c.Header("X-Content-Type-Options", "nosniff")
 		c.Header("Referrer-Policy", "no-referrer")
@@ -166,6 +187,7 @@ func (s *Server) Handler() http.Handler {
 	admin.GET("/settings", s.settings)
 	admin.PUT("/settings", s.saveSettings)
 	admin.GET("/schedules", s.schedules)
+	admin.GET("/intelligence-status", s.intelligenceStatus)
 	admin.GET("/jobs", s.jobs)
 	admin.POST("/jobs", s.enqueue)
 	admin.POST("/jobs/:id/cancel", s.cancelJob)
@@ -306,6 +328,15 @@ func validOrigin(c *gin.Context) bool {
 	if site := c.Request.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
 		return false
 	}
+	target := requestOrigin(c)
+	// The reverse proxy must preserve Host. A configured external origin does
+	// not authorize arbitrary request hosts, including forged forwarded hosts.
+	if configured, ok := c.Get(publicOriginContextKey); ok {
+		public := configured.(*url.URL)
+		if !sameOriginAuthority(&url.URL{Scheme: public.Scheme, Host: c.Request.Host}, public) {
+			return false
+		}
+	}
 	origin := c.Request.Header.Get("Origin")
 	if origin == "" {
 		return c.Request.Header.Get("Sec-Fetch-Site") == ""
@@ -314,14 +345,28 @@ func validOrigin(c *gin.Context) bool {
 	if e != nil || u.User != nil || u.Opaque != "" || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || len(c.Request.Header.Values("Origin")) != 1 {
 		return false
 	}
+	if u.Scheme != target.Scheme {
+		return false
+	}
+	return sameOriginAuthority(u, target)
+}
+
+func requestOrigin(c *gin.Context) *url.URL {
+	if configured, ok := c.Get(publicOriginContextKey); ok {
+		return configured.(*url.URL)
+	}
 	scheme := "http"
 	if c.Request.TLS != nil {
 		scheme = "https"
 	}
-	if u.Scheme != scheme {
-		return false
-	}
-	target := &url.URL{Scheme: scheme, Host: c.Request.Host}
+	return &url.URL{Scheme: scheme, Host: c.Request.Host}
+}
+
+func secureSessionCookie(c *gin.Context) bool {
+	return requestOrigin(c).Scheme == "https"
+}
+
+func sameOriginAuthority(u, target *url.URL) bool {
 	port := func(value *url.URL) string {
 		if value.Port() != "" {
 			return value.Port()

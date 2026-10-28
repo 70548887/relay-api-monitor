@@ -1,0 +1,59 @@
+name: Docker verification
+
+on:
+  workflow_dispatch:
+  workflow_call:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker:
+    name: Docker ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+        if: matrix.arch == 'arm64'
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v3
+      - name: Build source image for the target architecture
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          docker compose config --quiet
+          version="$(cat VERSION | tr -d '\r\n')"
+          docker buildx build --platform "linux/$TARGET_ARCH" --load \
+            --build-arg VERSION="$version" --build-arg COMMIT="$GITHUB_SHA" \
+            --build-arg BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --tag relaylab:docker-smoke .
+      - name: Verify non-root lifecycle, persistence and backup recovery
+        run: python3 deploy/docker/smoke.py --image relaylab:docker-smoke
+      - name: Build and run the Linux complete-package image
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p /tmp/relaylab-runtime-context/bin /tmp/relaylab-runtime-context/deploy/docker
+          container="$(docker create relaylab:docker-smoke)"
+          docker cp "$container:/usr/local/bin/relaylab" /tmp/relaylab-runtime-context/bin/relaylab
+          docker cp "$container:/usr/local/bin/relaylab-launcher" /tmp/relaylab-runtime-context/bin/relaylab-launcher
+          docker rm --volumes "$container"
+          cp deploy/docker/config.container.yaml /tmp/relaylab-runtime-context/deploy/docker/
+          cp deploy/docker/Dockerfile.release /tmp/relaylab-runtime-context/Dockerfile
+          cp deploy/docker/compose.release.yaml /tmp/relaylab-runtime-context/compose.yaml
+          cp .dockerignore /tmp/relaylab-runtime-context/.dockerignore
+          docker compose --project-directory /tmp/relaylab-runtime-context config --quiet
+          docker buildx build --platform "linux/$TARGET_ARCH" --load \
+            --tag relaylab:package-smoke /tmp/relaylab-runtime-context
+          python3 deploy/docker/smoke.py --image relaylab:package-smoke

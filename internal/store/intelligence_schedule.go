@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"relaylab/internal/domain"
 )
@@ -22,14 +23,28 @@ func (s *Store) SetIntelligenceSchedule(ctx context.Context, id string, plan dom
 			return err
 		}
 		if !plan.Enabled && plan.ModelID == "" && len(plan.TemplateIDs) == 0 && plan.IntervalSeconds == 0 {
+			requestedScope := plan.ModelScope
 			if c.IntelligenceSchedule != nil {
 				plan = *c.IntelligenceSchedule
 				plan.Enabled = false
 			} else {
 				plan.IntervalSeconds = 1800
 			}
+			if requestedScope != "" {
+				plan.ModelScope = requestedScope
+			}
 		}
 		invalid := func(message string) error { return fmt.Errorf("%w：%s", ErrInvalidIntelligenceSchedule, message) }
+		plan.ModelScope = strings.ToLower(strings.TrimSpace(plan.ModelScope))
+		if plan.ModelScope == "" {
+			plan.ModelScope = "selected"
+		}
+		if plan.ModelScope != "all" && plan.ModelScope != "selected" {
+			return invalid("模型范围须为 all 或 selected")
+		}
+		if plan.ModelScope == "all" {
+			plan.ModelID = ""
+		}
 		if plan.IntervalSeconds < 60 || plan.IntervalSeconds > 604800 {
 			return invalid("间隔须为 60 至 604800 秒")
 		}
@@ -43,6 +58,16 @@ func (s *Store) SetIntelligenceSchedule(ctx context.Context, id string, plan dom
 			}
 			seen[template] = true
 		}
+		if plan.ModelScope == "selected" {
+			if plan.ModelID == "" && c.IntelligenceSchedule != nil && c.IntelligenceSchedule.ModelScope != "all" {
+				plan.ModelID = c.IntelligenceSchedule.ModelID
+			}
+			c.IntelligenceSchedule = &plan
+			if _, err = bindSelectedModel(ctx, tx, c, false); err != nil {
+				return invalid("模型必须属于当前分组")
+			}
+			plan = *c.IntelligenceSchedule
+		}
 		if plan.ModelID != "" {
 			m, err := load[domain.Model](ctx, tx, "SELECT data FROM models WHERE id=?", plan.ModelID)
 			if err != nil || m.ChannelID != c.ID {
@@ -51,8 +76,6 @@ func (s *Store) SetIntelligenceSchedule(ctx context.Context, id string, plan dom
 			if plan.Enabled && (m.Archived || m.Missing) {
 				return invalid("请选择未归档且未缺失的模型")
 			}
-		} else if plan.Enabled {
-			return invalid("请选择定时测试模型")
 		}
 		if plan.Enabled {
 			p, err := load[domain.Platform](ctx, tx, "SELECT data FROM platforms WHERE id=?", c.PlatformID)
@@ -63,6 +86,15 @@ func (s *Store) SetIntelligenceSchedule(ctx context.Context, id string, plan dom
 				return invalid("请先启用分组及所属平台")
 			}
 		}
+		changes := modelControlChanges{}
+		if c.ModelControls != nil {
+			controls := *c.ModelControls
+			controls.ArtifactChinese = plan.Enabled && seen["cn_html"]
+			controls.ArtifactEnglish = plan.Enabled && seen["en_svg"]
+			changes.chinese = controls.ArtifactChinese != c.ModelControls.ArtifactChinese
+			changes.english = controls.ArtifactEnglish != c.ModelControls.ArtifactEnglish
+			c.ModelControls = &controls
+		}
 		c.IntelligenceSchedule = &plan
 		if err = saveChannel(ctx, tx, *c); err != nil {
 			return err
@@ -72,6 +104,12 @@ func (s *Store) SetIntelligenceSchedule(ctx context.Context, id string, plan dom
 			return err
 		}
 		for _, m := range models {
+			if !m.Archived && (changes.chinese || changes.english) {
+				changes.apply(&m, *c)
+				if err = saveModel(ctx, tx, m); err != nil {
+					return err
+				}
+			}
 			if err = reconcileSchedules(ctx, tx, m); err != nil {
 				return err
 			}

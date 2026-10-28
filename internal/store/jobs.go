@@ -228,6 +228,9 @@ func (s *Store) MarkDispatching(ctx context.Context, id, token string, deadline 
 			if v.Kind == "artifact" && !c.ScheduledArtifactEnabled(*m, v.TemplateID) {
 				return ErrConfigurationChanged
 			}
+			if v.Kind == "probe" && !c.ScheduledProbeEnabled(*m) {
+				return ErrConfigurationChanged
+			}
 		}
 		v.State = "dispatching"
 		v.Deadline = &deadline
@@ -355,6 +358,9 @@ func (s *Store) FinishJob(ctx context.Context, v domain.Job, probe *domain.Probe
 		current.State = v.State
 		current.ErrorCode = v.ErrorCode
 		current.ErrorMessage = v.ErrorMessage
+		current.ReceivedBytes, current.TextBytes = v.ReceivedBytes, v.TextBytes
+		current.FirstTextMS, current.DurationMS = v.FirstTextMS, v.DurationMS
+		current.HTTPStatus, current.FinishReason, current.Usage = v.HTTPStatus, v.FinishReason, v.Usage
 		if v.ProgressChars > current.ProgressChars {
 			current.ProgressChars = v.ProgressChars
 			current.ProgressAt = v.ProgressAt
@@ -586,4 +592,9 @@ func (s *Store) CheckWorkerLease(ctx context.Context, owner string) error {
 		return ErrConflict
 	}
 	return nil
+}
+
+// ListActiveJobs returns only live execution fences, not historical payloads.
+func (s *Store) ListActiveJobs(ctx context.Context) ([]domain.Job, error) {
+	return jobs(ctx, s.DB, "WHERE state IN ('queued','claimed','dispatching') OR (state='uncertain' AND deadline>?) ORDER BY created_at,id", ts(nowUTC().Add(-30*time.Second)))
 }

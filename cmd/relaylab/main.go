@@ -103,10 +103,12 @@ func run(args []string) error {
 	}
 	defaults := config.Default()
 	dataDirArg, addrArg := defaults.DataDir, defaults.Address
+	publicURLArg := defaults.PublicURL
 	configPath := os.Getenv("RELAYLAB_CONFIG")
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	flags.StringVar(&dataDirArg, "data-dir", dataDirArg, "数据目录")
 	flags.StringVar(&addrArg, "addr", addrArg, "监听地址")
+	flags.StringVar(&publicURLArg, "public-url", publicURLArg, "外部访问 HTTP/HTTPS 源地址，用于反代同源验证")
 	flags.StringVar(&configPath, "config", configPath, "YAML 配置文件")
 	output := flags.String("output", "", "备份 ZIP 输出路径")
 	input := flags.String("input", "", "恢复 ZIP 路径")
@@ -127,8 +129,13 @@ func run(args []string) error {
 			cfg.DataDir = dataDirArg
 		case "addr":
 			cfg.Address = addrArg
+		case "public-url":
+			cfg.PublicURL = publicURLArg
 		}
 	})
+	if cfg.PublicURL, e = config.NormalizePublicURL(cfg.PublicURL); e != nil {
+		return e
+	}
 	abs, e := filepath.Abs(cfg.DataDir)
 	if e != nil {
 		return e
@@ -253,6 +260,9 @@ func run(args []string) error {
 		return nil
 	case "serve":
 		app := server.New(st, vault)
+		if e = app.SetPublicURL(cfg.PublicURL); e != nil {
+			return e
+		}
 		app.Client, e = upstream.NewWithDNS(cfg.Upstream.DNSOverHTTPS)
 		if e != nil {
 			return e
