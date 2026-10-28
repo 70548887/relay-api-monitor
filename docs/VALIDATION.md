@@ -1,5 +1,12 @@
 # 验证结果
 
+## v1.4.1 正式发布完成（北京时间 2026-10-29）
+
+正式版于北京时间 2026-10-29 00:01:28 发布，Tag 为 v1.4.1，源码 Commit 为 a4f8804fe813291b399aff9ddb2e6bb8e2280dc1。发布工作流 40719963646 全部成功；Windows/Linux amd64 实际二进制升级恢复、Docker amd64/arm64（QEMU）源码和完整包镜像生命周期/备份恢复、Go 全量及 Linux race、150 项前端、10 项打包检查均通过。
+
+11 个附件由流水线重新下载核对后发布为 stable/latest。发布后再次核对 latest、annotated Tag 指向、版本和兼容字段、全部附件名称与大小，并将 Manifest 中 9 个文件的 SHA-256 与 GitHub 资产摘要逐一比对；Manifest 自身与 SHA256SUMS 一致。附件及源码未包含真实运行数据或凭据。未发布预制容器镜像，Dockerfile/Compose 支持在部署服务器构建。本机无 Docker Engine，容器实测发生于 GitHub CI；仍未完成宝塔实机及连续 24 小时稳定性验收。
+
+以下为发布前检查记录及保留的历史验证，不与失败的历史长测拼接。
 ## v1.4.1 正式发布检查（2026-10-28）
 
 本次以单模型调度修复、自适应后台和 Docker/宝塔部署为发布范围，保持 Schema 3、launcher 协议 2、usage_guard 1。候选源文件及发布包均按允许列表检查，真实运行数据库、master.key、config.yaml、日志和填写后的环境文件不进入发布资源。
