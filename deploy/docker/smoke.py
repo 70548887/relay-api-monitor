@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run a built Linux image against disposable volumes, without upstream calls."""
 import argparse
+import datetime
 import http.cookiejar
 import json
 import secrets
@@ -16,16 +17,54 @@ def command(*args, stdin=None):
     return result.stdout.strip()
 
 
-def wait_ready(container):
-    deadline = time.monotonic() + 150
+def read_runtime_reports(container):
+    snapshot = {}
+    for name in ('launcher', 'runtime-serve', 'runtime-worker'):
+        try:
+            snapshot[name] = json.loads(command('docker', 'exec', container, 'cat',
+                                               f'/var/lib/relaylab/data/{name}.json'))
+        except (RuntimeError, json.JSONDecodeError) as error:
+            snapshot[name] = {'read_error': str(error)}
+    return snapshot
+
+
+def runtime_reports_ready(snapshot, now=None):
+    instance = snapshot.get('launcher', {}).get('instance_id')
+    if not instance:
+        return False
+    current = now or datetime.datetime.now(datetime.timezone.utc)
+    for role in ('serve', 'worker'):
+        report = snapshot.get('runtime-' + role, {})
+        if (report.get('role') != role or report.get('ready') is not True
+                or report.get('maintenance') is not False
+                or report.get('instance_id') != instance or not report.get('pid')):
+            return False
+        try:
+            heartbeat = datetime.datetime.fromisoformat(report['heartbeat_at'].replace('Z', '+00:00'))
+            age = (current - heartbeat).total_seconds()
+        except (KeyError, TypeError, ValueError):
+            return False
+        if not -5 <= age <= 10:
+            return False
+    return True
+
+
+def wait_ready(container, timeout=150, poll_interval=2):
+    deadline = time.monotonic() + timeout
+    actual = {}
     while time.monotonic() < deadline:
         state = command('docker', 'inspect', '--format', '{{.State.Status}} {{.State.Health.Status}}', container)
-        if state == 'running healthy':
-            return
+        actual = {'container': state, 'runtime': read_runtime_reports(container)}
+        # A restored DB can retain a live worker lease for 45 seconds. HTTP
+        # liveness is available while the new worker waits for that lease; only
+        # current, fresh reports from both children establish full readiness.
+        if state == 'running healthy' and runtime_reports_ready(actual['runtime']):
+            return actual['runtime']
         if not state.startswith('running '):
-            raise RuntimeError(f'container stopped before readiness: {state}')
-        time.sleep(2)
-    raise RuntimeError('container health check timed out')
+            raise RuntimeError('container stopped before readiness: ' + json.dumps(actual, sort_keys=True))
+        time.sleep(poll_interval)
+    raise RuntimeError('container and both child runtime reports did not become ready: '
+                       + json.dumps(actual, sort_keys=True))
 
 
 def verify_http(container, username, password):
@@ -46,10 +85,12 @@ def verify_http(container, username, password):
     request('/api/v1/auth/login', {'username': username, 'password': password})
     assert request('/api/v1/auth/me')['user']['username'] == username
     assert request('/api/v1/admin/overview')['worker']['online'] is True
+    reports = read_runtime_reports(container)
     for role in ('serve', 'worker'):
-        report = json.loads(command('docker', 'exec', container, 'cat',
-                                    f'/var/lib/relaylab/data/runtime-{role}.json'))
-        assert report['role'] == role and report['ready'] and not report['maintenance']
+        report = reports.get('runtime-' + role, {})
+        assert report.get('role') == role and report.get('ready') is True and report.get('maintenance') is False, \
+            f'unexpected {role} runtime report: {json.dumps(report, sort_keys=True)}'
+    assert runtime_reports_ready(reports), 'stale or foreign runtime reports: ' + json.dumps(reports, sort_keys=True)
     assert command('docker', 'exec', container, 'id', '-u') == '10001'
     command('docker', 'exec', container, 'sh', '-c', 'test ! -w /usr/local/bin/relaylab')
 
@@ -103,6 +144,7 @@ def run(image):
               'upstream_calls': 0}))
     except Exception:
         for name in containers:
+            print(f'Actual runtime diagnostic: {name}\n{json.dumps(read_runtime_reports(name), sort_keys=True)}')
             logs = subprocess.run(['docker', 'logs', '--tail', '80', name], capture_output=True, text=True)
             print(f'Container diagnostic: {name}\n{logs.stdout}\n{logs.stderr}')
         raise

@@ -28,6 +28,8 @@ jobs:
         with:
           platforms: arm64
       - uses: docker/setup-buildx-action@v3
+      - name: Verify readiness checks
+        run: python3 -m unittest discover -s deploy/docker -p test_smoke.py -v
       - name: Build source image for the target architecture
         env:
           TARGET_ARCH: ${{ matrix.arch }}
