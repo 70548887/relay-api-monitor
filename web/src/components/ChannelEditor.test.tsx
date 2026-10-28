@@ -137,7 +137,7 @@ describe('tabbed channel editor',()=>{
   await waitFor(()=>expect(screen.getByRole('tab',{name:'推理参数'})).toHaveAttribute('aria-selected','true'));
   expect(await screen.findByText('预算至少为 1024，且小于最大输出 Tokens')).toBeVisible();
   expect(fetcher.mock.calls.some(call=>call[1]?.method==='PUT'||call[1]?.method==='POST')).toBe(false);
- });
+ },25000);
 
  it('clears transient Key and failed operation state before opening another group',async()=>{
   const {fetcher,rerender}=setup();

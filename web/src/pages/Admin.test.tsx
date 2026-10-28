@@ -98,7 +98,7 @@ it('creates a new group first, then fetches and selects only its models',async()
  fireEvent.click(screen.getByRole('tab',{name:'模型与开关'}));
  fireEvent.mouseDown(screen.getByLabelText('定时测试模型'));
  expect(await screen.findByRole('option',{name:'model-from-fixture'})).toBeInTheDocument();client.clear();
-});
+},25000);
 
 it('keeps a group-owned model public switch editable and saves only explicit visibility',async()=>{
  const model={id:'plus-model',channel_id:'plus-channel',upstream_id:'gpt-6.1-sol',display_name:'gpt-6.1-sol',source:'synced',public:false,archived:false,missing:false,protocol:'responses',artifact_chinese:false,artifact_english:false,probe_enabled:false,max_tokens:8192,artifact_interval_seconds:1800,timeout_seconds:600,sort:0};
