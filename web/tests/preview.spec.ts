@@ -8,8 +8,8 @@ test('isolated artifact preview executes scripts inside an opaque sandbox',async
   await page.route('**/api/v1/public/intelligence?**',route=>route.fulfill({json:{groups:[group],history_scope:'group',updated_at:'2026-10-26T00:00:00Z',worker_online:true}}));
   await page.route(`**/api/v1/public/artifacts/${id}`,route=>route.fulfill({json:artifact}));
   await page.goto('/intelligence');
-  await page.getByRole('tab',{name:group.platform_name,exact:true}).click();
-  await page.getByRole('tab',{name:group.channel_name,exact:true}).click();
+  await page.getByRole('group',{name:'平台',exact:true}).getByRole('button',{name:group.platform_name,exact:true}).click();
+  await page.getByRole('group',{name:'分组',exact:true}).getByRole('button',{name:group.channel_name,exact:true}).click();
   const card=page.locator(`[data-artifact-id="${id}"]`);
   await expect(card).toBeVisible();
   await card.getByRole('button',{name:/预览/}).click();

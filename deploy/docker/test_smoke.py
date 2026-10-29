@@ -62,5 +62,38 @@ class ReadinessTests(unittest.TestCase):
         self.assertFalse(smoke.runtime_reports_ready(missing))
 
 
+class ComposeRestoreTests(unittest.TestCase):
+    def configuration(self, volume):
+        return {'volumes': {'relaylab-data': {'name': volume}}, 'services': {'relaylab': {
+            'volumes': [{'type': 'volume', 'source': 'relaylab-data', 'target': '/var/lib/relaylab'}]}}}
+
+    def test_old_and_new_volume_environments_do_not_mutate_the_process_environment(self):
+        with patch.dict(smoke.os.environ, {'RELAYLAB_DATA_VOLUME': 'real-existing-volume',
+                                          'RELAYLAB_PUBLIC_URL': 'https://external.example'}):
+            old = smoke.compose_environment('random-old-test-volume')
+            new = smoke.compose_environment('random-new-test-volume')
+            self.assertEqual(old['RELAYLAB_DATA_VOLUME'], 'random-old-test-volume')
+            self.assertEqual(new['RELAYLAB_DATA_VOLUME'], 'random-new-test-volume')
+            self.assertEqual(new['RELAYLAB_PUBLIC_URL'], '')
+            self.assertEqual(new['RELAYLAB_PORT'], '0')
+            self.assertEqual(smoke.os.environ['RELAYLAB_DATA_VOLUME'], 'real-existing-volume')
+
+    def test_missing_interpolation_or_wrong_mount_cannot_pass_the_restore_gate(self):
+        smoke.assert_compose_volume(self.configuration('new-test-volume'), 'new-test-volume')
+        with self.assertRaises(AssertionError):
+            smoke.assert_compose_volume(self.configuration('old-test-volume'), 'new-test-volume')
+        disconnected = self.configuration('new-test-volume')
+        disconnected['services']['relaylab']['volumes'][0]['source'] = 'unrelated-data'
+        with self.assertRaises(AssertionError):
+            smoke.assert_compose_volume(disconnected, 'new-test-volume')
+
+    def test_container_must_mount_the_requested_volume(self):
+        with patch.object(smoke, 'command', return_value='[{"Destination":"/var/lib/relaylab","Name":"new-test-volume"}]'):
+            smoke.assert_container_volume('fixture-container', 'new-test-volume')
+        with patch.object(smoke, 'command', return_value='[{"Destination":"/var/lib/relaylab","Name":"old-test-volume"}]'):
+            with self.assertRaises(AssertionError):
+                smoke.assert_container_volume('fixture-container', 'new-test-volume')
+
+
 if __name__ == '__main__':
     unittest.main()

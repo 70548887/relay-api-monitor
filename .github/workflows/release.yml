@@ -92,6 +92,11 @@ jobs:
           npm --prefix web run typecheck
           python -m unittest discover -s scripts -p 'test_release.py' -v
 
+      - name: Check reachable Go and npm vulnerabilities
+        run: |
+          go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./cmd/...
+          npm --prefix web audit --audit-level=high
+
       - name: Build embedded frontend
         run: |
           npm --prefix web run build

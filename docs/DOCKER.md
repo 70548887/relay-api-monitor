@@ -10,8 +10,8 @@
 
 从 GitHub Release 下载与服务器架构相符的完整包：
 
-- x86_64 服务器：`relaylab-linux-amd64-1.4.1.tar.gz`。
-- aarch64 服务器：`relaylab-linux-arm64-1.4.1.tar.gz`。
+- x86_64 服务器：`relaylab-linux-amd64-1.4.2.tar.gz`。
+- aarch64 服务器：`relaylab-linux-arm64-1.4.2.tar.gz`。
 
 解压到独立目录，例如 `/www/wwwroot/relaylab`。进入包含 `compose.yaml`、`Dockerfile` 和 `bin/` 的目录，保留完整目录结构。Linux 完整包的 Dockerfile 直接使用已发布的二进制，不重新编译源码；不要使用 Windows 包构建 Linux 镜像。
 
@@ -25,12 +25,12 @@ docker compose build --pull
 切换到正式版本对应的 Tag，再在仓库根目录构建。根 Dockerfile 会在临时构建阶段安装前端依赖、构建 React，并按 `go.mod` 指定的工具链构建 Go 主程序和启动器。
 
 ```sh
-git clone --branch v1.4.1 --depth 1 https://github.com/70548887/relay-api-monitor.git
+git clone --branch v1.4.2 --depth 1 https://github.com/70548887/relay-api-monitor.git
 cd relay-api-monitor
 docker compose build --pull
 ```
 
-两种方式默认都生成本机镜像 `relay-api-monitor:1.4.1`。本版没有要求从 Docker Hub 或 GHCR 拉取同名预制镜像；下载完整包后在宝塔服务器上构建即可。
+两种方式默认都生成本机镜像 `relay-api-monitor:1.4.2`。本版没有要求从 Docker Hub 或 GHCR 拉取同名预制镜像；下载完整包后在宝塔服务器上构建即可。
 
 ## 初始化管理员并启动
 
@@ -114,7 +114,7 @@ RELAYLAB_UPSTREAM_DNS_OVER_HTTPS=
 
 ## 数据目录与权限
 
-Compose 默认使用命名卷，初始目录由镜像以 UID 10001 创建，无需给宿主整个项目目录开放写权限。容器中：
+Compose 默认使用命名卷 `relaylab_relaylab-data`；可在私有 `.env` 中用 `RELAYLAB_DATA_VOLUME` 指定另一个专用命名卷。初始目录由镜像以 UID 10001 创建，无需给宿主整个项目目录开放写权限。容器中：
 
 ```text
 /var/lib/relaylab/data/       数据库、master.key、运行状态
@@ -164,18 +164,53 @@ docker compose logs --tail 100 relaylab
 
 程序回滚应检查数据库 Schema 兼容范围。本版使用 Schema 3；恢复旧备份是单独的数据回退操作，会回退备份之后的数据。
 
-需要恢复备份时，先停止主容器，并把备份放到单独输入目录，示例文件权限须让 UID 10001 可读：
+### 恢复到新的数据卷
+
+`restore` 要求目标数据目录为空，停止容器不会清空原数据卷。因此恢复应使用一个全新的命名卷，确认恢复成功后再切换网站；原卷保留，不覆盖或删除。
+
+**v1.4.1 已发布附件的 Compose 尚未配置 `RELAYLAB_DATA_VOLUME` 映射。** v1.4.2 及之后的发布包已包含该配置；使用原版 v1.4.1 包时，先将 `compose.yaml` 底部的卷定义改为下列内容，保留服务中的 `relaylab-data:/var/lib/relaylab` 挂载。否则仅修改 `.env` 不会切换数据卷。
+
+```yaml
+volumes:
+  relaylab-data:
+    name: ${RELAYLAB_DATA_VOLUME:-relaylab_relaylab-data}
+```
+
+1. 将备份复制到宿主专用输入目录，例如 `/opt/relaylab-restore/before-update.zip`。该目录必须允许 UID 10001 遍历，备份文件必须允许 UID 10001 读取；恢复时以只读方式挂载。
+2. 停止主容器，记录当前数据卷名称。默认名称为 `relaylab_relaylab-data`；如以前设置过 `RELAYLAB_DATA_VOLUME`，记录其原值。
 
 ```sh
 docker compose stop
+docker volume ls --format '{{.Name}}'
+```
+
+3. 选择列表中尚不存在的新卷名，例如 `relaylab-restored-20261029`。在项目私有 `.env` 中**新增或修改这一行**，保留原有域名、版本等其他设置；如当前终端也导出了该变量，先同步修改或清除终端旧值。
+
+```dotenv
+RELAYLAB_DATA_VOLUME=relaylab-restored-20261029
+```
+
+4. 先用 `docker compose config` 核对数据卷已解析为新名称，再执行恢复。Compose 会创建新卷，镜像中的目录及 UID 10001 权限会初始化到该卷；不要在恢复前运行 `init-admin` 或先启动网站，否则目标目录会变为非空。
+
+```sh
+docker compose config
 docker compose run --rm --no-deps \
   --volume /opt/relaylab-restore:/restore-input:ro \
   --entrypoint /usr/local/bin/relaylab relaylab \
   restore --config /etc/relaylab/config.yaml --input /restore-input/before-update.zip
-docker compose up -d --no-build
 ```
 
-恢复命令会校验目标目录状态、数据库版本和主密钥。先阅读 `docs/UPDATES.md` 的恢复约束，不对正在运行的数据卷直接覆盖数据库文件。
+5. 恢复命令成功后，再以新卷重新创建网站和 Worker，检查后台账号、平台配置、历史及密钥解密均正常。
+
+```sh
+docker compose up -d --no-build --force-recreate
+docker compose ps
+docker compose logs --tail 100 relaylab
+```
+
+恢复会校验备份成员、数据库版本和主密钥。恢复失败时不要启动新卷，也不要清理原卷；核对错误后换一个新卷名重试。需要回到原数据时，停止容器，将 `.env` 中的 `RELAYLAB_DATA_VOLUME` 改回先前记录的原卷名，再执行 `docker compose up -d --no-build --force-recreate`。恢复后的数据回退与程序版本回滚不同，恢复会回到备份时刻的数据。
+
+整个流程不需要 `docker compose down -v` 或 `docker volume rm`。原数据卷和输入备份应保留到管理员明确确认恢复验收完成。目录绑定挂载用户须同样改为新的空专属目录并设置 UID 10001 写权限；只改命名卷变量不会替换自定义的宿主目录挂载。另见 `docs/UPDATES.md` 的恢复约束。
 
 ## 验证范围
 

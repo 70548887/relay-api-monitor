@@ -41,7 +41,7 @@ jobs:
             --build-arg BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --tag relaylab:docker-smoke .
       - name: Verify non-root lifecycle, persistence and backup recovery
-        run: python3 deploy/docker/smoke.py --image relaylab:docker-smoke
+        run: python3 deploy/docker/smoke.py --image relaylab:docker-smoke --compose-file compose.yaml
       - name: Build and run the Linux complete-package image
         env:
           TARGET_ARCH: ${{ matrix.arch }}
@@ -58,4 +58,4 @@ jobs:
           docker compose --project-directory /tmp/relaylab-runtime-context config --quiet
           docker buildx build --platform "linux/$TARGET_ARCH" --load \
             --tag relaylab:package-smoke /tmp/relaylab-runtime-context
-          python3 deploy/docker/smoke.py --image relaylab:package-smoke
+          python3 deploy/docker/smoke.py --image relaylab:package-smoke --compose-file /tmp/relaylab-runtime-context/compose.yaml
