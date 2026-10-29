@@ -1,70 +1,116 @@
 # Relay Lab · 中转观测站
 
-Go + React 的中转 API 监控与模型测试平台。用户端公开展示监控与鹈鹕作品，普通用户登录后使用自己的 Key 在线测试；独立管理端配置平台、分组、模型、任务、账户和系统升级。
+面向中转 API 的可用性监控与模型测试平台，基于 Go、React 和 SQLite 构建，支持自托管部署。
 
-当前版本 **1.4.2**，唯一版本来源为根目录 `VERSION`。本版修复作品预览所用 HTML 依赖的两项已知漏洞，纠正 Docker 数据恢复流程，并增加依赖漏洞检查。继续支持单模型调度、自适应后台、Docker/Compose、宝塔和 HTTPS 反代部署。新分组默认启用并公开；健康检测与定时创作仅运行指定的一个模型，默认精确匹配 `gpt-6.1-sol`，缺失时等待选择或后续同步。每次测试独立发送当前提示词，不自动加入历史上下文。完整变化、兼容范围及限制见 [v1.4.2 发布说明](docs/releases/v1.4.2.md)。
+Relay Lab 将 API 健康监控、固定提示词作品对照和在线模型测试整合到同一站点：访客可查看公开监控与作品，普通用户可使用自己的 API Key 测试模型，管理员通过独立后台管理平台、分组、任务和账户。
 
-后台“在线升级”页面可检查并安装 `70548887/relay-api-monitor` 的 GitHub Release。复制 `config.example.yaml` 为 `config.yaml`，通过 `RELAYLAB_UPDATE_GITHUB_TOKEN` 配置私有仓库读取 Token；不要把 Token、代理凭据或本地配置提交到仓库。完整流程见 [docs/UPDATES.md](docs/UPDATES.md)。
+[快速开始](#快速开始) · [首次配置](#首次配置) · [使用说明](#使用说明) · [文档导航](#文档导航) · [下载安装包](https://github.com/70548887/relay-api-monitor/releases)
 
-## 宝塔与 Docker
+仓库版本以 [VERSION](VERSION) 为准。本文部署示例对应 **v1.4.2**，版本变化见 [发布说明](docs/releases/v1.4.2.md) 与 [更新日志](docs/CHANGELOG.md)。
 
-支持通过宝塔 Docker 编排部署。源码仓库提供多阶段构建；Linux 完整发布包内提供基于预编译程序的 Dockerfile 和 Compose，无需在服务器安装 Go 或 Node.js。
+## 核心功能
+
+- **API 健康监控**：按平台和分组展示可用性、首段有效正文耗时、完整耗时、近 7 天成功率及近 24 小时状态；缺失与过期样本单独标识。
+- **模型作品对照**：通过固定的中文 HTML、英文 SVG 提示词生成作品，支持定时创作、历史预览与源码下载。界面栏目名为“智商测试”，用于观察输出差异，不提供标准化智力评分。
+- **在线模型测试**：用户登录后使用自己的接口地址和 API Key 测试文本或 HTML/SVG，支持保存连接、查询私有历史和预填再次测试。
+- **独立管理后台**：集中管理平台、分组、模型、定时任务、账户与系统设置，查看任务状态和运行记录；普通用户与管理员使用独立账户和会话。
+- **多协议与自托管**：支持 Chat Completions、Responses、Anthropic Messages，提供 Windows、Linux、Docker Compose 和宝塔部署方式。网站与后台任务进程（Worker）由启动器统一管理。
+
+## 快速开始
+
+根据运行环境选择一种部署方式。完整发布包包含程序、启动器、前端资源、脚本和示例配置，运行时无需安装 Go 或 Node.js。首次安装请选择对应系统和架构的**完整包**，并保留目录结构。
+
+### Docker Compose / 宝塔
+
+以下命令在仓库根目录执行，通过多阶段构建生成镜像：
 
 ```sh
-docker compose build
-docker compose run --rm --no-deps --entrypoint relaylab relaylab init-admin --username admin
-docker compose up -d
+git clone --branch v1.4.2 --depth 1 https://github.com/70548887/relay-api-monitor.git
+cd relay-api-monitor
+docker compose build --pull
+
+# 首次部署：按提示设置管理员密码
+docker compose run --rm --no-deps \
+  --entrypoint /usr/local/bin/relaylab relaylab \
+  init-admin --config /etc/relaylab/config.yaml --username admin
+
+docker compose up -d --no-build
 ```
 
-初始化会交互要求管理员密码，没有预置账号密码。默认仅向宿主机 `127.0.0.1:42783` 暴露网站，由宝塔 Nginx 反代；启用域名 HTTPS 时，在编排环境中设置 `RELAYLAB_PUBLIC_URL=https://你的域名`。网站和 Worker 由同一容器内的 launcher 管理，数据保存在持久化命名卷。容器升级使用重建镜像与容器，保留数据卷；应用内二进制自更新在容器中关闭。
+默认访问地址为 `http://127.0.0.1:42783`，端口仅绑定宿主机回环地址，数据保存在持久化命名卷中。也可下载 Linux 完整包，在解压目录执行构建、初始化和启动命令；包内 Dockerfile 直接使用预编译程序。
 
-完整的源码/完整包选择、宝塔界面配置、HTTPS 与 SSE 反代、数据备份和升级步骤见 [Docker 与宝塔部署说明](docs/DOCKER.md)。
-## 本机启动
+使用宝塔或 Nginx 配置域名 HTTPS 时，在项目的 `.env` 中设置实际对外地址，然后重新创建容器：
 
-开发构建需要 `go.mod` 指定的 Go 工具链、Node.js 22 和 Python 3.11+（发布打包测试）。成品启动使用完整包中的 `bin/relaylab.exe` 与 `bin/relaylab-launcher.exe`，无需这些开发工具。
+```dotenv
+RELAYLAB_PUBLIC_URL=https://relay.example.com
+```
 
-如果使用已经打包的 Windows 成品，直接运行 `scripts/start.ps1`，跳过下面的构建步骤。项目固定使用 Go 1.26.10 修复版本工具链，Go 会按 `go.mod` 自动获取。
+```sh
+docker compose up -d --no-build --force-recreate
+```
+
+容器部署通过重建镜像与容器升级，应用内二进制自更新默认关闭。宝塔配置、SSE 反向代理、数据卷及恢复步骤见 [Docker 与宝塔部署指南](docs/DOCKER.md)。
+
+### Windows 完整包
+
+从 [Releases](https://github.com/70548887/relay-api-monitor/releases) 下载 Windows amd64 完整 ZIP，解压后在该目录打开 PowerShell：
 
 ```powershell
-Set-Location 'D:\中转API监控'
-powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1
 ```
 
-用户端入口为 `http://127.0.0.1:42783/`，用户注册 `/register`、登录 `/login`、个人账号 `/account`。管理员从 `http://127.0.0.1:42783/admin/login` 独立登录，首次进入会引导至 `/admin/setup` 创建管理员。用户端不展示管理菜单；后台提供“访问用户端”入口。没有预置密码，密码至少12字节，管理员初始化仅允许本机请求。默认生产端口42783、开发端口42784。
-
-普通用户和管理员使用独立账户表、Cookie 与 CSRF Token。普通用户注册不会获得管理权限；只有管理员能访问 `/admin/users` 中的“普通用户 / 管理员账号”两个列表，并创建、启用、停用或重置密码。停用与重置密码立即撤销相应账户会话；当前管理员不能停用或后台重置自己的密码。数据库自动迁移到 schema 3，保留旧管理员、会话和业务数据。
-
-停止程序：
+启动器会同时启动网站和 Worker。停止时执行：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\stop.ps1
 ```
 
-`start.ps1` 通过协议 2 启动器管理网站与 Worker，保存进程路径、ID 和启动时间，用于停止时核对身份。v1.2.3 启动器还登记所启动的子进程，并核对覆盖数据库整个打开期间的占用锁，防止尚未报告状态或正在退出的旧进程被遗漏。显式脚本参数优先于环境变量，环境变量优先于 YAML；未指定 `-Address` / `-DataDir` 时不会覆盖配置。启动器控制端口默认由系统分配，实际地址记录在数据目录 `launcher.json`，与开发端口 42784 独立。日志位于数据目录。停止脚本先发送优雅退出请求，退出未确认时保留记录并报错。
+### Linux 完整包
 
-**v1.2.2 及更早版本升级到 v1.3.0 时，需手动迁移一次完整包**：停止旧程序，备份数据库与 `master.key`，同时替换服务端、启动器和脚本，保留原数据与本地配置后重新启动。本版保持协议 2，并新增 `usage_guard: 1` 数据库占用保护；只替换服务端不会更新旧启动器。详见 [升级说明](docs/UPDATES.md) 和 [v1.3.0 本地候选说明](docs/releases/v1.3.0.md)；[v1.2.2 发布说明](docs/releases/v1.2.2.md) 保留作为历史记录。
+下载与服务器架构匹配的 Linux amd64 或 arm64 完整 `tar.gz`，解压后进入程序目录：
 
-## 配置流程
+```sh
+# 首次部署：在服务器终端初始化管理员
+./bin/relaylab init-admin --username admin
 
-1. 登录后台，添加平台名称，开启平台公开展示。
-2. 在平台下添加分组，填写 API 地址、API Key、模型发现协议和默认生成协议。不同分组可使用不同 Key。
-3. 获取模型；模型目录获取成功不等于推理请求已通过。目录失败保留原模型，可手动补录。
-4. 在分组编辑中统一配置公开、健康监控与中英文创作开关；新模型默认继承这些开关。可在模型中单独关闭，重新同步或普通保存不会覆盖个别关闭项。需要重置个别设置时，使用“保存并应用到全部模型”。
-5. 选择分组的“定时测试模型”，健康监控和自动创作均仅使用它；默认 `gpt-6.1-sol`，缺失时等待指定。自动任务默认监控5分钟一次、作品30分钟一次。手动检测／生成可另行选择模型。
-6. 在运行概览确认 Worker 在线。未运行 Worker 时网站仍可访问，但定时任务不执行。
+# 前台运行网站与 Worker
+sh scripts/start.sh
+```
 
-API 地址只填根站点时自动使用 `/v1`；已带路径时保留。高级设置允许指定模型列表和生成接口路径。生成协议支持 Chat Completions、Responses、Anthropic Messages，不根据模型名称猜测协议，也不自动换接口重试。
+长期运行可使用仓库提供的 systemd 服务示例，见 [Linux 部署指南](deploy/README.md)。
 
-本产品的分组是本地配置标签；不宣称普通模型调用 Key 能获取平台真实账号分组、余额或全部运营数据。
+### 访问与管理员初始化
 
-## 用户端三个栏目
+- 用户端：`http://127.0.0.1:42783/`
+- 管理后台：`http://127.0.0.1:42783/admin/login`
+- 普通用户注册 / 登录：`/register`、`/login`
 
-- **中转 API 监控**：按平台和分组展开；展示真实检测结果、首正文耗时、完整耗时、7天成功率与24小时状态色块。缺样本显示空白，超过检测间隔两倍显示过期。
-- **智商测试**：主区域直接展示当前HTML/SVG，下面切换八次真实历史缩略图；默认按分组及模板保留8次，可在设置改为按模型。页面每5秒自动刷新，展示排队、生成、字符进度、下一次执行和Worker状态；无成功作品时仍展示状态。仅同一提示词与版本可并排比较，不输出“智商分”。
-- **在线测试**：普通用户登录后填写自己的地址和 Key，获取模型并测试文本或动画。页面与两个测试接口均验证普通用户会话，管理员登录不能代替用户登录。用户可保存自己的连接，Key 经 AES-256-GCM 加密保存，接口仅返回掩码。文本、HTML/SVG 测试的提示词、参数、完整或部分回复及实际用量自动写入私有历史，默认保留 30 天；用户仅可查看自己的，管理员可审查全部记录和禁用连接，但不能查看或使用用户 Key。私有记录不自动发布到作品墙。
+项目没有预置管理员密码，密码至少为 **12 字节**。Windows 本机首次访问后台时，会引导至 `/admin/setup` 创建管理员；网页初始化仅接受本机请求。Docker 和远程服务器使用上面的终端命令完成初始化。
 
-内置提示词保持原文：
+## 首次配置
+
+1. **添加平台**：进入管理后台，填写平台名称并按需开启公开展示。
+2. **添加分组**：配置 API 地址、API Key、模型发现协议和默认生成协议。不同分组可以使用不同 Key。
+3. **同步模型**：获取模型目录，必要时手动补录。目录获取成功仅说明模型列表可用，仍需实际调用验证推理接口。
+4. **设置可见性与任务开关**：核对分组的公开、健康监控和中英文创作设置。新分组默认启用并公开，新模型继承分组设置；普通保存与重新同步保留模型的个别关闭项，“保存并应用到全部模型”会统一应用分组设置。
+5. **选择定时测试模型**：新建配置采用单模型调度，健康监控与自动创作使用同一个指定模型。默认精确匹配 `gpt-6.1-sol`；目标缺失或归档时暂停相应自动任务，等待选择或后续同步，不自动切换模型。手动任务可另选模型。
+6. **确认 Worker 在线**：在运行概览查看 Worker 和任务状态，再执行一次手动检测或创作。网站可以独立运行，但定时任务依赖 Worker。
+
+默认健康检测间隔为 **5 分钟**，作品生成间隔为 **30 分钟**，可在后台调整。中英文模板同时启用时，同一模型按顺序执行。
+
+## 使用说明
+
+### 接口协议与调用行为
+
+- API 地址只填写根站点时，程序默认使用 `/v1`；已有路径会保留。高级设置支持自定义模型列表和生成接口路径。
+- 生成协议需明确选择，不根据模型名称推断协议，也不在失败后自动切换接口或降低推理强度。
+- 推理强度可按分组设置，模型可继承或覆盖；选择“上游默认”时不发送该参数。具体支持范围由所选协议和上游模型决定。
+- 每次测试仅发送本次提示词，不自动加入历史消息、作品或上一轮回复。上游提供缓存用量时会记录，未提供的用量显示“未提供”。
+- 分组是本地配置标签。“验证绑定组”仅核验 Token 的绑定信息，不代表模型请求实际命中的账户、路由或余额；不支持该接口时会明确提示。
+
+### 作品预览与历史
+
+内置提示词分别为：
 
 ```text
 Create code for an SVG of a pelican riding a bicycle as nicely as you can.
@@ -74,93 +120,99 @@ Create code for an SVG of a pelican riding a bicycle as nicely as you can.
 创建一个HTML，内容是SVG绘一个鹈鹕骑自行车的2D动画
 ```
 
-作品在不具备同源权限的 iframe 中预览，允许所需脚本并限制外部资源、表单、弹窗和导航。主页面不会直接插入生成 HTML；源码下载为纯文本附件。沙箱用于页面隔离，不承诺浏览器级绝对断网。生成代码无法完成提取或上游输出被截断时，任务明确失败并保留上一份成功作品。
+作品历史默认按“分组 + 模板”保留最近 **8 份**，可切换为按“模型 + 模板”保留。仅相同提示词与版本的作品适合并排对照。
 
-历史封面从作品实际SVG内容生成PNG，最多同时使用2个隔离采集frame；生成后静态缓存并卸载采集frame。不具备可提取SVG的内容显示“暂无静态封面”，仍可查看原始作品。
+生成内容在不具备同源权限的 iframe 中预览，主页面不直接插入生成的 HTML，源码以纯文本附件下载。预览会限制外部资源、表单、弹窗和导航，但不保证浏览器级绝对断网。输出截断或代码提取失败时，任务标记失败并保留上一份成功作品。
 
-## 推理强度和分组核验
+### 用户连接与私有记录
 
-分组可设置默认推理强度，模型可继承或覆盖；“上游默认”表示不发送该参数。Chat发送`reasoning_effort`，Responses发送`reasoning.effort`，Anthropic发送`output_config.effort`及显式选择的thinking配置。协议不支持的组合会在请求前被拒绝；上游模型拒绝参数时明确失败，不自动降级重试。页面和作品保存的是实际请求参数。
+在线测试需要**普通用户登录**，管理员会话不能代替普通用户会话。用户可在 `/account/connections` 管理连接，在 `/account/tests` 查看记录、下载内容或删除已结束的记录；“再次测试”仅预填参数，不自动发送请求。
 
-OpenAI 兼容接口提供 `none/minimal/low/medium/high/xhigh/max`，Anthropic 提供 `low/medium/high/xhigh/max`；选项表示协议可传递的参数，具体模型的支持范围由上游决定。不会将界面名称自动转换成另一档位。
+保存的 API Key 经 AES-256-GCM 加密，接口仅返回掩码。测试提示词、参数、回复和用量会写入私有历史，默认保留 **30 天**，可配置为 1–365 天。记录不自动发布到作品墙；**本人和管理员可查看测试内容**，管理员可禁用用户连接，但不能查看或使用用户 Key。
 
-后台“平台与分组 → 分组”提供“执行测试”：选择本分组模型和中文 HTML／英文 SVG 模板，提交一次作品任务，可在“任务与作品”查看执行进度与结果。是否在用户端展示仍由平台、分组和模型的公开配置决定。
+### 默认任务参数
 
-分组列表的“定时测试”必须选择该分组的一个模型，可选择中文、英文或两个模板并配置创作间隔（60 秒至 7 天）。健康监控也仅对同一个目标运行，其开关及检测间隔独立配置。首次开启需保存配置；关闭创作计划会取消尚未发出的定时作品任务，已发出的请求继续完成，手动任务仍可执行。同步目录不会扩大测试范围，目标缺失或归档时暂停其自动任务，不静默切换模型。修改目标会取消旧目标尚未发送的定时任务，已有历史及独立手动任务保留。旧版显式全部模型计划仅为兼容保留，通过新界面明确选择模型后转为单模型范围。分组计划与对应任务调度在同一事务中保存。同时选择两个模板时，同一模型仍按顺序执行；另一模板保留待执行状态，避免因同一时刻到期而跳过整个周期。
+- 并发上限：健康检测 4、作品生成 2、每分组后台任务 2；同一模型同类任务最多运行 1 个。
+- 在线测试：独立使用全局 8、每 IP 2 的并发额度，可在后台调整。
+- 超时：模型发现 20 秒、健康检测 60 秒、新作品配置默认 600 秒。
+- 输出上限：健康检测 1,024，新作品配置默认 8,192；作品参数可按模型覆盖。
+- 首段有效正文超过 10 秒标记为偏慢；监控样本超过检测间隔的两倍标记为过期。
 
-每次模型调用使用独立上下文：只发送本次提示词，不发送历史消息、历史作品、会话 ID 或上一轮回复 ID。新作品参数记录 `context_policy=independent`；历史记录不会用于生成下一份作品。上游缓存与上下文独立是不同概念，不能保证中转平台内部禁用缓存；上游实际提供缓存命中／缓存写入 Token 时记录并展示，未提供时明确显示“未提供”。不会为绕过缓存随机改写标准模板。
+已发出但结果无法确认的请求不会自动重发。停止本系统的等待不代表上游已经停止计算或计费。
 
-可在分组选择New API或自定义验证提供方，点击“验证绑定组”。New API请求单一`/api/token/self`；自定义提供方填写接口路径和JSON字段路径。核验结果仅表示Token绑定，不证明模型请求实际命中了哪个账号或路由；自动分组`auto`同样不作实际命中承诺。不支持的接口会明确显示“不支持核验”。
+## 运行配置
 
-本次使用用户提供的接口完成了Chat/Responses High、中文HTML、英文SVG和监控实测；模型均为`gpt-6.1-sol`。中文作品约208秒、英文约143秒；结果已显示在本机页面。该平台没有提供标准绑定组验证接口。详细脱敏结果见`docs/LIVE_TESTS.md`。
+需要自定义配置时，将 [config.example.yaml](config.example.yaml) 复制为程序目录下的 `config.yaml`，按部署环境调整。配置优先级为：**显式命令行参数 > 环境变量 > YAML**。
 
-## 默认任务参数
+常用环境变量：
 
-监控并发4、作品并发2、每分组后台并发2；同一模型同类任务最多运行1个。访客生成使用单独的8个全局并发、每IP 2个额度。后台可调整。
+- `RELAYLAB_ADDR`：服务监听地址，默认 `127.0.0.1:42783`。
+- `RELAYLAB_DATA_DIR`：数据目录，默认 `./data`。
+- `RELAYLAB_PUBLIC_URL`：浏览器访问的完整 origin，如 `https://relay.example.com`，用于 HTTPS 反代配置。
+- `RELAYLAB_UPDATE_GITHUB_TOKEN`：GitHub 更新访问 Token，用于需要认证的访问场景。
+- `RELAYLAB_UPDATE_PROXY`：GitHub 更新请求使用的代理，不转发模型请求。
+- `RELAYLAB_UPSTREAM_DNS_OVER_HTTPS`：代理 Fake-IP 环境下可选的 DNS-over-HTTPS 解析地址。
 
-模型发现超时20秒；监控60秒／输出上限1024；新作品配置默认600秒／输出上限8192，均可按模型覆盖。已有用户显式保存的超时不会被静默覆盖。首正文超过10秒标记偏慢。未返回用量时显示“未提供”。
+上游请求仅允许公共 HTTP/HTTPS 地址，解析结果会校验并固定连接，禁止自动重定向与内网目标。代理使用 Fake-IP 时，可在代理的 `fake-ip-filter` 中排除 API 域名，或配置上述 DoH 回退；返回地址仍须通过公网校验。
 
-任务状态为 `queued`、`claimed`、`dispatching`、`succeeded`、`failed`、`canceled`、`uncertain`，另有跳过记录。领取租约45秒，每10秒续租；已发出请求而结果无法确认时不自动重发。停止请求可取消本系统的等待，但不能保证上游没有产生用量。
+本地配置、API Key、Token 和代理凭据不应提交到仓库。Docker 的端口映射、数据卷和环境变量配置以 [Docker 部署指南](docs/DOCKER.md) 为准。
 
-SQLite 使用 WAL、每连接外键与5秒忙等待。配置、任务、检测、作品及审计保存在同一数据库；网络调用不占数据库事务。记录保留默认30天，作品每模型每模板最多保留8份成功结果。
+## 数据备份与升级
 
-写事务采用 immediate 模式，服务与 Worker 的独立连接先获取写入权再读改写。任务提交同时核对 Worker 全局租约和任务租约；渠道配置修改后，旧配置发起的模型同步结果会被丢弃。调短周期会重新安排下一次执行时间，停用计划会取消其排队任务。
+原生部署默认将数据保存在 `data/`，核心文件为数据库 `relaylab.db` 和加密主密钥 `master.key`。**数据库与主密钥必须一起备份、一起恢复。** 备份文件包含密钥，应按私密数据保管；主密钥丢失时，程序不会生成新密钥覆盖已有配置。
 
-## 数据与备份
-
-默认数据目录 `data/`，数据库 `relaylab.db`，密钥 `master.key`。后台 Key 使用 AES-256-GCM 加密；密码使用 Argon2id。**数据库和 master.key 必须一起备份**。数据库已存在但主密钥丢失时程序会停止，不生成新密钥覆盖旧配置。
+Windows 默认目录的备份与恢复示例：
 
 ```powershell
 .\scripts\backup.ps1
 .\scripts\restore.ps1 -InputPath '.\backups\relaylab-日期.zip' -DataDir '.\data-restored'
 ```
 
-备份通过 SQLite 一致性快照生成，不直接复制运行中的数据库文件。恢复仅允许空目录，校验数据库与密钥后提交。备份 ZIP 含密钥，应作为私密数据保管。
+使用自定义数据目录时，为备份脚本显式传入 `-DataDir`。备份采用 SQLite 一致性快照；恢复要求目标目录为空，并校验数据库与密钥。Docker 使用 [部署指南中的备份与新卷恢复流程](docs/DOCKER.md#备份升级与回滚)。
 
-## 命令行与开发
+- **原生部署**：后台“在线升级”支持检查 GitHub Release、下载安装包并校验，再由启动器完成安装。v1.2.2 及更早版本需先按 [升级说明](docs/UPDATES.md) 完整更新启动器和脚本。
+- **容器部署**：使用目标版本源码或完整包重建镜像与容器，保留原数据卷。
+- **版本回退**：当前数据库为 Schema 3，不能仅替换成只支持 Schema 2 的旧程序；恢复旧快照会回退备份之后的数据。
 
-```powershell
-.\bin\relaylab.exe serve --addr 127.0.0.1:42783 --data-dir .\data
-.\bin\relaylab.exe worker --data-dir .\data
-.\bin\relaylab.exe init-admin --username admin --data-dir .\data
-.\bin\relaylab.exe backup --data-dir .\data --output .\backups\manual.zip
-.\bin\relaylab.exe restore --input .\backups\manual.zip --data-dir .\restored
-```
+## 开发与验证
 
-可通过 `RELAYLAB_DATA_DIR` 和 `RELAYLAB_ADDR` 设置默认路径、监听地址。开发前端使用 `cd web; npm run dev`，监听42784，API代理到42783。本机初始化建议从42783同源页面完成。域名、反向代理与正式服务器部署不包含在本机首版交付内。
+开发环境使用 [go.mod](go.mod) 声明的 Go 工具链（当前为 `go1.26.10`）、Node.js 22；运行发布打包测试还需要 Python 3.11+。
 
-所有上游请求仅连接公共 HTTP/HTTPS 地址，固定已校验DNS结果，禁止自动重定向与内网目标；生产配置不包含绕过此检查的开关。本地测试通过显式注入测试HTTP客户端完成。
-
-代理使用 Fake-IP 时，域名可能被解析为 `198.18.0.0/15` 或 `fdfe:dcba:9876::/48` 中的虚拟地址。可以在代理的 `fake-ip-filter` 中排除 API 域名；也可以在本机 `config.yaml` 中设置 `upstream.dns_over_https: "https://1.1.1.1/dns-query"`（或环境变量 `RELAYLAB_UPSTREAM_DNS_OVER_HTTPS`）。回退仅针对全部为上述虚拟地址的域名结果，DNS 服务只接收域名和查询类型，返回地址仍逐一检查并固定连接；解析失败、内网地址及混合公网/内网结果继续拦截。
-
-加密 DNS 对 A／AAAA 并行查询，每类临时故障最多尝试三次；一类连接临时失败时可使用另一类已经校验的公网结果，内网或无效结果仍会使整次解析失败。完整成功结果按 DNS TTL 缓存（最多 5 分钟、256 个域名），不缓存错误或不完整结果。该缓存只保存域名解析地址，不缓存模型回复；模型生成请求不会因 DNS 重试而被重复发送。
-
-GitHub 更新连接提前关闭时会显示网络故障提示；只读 GET 在收到响应前的临时断线最多尝试三次，模型生成不重试。网络需要代理时配置 `update.proxy` 或 `RELAYLAB_UPDATE_PROXY`，例如本机 HTTP 代理 `http://127.0.0.1:7897`；实际端口以本机代理为准。该代理只用于 GitHub 更新请求，不转发模型请求。检查更新失败不会开始安装，也不会关闭网站和 Worker。
-
-## 接口与验证
-
-接口根路径 `/api/v1`。OpenAPI 为 `docs/openapi.json`，前端共享类型为 `web/src/generated/domain.ts`。运行 `go run ./cmd/specgen` 从 Go 类型刷新契约。管理写操作携带 `X-CSRF-Token`；会话通过 HttpOnly SameSite Cookie 保存。
-
-登录和初始化支持非浏览器 JSON CLI；浏览器来源必须同源，首次初始化还要求本机 Host 和连接。JSON 请求只接受一个完整对象，最大2MiB。公开历史默认返回最近1000条，可用 `limit` 调整至最多5000条。
+以下命令在源码仓库根目录的 PowerShell 中执行：
 
 ```powershell
-.\scripts\test.ps1
-# 启动网站后执行真实浏览器检查
-Set-Location web
-$env:PLAYWRIGHT_CHANNEL = 'chrome'
-node node_modules/@playwright/test/cli.js test
+# 生成接口契约、构建前端、编译服务端和启动器
+powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
+
+# 启动网站与 Worker
+powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1
+
+# Go、前端、类型检查及脚本测试
+powershell -ExecutionPolicy Bypass -File .\scripts\test.ps1
 ```
 
-测试使用本地HTTP夹具，不需要生产Key。真实平台地址和Key配置后，需要再做真实接口兼容性验证。实际已执行的结果及未执行项目见 `docs/VALIDATION.md`。
+前端开发时另开终端运行：
 
-## 实现参考
+```powershell
+npm --prefix web run dev
+```
 
-本项目独立实现。产品与技术研究参考了 MIT 项目 WizisCool/model-status、prehisle/relay-pulse、yigehaozi/relay-status-monitor、LibreChat。没有将它们的服务端源代码复制到本项目；项目依赖的许可证以各依赖声明为准。
+开发页面监听 `127.0.0.1:42784`，API 代理至 `127.0.0.1:42783`。管理员首次初始化建议从后端同源页面完成。
 
-## 用户连接与私有在线测试记录
+接口根路径为 `/api/v1`，契约见 [OpenAPI](docs/openapi.json)，前端共享类型位于 [domain.ts](web/src/generated/domain.ts)。修改 Go 接口类型后，运行 `go run ./cmd/specgen` 刷新契约。
 
-`/account/connections` 保存和管理用户连接；`/account/tests` 查询测试历史、下载正文或源码、删除终态记录；详情中的“再次测试”仅预填，不自动发出调用。删除连接会清除该 Key，保留历史及当时接口快照。更换域名、端口或 HTTP/HTTPS 协议时需重新输入 Key。
+测试使用本地 HTTP 夹具，不需要生产 API Key；夹具通过不代表所有上游平台均兼容。已有验证记录和未完成项目见 [验证说明](docs/VALIDATION.md)，版本相关结果见对应发布说明。
 
-管理员可在 `/admin/test-records` 查询全体用户的测试记录，在 `/admin/user-connections` 查看掩码和禁用连接。私有历史清理由网站进程每小时执行，与 Worker 是否在线无关，后台设置“私有测试记录保留（天）”允许 1–365 天；清理不删除保存的连接。
+## 文档导航
 
-本功能使用 Schema 3。首次升级前备份数据库和 `master.key`，旧版仅支持 Schema 2 的程序不能直接回滚运行；恢复旧快照会回退升级后的数据，需另行明确操作。备份与恢复包含用户连接密文并验证其与主密钥及用户归属一致。
+- [Docker 与宝塔部署](docs/DOCKER.md)：镜像构建、HTTPS、SSE 反代、数据卷和容器恢复。
+- [Linux 部署](deploy/README.md)：完整包运行和 systemd 服务配置。
+- [升级说明](docs/UPDATES.md)：在线升级、旧版本迁移与回滚约束。
+- [更新日志](docs/CHANGELOG.md) / [v1.4.2 发布说明](docs/releases/v1.4.2.md)：版本变化、兼容范围和已知限制。
+- [发布流程](docs/RELEASE.md)：安装包结构、版本契约和附件校验。
+- [验证记录](docs/VALIDATION.md) / [历史接口实测](docs/LIVE_TESTS.md)：测试范围、结果与限制。
+- [OpenAPI 契约](docs/openapi.json) / [配置示例](config.example.yaml)：接口与运行配置参考。
+
+## 致谢
+
+本项目独立实现，产品与技术研究参考了 `WizisCool/model-status`、`prehisle/relay-pulse`、`yigehaozi/relay-status-monitor` 和 `LibreChat`。第三方依赖的许可证以各自声明为准。
