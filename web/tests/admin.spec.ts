@@ -61,10 +61,13 @@ test('isolated administrator setup, CRUD, queue cancellation and password change
   await expect(page.locator(`tr[data-row-key="${jobRowKey}"]`)).toContainText('已取消');
 
   await page.getByRole('link',{name:/系统设置$/}).click();
-  await page.getByLabel('检测数据保留（天）',{exact:true}).fill('31');
+  await page.getByRole('tab',{name:'数据与历史',exact:true}).click();
+  await page.getByLabel('检测数据保留',{exact:true}).fill('31');
   await page.getByRole('button',{name:'保存设置',exact:true}).click();
   await page.reload();
-  await expect(page.getByLabel('检测数据保留（天）',{exact:true})).toHaveValue('31');
+  await page.getByRole('tab',{name:'数据与历史',exact:true}).click();
+  await expect(page.getByLabel('检测数据保留',{exact:true})).toHaveValue('31');
+  await page.getByRole('tab',{name:'账号安全',exact:true}).click();
   await page.getByLabel('当前密码',{exact:true}).fill(password);
   await page.getByLabel('新密码',{exact:true}).fill(updatedPassword);
   await page.getByLabel('确认新密码',{exact:true}).fill(updatedPassword);
@@ -74,7 +77,7 @@ test('isolated administrator setup, CRUD, queue cancellation and password change
   await page.getByLabel('用户名',{exact:true}).fill(username);
   await page.getByLabel('密码',{exact:true}).fill(updatedPassword);
   await page.getByRole('button',{name:'登录工作台',exact:true}).click();
-  await expect(page.getByRole('heading',{name:'按你的节奏，持续观测。',exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'系统设置',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'退出登录',exact:true}).click();
   await expect(page).toHaveURL(/\/admin\/login$/);
   await expect(page.getByRole('heading',{name:'欢迎回来',exact:true})).toBeVisible();

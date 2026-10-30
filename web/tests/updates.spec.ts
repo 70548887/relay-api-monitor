@@ -97,3 +97,73 @@ test('terminal success still requires actual target commit and worker',async({pa
   await expect(page.getByText('升级完成',{exact:true}).first()).toBeVisible();
   expect(await page.evaluate(()=>sessionStorage.getItem('relaylab-update-refresh:browser-op'))).toBe('done');
 });
+
+for(const viewport of [{name:'desktop',width:1280,height:900},{name:'mobile',width:390,height:844}]){
+  test(`persistent version notice fits ${viewport.name} and opens update details`,async({page})=>{
+    await page.setViewportSize({width:viewport.width,height:viewport.height});
+    const data=fixture();data.current.version='1.4.2';data.latest!.current_version='1.4.2';data.latest!.latest_version='v1.4.3';data.install_enabled=false;data.install_mode='container';
+    const posts=await mount(page,data);
+    const versionLink=page.getByRole('link',{name:/当前版本 v1.4.2，发现新版本 v1.4.3/});
+    await expect(versionLink).toBeVisible();
+    await expect(versionLink).toHaveAttribute('href','/admin/updates');
+    await expect(versionLink.getByText('新版本 v1.4.3')).toBeVisible();
+    await expect(page.getByRole('navigation',{name:'管理导航'}).getByRole('img',{name:'有新版本'})).toHaveCount(1);
+    await expect(page.getByText('Docker 部署：支持版本检查与更新提示',{exact:true})).toBeVisible();
+    await expect(page.getByRole('button',{name:'检查更新',exact:true})).toBeEnabled();
+    for(const name of ['下载并校验','安装升级','回滚'])await expect(page.getByRole('button',{name,exact:true})).toBeDisabled();
+    const size=await page.evaluate(()=>({width:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth}));
+    expect(size.scroll).toBeLessThanOrEqual(size.width);
+    await page.screenshot({path:`../release/version-notice-20261029/${viewport.name}.jpg`,quality:80,fullPage:false});
+    await versionLink.click();
+    await expect(page).toHaveURL(/\/admin\/updates$/);
+    expect(posts).toEqual([]);
+  });
+}
+
+test('container mode blocks old ready installation but permits explicit release check',async({page})=>{
+  const data=fixture();data.install_enabled=false;data.install_mode='container';data.state='ready';data.operation!.state='ready';
+  const posts=await mount(page,data);
+  for(const name of ['下载并校验','安装升级','回滚'])await expect(page.getByRole('button',{name,exact:true})).toBeDisabled();
+  await page.getByRole('button',{name:'检查更新',exact:true}).click();
+  await expect.poll(()=>posts).toEqual(['/api/v1/admin/updates/check']);
+});
+
+test('version notice fits tablet and compact desktop widths',async({page})=>{
+  const data=fixture();data.current.version='1.4.2';data.latest!.latest_version='v1.4.3';data.install_enabled=false;data.install_mode='container';
+  await mount(page,data);
+  for(const width of [768,820,1024]){
+    await page.setViewportSize({width,height:900});
+    const header=page.locator('.admin-topbar');
+    const version=header.getByRole('link',{name:/当前版本 v1.4.2，发现新版本 v1.4.3/});
+    await expect(version).toBeVisible();
+    await expect(header.getByRole('link',{name:'访问用户端'})).toBeVisible();
+    const size=await page.evaluate(()=>({width:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,header:document.querySelector('.admin-topbar')!.getBoundingClientRect().right}));
+    expect(size.scroll,`page overflow at ${width}px`).toBeLessThanOrEqual(size.width);
+    expect(size.header,`header overflow at ${width}px`).toBeLessThanOrEqual(size.width);
+  }
+});
+
+test('audit: failed release checks remain visible in narrow headers',async({page})=>{
+  const data=fixture();data.install_mode='container';data.install_enabled=false;
+  data.state='failed';data.operation={id:'check-error',kind:'check',state:'failed',error_code:'timeout',message:'GitHub timed out'};
+  data.latest!.compatible=false;
+  await mount(page,data);
+  await expect(page.getByText('通过容器更新',{exact:true})).toBeVisible();
+  for(const width of [390,768,1280]){
+    await page.setViewportSize({width,height:844});
+    await expect(page.locator('.admin-topbar').getByText('版本检查失败',{exact:true})).toBeVisible();
+    const size=await page.evaluate(()=>({width:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth}));
+    expect(size.scroll,`error notice overflow at ${width}px`).toBeLessThanOrEqual(size.width);
+  }
+});
+
+test('audit: cached release status is not presented as a fresh check after disconnect',async({page})=>{
+  const data=fixture();data.latest!.available=false;data.latest!.latest_version=data.current.version;
+  data.state='idle';data.operation={kind:'check',state:'idle'};data.checked_at='2026-10-29T01:00:00Z';
+  await mount(page,data);
+  await page.route('**/api/v1/admin/updates/status',route=>route.fulfill({status:503,json:{error:{code:'unavailable',message:'fixture disconnected'}}}));
+  await page.getByRole('button',{name:'刷新',exact:true}).click();
+  await expect(page.getByText('上次检查未发现新版本',{exact:true})).toBeVisible();
+  await expect(page.getByText('当前已是最新版本',{exact:true})).toHaveCount(0);
+  await expect(page.locator('.admin-topbar').getByText('状态读取失败',{exact:true})).toBeVisible();
+});

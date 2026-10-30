@@ -134,7 +134,19 @@ sudo install -d -m 700 -o 10001 -g 10001 /opt/relaylab-runtime
 
 ## 备份、升级与回滚
 
-容器部署默认关闭应用内二进制自更新。升级方式是构建新版本镜像并重新创建容器，数据卷继续沿用。容器中网站与 Worker 必须由同一个 launcher 管理。
+容器部署默认开启版本检查：启动时检查一次，此后每 6 小时检查 GitHub Release。后台顶部显示当前运行版本，发现新版本时提示并链接到“在线升级”页面。页面每分钟读取服务端缓存，不会每分钟向 GitHub 发起请求；检查失败会显示错误，不作为“已是最新版”的依据。
+
+容器使用 `update.install_mode: container`，由 Docker 管理程序安装。应用中的下载、安装和回滚接口均拒绝执行，避免替换镜像中的只读程序。升级方式是构建新版本镜像并重新创建容器，数据卷继续沿用。容器中网站与 Worker 必须由同一个 launcher 管理。
+
+已有部署如设置了 `RELAYLAB_UPDATE_ENABLED=false`，升级程序仍保留该明确关闭设置。更新到支持此模式的版本后，在宝塔 Compose 的 `environment` 中调整以下三项，再重新创建容器：
+
+```yaml
+RELAYLAB_UPDATE_ENABLED: "true"
+RELAYLAB_UPDATE_INSTALL_MODE: container
+RELAYLAB_UPDATE_CHECK_INTERVAL: "21600"
+```
+
+`RELAYLAB_UPDATE_CHECK_INTERVAL=0` 表示仅手动检查。旧版 v1.4.2 尚不支持 `install_mode`；应先更新镜像版本，再开启以上配置。
 
 在线创建一致性备份：
 

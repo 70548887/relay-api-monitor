@@ -142,6 +142,7 @@ type ChildStatus struct {
 	Running   bool      `json:"running"`
 }
 type Status struct {
+	Capabilities   []string     `json:"capabilities"`
 	Protocol       int          `json:"protocol"`
 	PID            int          `json:"pid"`
 	Version        string       `json:"version"`
@@ -249,6 +250,7 @@ func (s *Supervisor) Status() Status {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	status := Status{Protocol: Protocol, PID: os.Getpid(), Version: s.opts.LauncherVersion, InstanceID: s.instance, State: s.state, ControlAddress: s.opts.ControlAddress, DataDir: s.opts.DataDir, RelayLabPath: s.opts.RelayLabPath, Address: s.opts.Address, StartedAt: s.startedAt, UpdatedAt: time.Now().UTC(), Maintenance: s.maintenance}
+	status.Capabilities = []string{"restore_v1"}
 	if s.lastError != nil {
 		status.LastError = s.lastError.Error()
 	}
@@ -360,6 +362,9 @@ func (s *Supervisor) Close() error {
 func (s *Supervisor) Start(ctx context.Context) error {
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
+	if e := s.guardRestoreControl(); e != nil {
+		return e
+	}
 	return s.startLocked(ctx)
 }
 func (s *Supervisor) startLocked(ctx context.Context) error {
@@ -592,7 +597,14 @@ func (s *Supervisor) drainLocked() error {
 	s.mu.Unlock()
 	return s.WriteStateFile()
 }
-func (s *Supervisor) Resume() error { s.opMu.Lock(); defer s.opMu.Unlock(); return s.resumeLocked() }
+func (s *Supervisor) Resume() error {
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
+	if e := s.guardRestoreControl(); e != nil {
+		return e
+	}
+	return s.resumeLocked()
+}
 func (s *Supervisor) resumeLocked() error {
 	if err := s.unmanagedIntentError(); err != nil {
 		return s.recoveryBlocked(err)
@@ -694,6 +706,9 @@ func (s *Supervisor) stopStartupChildren() error {
 func (s *Supervisor) Restart(ctx context.Context) error {
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
+	if e := s.guardRestoreControl(); e != nil {
+		return e
+	}
 	if e := s.stopLocked(ctx); e != nil {
 		return e
 	}

@@ -23,7 +23,7 @@ var ErrConflict = errors.New("store: conflicting state or stale lease")
 
 var ErrConfigurationChanged = fmt.Errorf("%w: job configuration changed", ErrConflict)
 
-const schemaVersion = 3
+const schemaVersion = 4
 
 const timeFormat = "2006-01-02T15:04:05.000000000Z"
 const WorkerLeaseDuration = 45 * time.Second
@@ -45,6 +45,9 @@ var adminAccountsMigration string
 
 //go:embed migrations/003_private_tests.sql
 var privateTestsMigration string
+
+//go:embed migrations/004_backups.sql
+var backupsMigration string
 
 func Open(path string) (*Store, error) {
 	if path == "" {
@@ -189,6 +192,9 @@ func (s *Store) Migrate(ctx context.Context) error {
 		if _, err := tx.ExecContext(ctx, privateTestsMigration); err != nil {
 			return err
 		}
+		if _, err := tx.ExecContext(ctx, backupsMigration); err != nil {
+			return err
+		}
 		settings, e := data(domain.DefaultSettings())
 		if e != nil {
 			return e
@@ -208,7 +214,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 		if err := validateSchema(ctx, tx); err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, "PRAGMA user_version=3")
+		_, err := tx.ExecContext(ctx, "PRAGMA user_version=4")
 		return err
 	})
 }
@@ -233,6 +239,11 @@ func validateSchema(ctx context.Context, q queryer) error {
 		"id,user_id,connection_id,client_request_id,request_hash,state,process_id,created_at,finished_at,data FROM online_test_runs",
 		"id,username,password_hash,disabled,created_at FROM admins",
 		"id,username,password_hash,disabled,created_at FROM users", "token_hash,user_id,csrf_token,expires_at FROM user_sessions",
+		"id,revision,encrypted_credentials,data FROM backup_storages",
+		"id,data FROM backup_policies",
+		"id,request_id,state,scheduled_for,created_at,data FROM backup_runs",
+		"run_id,location,storage_id,state,path,sha256,size_bytes FROM backup_copies",
+		"target_date,run_id,permanent,created_at FROM backup_archive_slots",
 	})
 }
 

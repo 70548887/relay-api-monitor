@@ -73,6 +73,40 @@ func TestDefaultHasSafeUpdateRepository(t *testing.T) {
 	if cfg.Update.GitHubOwner != "70548887" || cfg.Update.GitHubRepo != "relay-api-monitor" {
 		t.Fatalf("unexpected defaults: %#v", cfg.Update)
 	}
+	if !cfg.Update.Enabled || cfg.Update.InstallMode != "binary" || cfg.Update.CheckInterval != 6*time.Hour || !cfg.Update.AllowsInstall() {
+		t.Fatalf("unexpected update capabilities: %#v", cfg.Update)
+	}
+}
+
+func TestUpdateInstallModeConfiguration(t *testing.T) {
+	t.Setenv("RELAYLAB_UPDATE_INSTALL_MODE", "")
+	t.Setenv("RELAYLAB_UPDATE_ENABLED", "")
+	t.Setenv("RELAYLAB_UPDATE_CHECK_INTERVAL", "")
+	for _, mode := range []string{"", "binary", "container"} {
+		t.Run(mode, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, []byte("update:\n  enabled: true\n  install_mode: \""+mode+"\"\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := Load(path)
+			if err != nil || cfg.Update.InstallMode == "" || cfg.Update.AllowsInstall() != (mode != "container") {
+				t.Fatalf("mode %q: %+v %v", mode, cfg.Update, err)
+			}
+		})
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("update:\n  enabled: false\n  install_mode: binary\n  check_interval: 0\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RELAYLAB_UPDATE_INSTALL_MODE", "container")
+	cfg, err := Load(path)
+	if err != nil || cfg.Update.Enabled || cfg.Update.AllowsInstall() || cfg.Update.CheckInterval != 0 || cfg.Update.InstallMode != "container" {
+		t.Fatalf("explicit disable and environment mode: %+v %v", cfg.Update, err)
+	}
+	t.Setenv("RELAYLAB_UPDATE_INSTALL_MODE", "credential-must-not-appear")
+	if _, err := Load(path); err == nil || strings.Contains(err.Error(), "credential-must-not-appear") {
+		t.Fatalf("unsafe or missing install mode diagnostic: %v", err)
+	}
 }
 
 func TestInterpolationCannotInjectYAML(t *testing.T) {

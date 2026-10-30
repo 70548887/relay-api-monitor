@@ -270,6 +270,838 @@
         ],
         "type": "object"
       },
+      "BackupAcknowledgeMissing": {
+        "properties": {
+          "confirm": {
+            "const": "确认副本遗失",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "type": "object"
+      },
+      "BackupCloudCandidate": {
+        "properties": {
+          "file_name": {
+            "type": "string"
+          },
+          "id": {
+            "description": "服务端签发的不透明候选标识，不是对象键",
+            "type": "string"
+          },
+          "imported": {
+            "type": "boolean"
+          },
+          "last_modified": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "manifest_available": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "imported"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "file_name",
+          "size_bytes",
+          "imported",
+          "status"
+        ],
+        "type": "object"
+      },
+      "BackupCloudImportInput": {
+        "properties": {
+          "candidate_id": {
+            "type": "string"
+          },
+          "identity": {
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "candidate_id",
+          "identity"
+        ],
+        "type": "object"
+      },
+      "BackupCloudScanInput": {
+        "properties": {
+          "continuation_token": {
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": null,
+        "type": "object"
+      },
+      "BackupCloudScanResult": {
+        "properties": {
+          "continuation_token": {
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BackupCloudCandidate"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "items",
+          "truncated"
+        ],
+        "type": "object"
+      },
+      "BackupGeneratedKey": {
+        "properties": {
+          "identity": {
+            "description": "仅本次返回的恢复私钥，服务端不持久保存",
+            "type": "string"
+          },
+          "recipient": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "identity",
+          "recipient"
+        ],
+        "type": "object"
+      },
+      "BackupIdentity": {
+        "properties": {
+          "identity": {
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "identity"
+        ],
+        "type": "object"
+      },
+      "BackupPreflightInput": {
+        "properties": {
+          "identity": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "record_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "record_id"
+        ],
+        "type": "object"
+      },
+      "BackupPreflightResult": {
+        "properties": {
+          "backup_id": {
+            "type": "string"
+          },
+          "deployment_kind": {
+            "type": "string"
+          },
+          "docker_instructions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "manifest": {
+            "type": "object"
+          },
+          "native_restore_supported": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "expires_at",
+          "manifest"
+        ],
+        "type": "object"
+      },
+      "BackupPreview": {
+        "properties": {
+          "next_runs": {
+            "items": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "next_runs"
+        ],
+        "type": "object"
+      },
+      "BackupProtection": {
+        "properties": {
+          "protected": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "protected"
+        ],
+        "type": "object"
+      },
+      "BackupReauth": {
+        "properties": {
+          "password": {
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "type": "object"
+      },
+      "BackupRecipient": {
+        "properties": {
+          "recipient": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "recipient"
+        ],
+        "type": "object"
+      },
+      "BackupRequestID": {
+        "properties": {
+          "request_id": {
+            "maxLength": 100,
+            "minLength": 8,
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "BackupRestoreAccepted": {
+        "properties": {
+          "operation_id": {
+            "type": "string"
+          },
+          "status_token": {
+            "description": "一小时内仅查询本操作；不要写入URL或持久存储",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_id",
+          "status_token"
+        ],
+        "type": "object"
+      },
+      "BackupRestoreApply": {
+        "properties": {
+          "preflight_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "preflight_id"
+        ],
+        "type": "object"
+      },
+      "BackupRestoreOperation": {
+        "properties": {
+          "error_code": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_id",
+          "state",
+          "message"
+        ],
+        "type": "object"
+      },
+      "BackupRetentionItem": {
+        "properties": {
+          "file_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "local_state": {
+            "type": "string"
+          },
+          "remote_state": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "file_name",
+          "size_bytes",
+          "local_state",
+          "remote_state",
+          "started_at"
+        ],
+        "type": "object"
+      },
+      "BackupRetentionPreview": {
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BackupRetentionItem"
+            },
+            "type": "array"
+          },
+          "local_copies": {
+            "type": "integer"
+          },
+          "remote_copies": {
+            "type": "integer"
+          },
+          "total_bytes": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count",
+          "local_copies",
+          "remote_copies",
+          "total_bytes",
+          "items"
+        ],
+        "type": "object"
+      },
+      "BackupRun": {
+        "properties": {
+          "archive_dates": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "archive_released": {
+            "type": "boolean"
+          },
+          "archive_retain_count": {
+            "type": "integer"
+          },
+          "cloud_imported": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "database_schema": {
+            "type": "integer"
+          },
+          "error_code": {
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "file_name": {
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "heartbeat_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "local_state": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "monthly_archive": {
+            "type": "boolean"
+          },
+          "policy_snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BackupSchedule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "protected": {
+            "type": "boolean"
+          },
+          "recipient_id": {
+            "type": "string"
+          },
+          "remote_state": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "scheduled_for": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "storage_id": {
+            "type": "string"
+          },
+          "transferred_bytes": {
+            "type": "integer"
+          },
+          "trigger": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "request_id",
+          "state",
+          "trigger",
+          "created_at",
+          "started_at",
+          "heartbeat_at",
+          "version",
+          "database_schema",
+          "recipient_id",
+          "file_name",
+          "size_bytes",
+          "transferred_bytes",
+          "local_state",
+          "remote_state",
+          "protected",
+          "monthly_archive",
+          "archive_retain_count"
+        ],
+        "type": "object"
+      },
+      "BackupSchedule": {
+        "properties": {
+          "active_storage_id": {
+            "type": "string"
+          },
+          "cron": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "monthly_days": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "monthly_enabled": {
+            "type": "boolean"
+          },
+          "monthly_month_end": {
+            "type": "boolean"
+          },
+          "monthly_retain_count": {
+            "type": "integer"
+          },
+          "next_run_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "recipient_id": {
+            "type": "string"
+          },
+          "recipient_verified": {
+            "type": "boolean"
+          },
+          "reconciliation_required": {
+            "type": "boolean"
+          },
+          "reconciliation_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "retain_count": {
+            "type": "integer"
+          },
+          "retain_days": {
+            "type": "integer"
+          },
+          "storage_selection_set": {
+            "type": "boolean"
+          },
+          "timezone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "cron",
+          "timezone",
+          "mode",
+          "retain_days",
+          "retain_count",
+          "monthly_enabled",
+          "monthly_days",
+          "monthly_month_end",
+          "monthly_retain_count",
+          "recipient",
+          "recipient_id",
+          "recipient_verified",
+          "reconciliation_required"
+        ],
+        "type": "object"
+      },
+      "BackupScheduleWrite": {
+        "properties": {
+          "active_storage_id": {
+            "type": "string"
+          },
+          "cron": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "monthly_days": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "monthly_enabled": {
+            "type": "boolean"
+          },
+          "monthly_month_end": {
+            "type": "boolean"
+          },
+          "monthly_retain_count": {
+            "type": "integer"
+          },
+          "reconciliation_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "retain_count": {
+            "type": "integer"
+          },
+          "retain_days": {
+            "type": "integer"
+          },
+          "storage_selection_set": {
+            "type": "boolean"
+          },
+          "timezone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "cron",
+          "timezone",
+          "mode",
+          "retain_days",
+          "retain_count"
+        ],
+        "type": "object"
+      },
+      "BackupSnapshot": {
+        "properties": {
+          "active": {
+            "$ref": "#/components/schemas/BackupRun"
+          },
+          "backup_dir": {
+            "type": "string"
+          },
+          "deployment_kind": {
+            "enum": [
+              "launcher",
+              "docker",
+              "unmanaged"
+            ],
+            "type": "string"
+          },
+          "last_success": {
+            "$ref": "#/components/schemas/BackupRun"
+          },
+          "native_restore_supported": {
+            "type": "boolean"
+          },
+          "next_runs": {
+            "items": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "reconciliation_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/BackupRun"
+            },
+            "type": "array"
+          },
+          "restore_operation": {
+            "$ref": "#/components/schemas/BackupRestoreOperation"
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/BackupSchedule"
+          },
+          "storage": {
+            "$ref": "#/components/schemas/BackupStorage"
+          }
+        },
+        "required": [
+          "schedule",
+          "records",
+          "next_runs",
+          "native_restore_supported",
+          "deployment_kind"
+        ],
+        "type": "object"
+      },
+      "BackupStorage": {
+        "properties": {
+          "access_key_mask": {
+            "type": "string"
+          },
+          "bucket": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "force_path_style": {
+            "type": "boolean"
+          },
+          "health": {
+            "$ref": "#/components/schemas/BackupStorageHealth"
+          },
+          "id": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "secret_configured": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "endpoint",
+          "region",
+          "bucket",
+          "prefix",
+          "force_path_style",
+          "secret_configured",
+          "health",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "BackupStorageHealth": {
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "untested",
+              "ok",
+              "failed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "message"
+        ],
+        "type": "object"
+      },
+      "BackupStorageInput": {
+        "properties": {
+          "access_key_id": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "bucket": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "force_path_style": {
+            "type": "boolean"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "secret_access_key": {
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "endpoint",
+          "bucket"
+        ],
+        "type": "object"
+      },
       "Channel": {
         "properties": {
           "anthropic_version": {
@@ -2287,6 +3119,7 @@
             "type": "string"
           },
           "compatible": {
+            "description": "是否兼容当前二进制安装器；容器模式即使为 false 也可以提示新版本，需通过容器更新",
             "type": "boolean"
           },
           "current_version": {
@@ -2318,7 +3151,7 @@
             "type": "string"
           },
           "usage_guard": {
-            "maximum": 1,
+            "description": "Release 声明的占用保护协议；容器发现可返回比当前二进制安装器更新的协议",
             "minimum": 0,
             "type": "integer"
           }
@@ -2343,6 +3176,10 @@
             "type": "integer"
           },
           "id": {
+            "type": "string"
+          },
+          "kind": {
+            "description": "操作类型，例如 check、download、apply、rollback；启动器可返回 replace 等类型，旧历史可能省略",
             "type": "string"
           },
           "message": {
@@ -2411,7 +3248,7 @@
             "type": "string"
           },
           "usage_guard": {
-            "maximum": 1,
+            "description": "Release 声明的占用保护协议；容器发现可返回比当前二进制安装器更新的协议",
             "minimum": 0,
             "type": "integer"
           }
@@ -2438,6 +3275,7 @@
             "type": "object"
           },
           "enabled": {
+            "description": "版本检查总开关；false 时检查、下载、安装与回滚均不可用",
             "type": "boolean"
           },
           "history": {
@@ -2445,6 +3283,18 @@
               "$ref": "#/components/schemas/UpdateHistory"
             },
             "type": "array"
+          },
+          "install_enabled": {
+            "description": "部署配置是否允许应用内安装；实际安装仍需兼容安装包、ready 状态及协议匹配的启动器。Docker 模式始终为 false",
+            "type": "boolean"
+          },
+          "install_mode": {
+            "description": "binary 通过启动器安装；container 仅发现版本，下载、安装与回滚由 Docker 管理",
+            "enum": [
+              "binary",
+              "container"
+            ],
+            "type": "string"
           },
           "latest": {
             "anyOf": [
@@ -2765,13 +3615,19 @@
         "in": "cookie",
         "name": "relaylab_user_session",
         "type": "apiKey"
+      },
+      "restoreStatusToken": {
+        "description": "短期、单操作、只读状态凭证；不能用于其他管理接口",
+        "in": "header",
+        "name": "X-Restore-Status-Token",
+        "type": "apiKey"
       }
     }
   },
   "info": {
-    "description": "中转监控、公开分组作品与实时状态、用户加密连接及私有在线测试历史。所有时间为UTC ISO8601。管理写操作需要X-CSRF-Token。JSON请求体必须是单个完整对象且不超过2MiB；浏览器Origin必须同源，非浏览器JSON CLI可省略Origin。默认本机端口42783。分组核验仅标记Token绑定，不证明实际路由或账号身份。",
+    "description": "中转监控、公开作品、用户私有测试与管理员加密备份。所有时间为UTC ISO8601。管理写操作需要X-CSRF-Token。普通JSON请求体是单个完整对象且不超过2MiB；备份导入使用专用multipart流式上限3GiB。浏览器Origin必须同源，非浏览器JSON CLI可省略Origin。默认本机端口42783。分组核验仅标记Token绑定，不证明实际路由。",
     "title": "Relay Lab API",
-    "version": "1.4.1"
+    "version": "1.5.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -3065,6 +3921,1741 @@
           }
         ],
         "summary": "审计记录"
+      }
+    },
+    "/admin/backups/cloud/import": {
+      "post": {
+        "operationId": "admin_backups_cloud_import_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupCloudImportInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupRun"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "管理员再次验证后下载并完整校验候选，仅导入受保护记录，不替换当前业务数据"
+      }
+    },
+    "/admin/backups/cloud/scan": {
+      "post": {
+        "operationId": "admin_backups_cloud_scan_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupCloudScanInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupCloudScanResult"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "分页扫描当前存储前缀中的备份候选，不返回对象键或凭据"
+      }
+    },
+    "/admin/backups/keys/generate": {
+      "post": {
+        "operationId": "admin_backups_keys_generate_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupGeneratedKey"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "一次性生成恢复密钥，不持久保存私钥"
+      }
+    },
+    "/admin/backups/keys/recipient": {
+      "put": {
+        "operationId": "admin_backups_keys_recipient_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupRecipient"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "设置恢复公钥"
+      }
+    },
+    "/admin/backups/keys/verify": {
+      "post": {
+        "operationId": "admin_backups_keys_verify_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupIdentity"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "临时提供私钥验证恢复公钥"
+      }
+    },
+    "/admin/backups/operations/{id}": {
+      "get": {
+        "operationId": "admin_backups_operations_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "可替代登录，仅查询该操作，不得用于写操作",
+            "in": "header",
+            "name": "X-Restore-Status-Token",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupRestoreOperation"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "restoreStatusToken": []
+          }
+        ],
+        "summary": "按管理员会话或单操作只读凭证查询恢复状态"
+      }
+    },
+    "/admin/backups/reauth": {
+      "post": {
+        "operationId": "admin_backups_reauth_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupReauth"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "再次验证管理员密码，当前会话五分钟有效"
+      }
+    },
+    "/admin/backups/reconcile": {
+      "post": {
+        "operationId": "admin_backups_reconcile_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "恢复后核对备份索引，管理员再次验证"
+      }
+    },
+    "/admin/backups/records": {
+      "get": {
+        "operationId": "admin_backups_records_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 20,
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "精确筛选执行状态",
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "trigger",
+            "schema": {
+              "enum": [
+                "manual",
+                "scheduled",
+                "imported"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "protection",
+            "schema": {
+              "enum": [
+                "ordinary",
+                "monthly",
+                "protected"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "UTC/RFC3339 开始时间，包含边界",
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "description": "UTC/RFC3339 结束时间，包含边界",
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BackupRun"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "分页读取备份记录"
+      },
+      "post": {
+        "operationId": "admin_backups_records_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupRequestID"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupRun"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "幂等创建异步备份"
+      }
+    },
+    "/admin/backups/records/{id}": {
+      "delete": {
+        "operationId": "admin_backups_records_id_delete",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "管理员再次验证后删除未保护备份"
+      },
+      "get": {
+        "operationId": "admin_backups_records_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupRun"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "读取单个备份状态"
+      }
+    },
+    "/admin/backups/records/{id}/acknowledge-missing": {
+      "post": {
+        "operationId": "admin_backups_records_id_acknowledge-missing_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupAcknowledgeMissing"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "明确确认遗失的本地副本，仅解除核对阻塞，不删除远端对象"
+      }
+    },
+    "/admin/backups/records/{id}/download": {
+      "get": {
+        "operationId": "admin_backups_records_id_download_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "受鉴权的加密备份附件；不返回S3签名URL"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "管理员再次验证后下载加密备份"
+      }
+    },
+    "/admin/backups/records/{id}/protection": {
+      "patch": {
+        "operationId": "admin_backups_records_id_protection_patch",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupProtection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "设置备份保护，解除需再次验证"
+      }
+    },
+    "/admin/backups/records/{id}/retry-upload": {
+      "post": {
+        "operationId": "admin_backups_records_id_retry-upload_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupRun"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "只重新上传原加密包"
+      }
+    },
+    "/admin/backups/restore/apply": {
+      "post": {
+        "operationId": "admin_backups_restore_apply_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupRestoreApply"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupRestoreAccepted"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "异步提交原生launcher数据恢复"
+      }
+    },
+    "/admin/backups/restore/preflight": {
+      "post": {
+        "operationId": "admin_backups_restore_preflight_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupPreflightInput"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "description": "最大3GiB，不能与record_id同时提供",
+                    "format": "binary",
+                    "type": "string"
+                  },
+                  "identity": {
+                    "type": "string",
+                    "writeOnly": true
+                  },
+                  "record_id": {
+                    "type": "string"
+                  }
+                },
+                "required": null,
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupPreflightResult"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "413": {
+            "description": "备份导入超过专用3GiB限制"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "校验记录或流式导入备份，仅操作暂存数据库"
+      }
+    },
+    "/admin/backups/schedule": {
+      "get": {
+        "operationId": "admin_backups_schedule_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupSchedule"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "读取定时备份和保留策略"
+      },
+      "put": {
+        "operationId": "admin_backups_schedule_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupScheduleWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupSchedule"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "保存备份策略，保存不立即执行"
+      }
+    },
+    "/admin/backups/schedule/preview": {
+      "post": {
+        "operationId": "admin_backups_schedule_preview_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupScheduleWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupPreview"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "预览未来三次执行时间"
+      }
+    },
+    "/admin/backups/schedule/retention-preview": {
+      "post": {
+        "operationId": "admin_backups_schedule_retention-preview_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupScheduleWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupRetentionPreview"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "保存前预览保留策略将清理的已登记副本"
+      }
+    },
+    "/admin/backups/status": {
+      "get": {
+        "operationId": "admin_backups_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupSnapshot"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "读取备份运行状态与部署恢复能力"
+      }
+    },
+    "/admin/backups/storage": {
+      "get": {
+        "operationId": "admin_backups_storage_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupStorage"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "读取脱敏存储配置"
+      },
+      "put": {
+        "operationId": "admin_backups_storage_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupStorageInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupStorage"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "保存新的存储修订，凭据不回显"
+      }
+    },
+    "/admin/backups/storage/test": {
+      "post": {
+        "operationId": "admin_backups_storage_test_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupStorageInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "执行存储小对象写读校验与删除"
       }
     },
     "/admin/channels": {

@@ -137,11 +137,39 @@ func ValidateNewDataDirectory(dataDir string) error {
 	}
 	allowed := map[string]bool{"relaylab.db": true, "relaylab.db-wal": true, "relaylab.db-shm": true, "serve.out.log": true, "serve.err.log": true, "worker.out.log": true, "worker.err.log": true, "serve.log": true, "worker.log": true, "processes.json": true, "processes.json.tmp": true, "stop.request": true, "launcher.token": true, "launcher.json": true, "launcher.json.tmp": true, "launcher.process.json": true, "launcher.process.json.tmp": true, "launcher.out.log": true, "launcher.err.log": true, "update-state.json": true, "launcher.lock": true, "launcher-update.json": true, "maintenance.request": true, "runtime-serve.json": true, "runtime-worker.json": true, "serve.stop.request": true, "worker.stop.request": true, "runtime-serve.lock": true, "runtime-worker.lock": true, "launcher-child-serve.json": true, "launcher-child-worker.json": true}
 	for _, entry := range entries {
-		if entry.IsDir() || (!allowed[entry.Name()] && !strings.HasPrefix(entry.Name(), ".master-key-")) {
+		if entry.IsDir() || (!allowed[entry.Name()] && !strings.HasPrefix(entry.Name(), ".master-key-") && !managedInitializationTemporary(entry)) {
 			return errors.New("新数据目录包含其他文件，请选择空的专用目录")
 		}
 	}
 	return nil
+}
+
+// A managed child can inspect the empty data directory while the launcher is
+// atomically publishing its child PID or start.ps1 is updating its process
+// record. Accept only those writers' exact temporary names and regular files;
+// arbitrary hidden files must still prevent initializing an unrelated folder.
+func managedInitializationTemporary(entry os.DirEntry) bool {
+	if os.Getenv("RELAYLAB_LAUNCHER") != "1" || !entry.Type().IsRegular() {
+		return false
+	}
+	if suffix, ok := strings.CutPrefix(entry.Name(), ".launcher-write-"); ok {
+		if len(suffix) == 0 || len(suffix) > 10 {
+			return false
+		}
+		for _, char := range suffix {
+			if char < '0' || char > '9' {
+				return false
+			}
+		}
+		_, err := strconv.ParseUint(suffix, 10, 32)
+		return err == nil
+	}
+	if suffix, ok := strings.CutPrefix(entry.Name(), "launcher.process.json."); ok && strings.HasSuffix(suffix, ".tmp") {
+		id := strings.TrimSuffix(suffix, ".tmp")
+		_, err := hex.DecodeString(id)
+		return len(id) == 32 && err == nil
+	}
+	return false
 }
 
 func (v *Vault) Encrypt(plain string) (string, error) {

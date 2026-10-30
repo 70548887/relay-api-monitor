@@ -23,6 +23,9 @@ func wireLauncherUpdater(manager *update.Manager, autoRestart bool) (bool, int) 
 	if os.Getenv("RELAYLAB_LAUNCHER_INSTANCE") == "" || manager == nil {
 		return false, 0
 	}
+	if manager.Config().InstallMode == "container" {
+		return false, 0
+	}
 	address, token := os.Getenv("RELAYLAB_LAUNCHER_CONTROL_ADDR"), os.Getenv("RELAYLAB_LAUNCHER_TOKEN")
 	host, _, err := net.SplitHostPort(address)
 	ip := net.ParseIP(host)

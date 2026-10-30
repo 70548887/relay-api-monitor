@@ -281,7 +281,7 @@ func (m *Manager) snapshotLocked() Snapshot {
 	// Preserve the launcher's operation ID and its final error for API clients.
 	if l := m.launcher; l != nil && l.OperationID == m.state.LauncherOperationID {
 		state = l.State
-		op = &Operation{ID: l.OperationID, State: l.State, Version: l.Version, Progress: l.Progress, ErrorCode: l.ErrorCode, Message: l.Message, StartedAt: l.StartedAt, UpdatedAt: l.UpdatedAt}
+		op = &Operation{ID: l.OperationID, Kind: l.Kind, State: l.State, Version: l.Version, Progress: l.Progress, ErrorCode: l.ErrorCode, Message: l.Message, StartedAt: l.StartedAt, UpdatedAt: l.UpdatedAt}
 		if !isActiveState(l.State) {
 			entry := HistoryEntry{ID: l.OperationID, State: l.State, Version: l.Version, Message: l.Message, CreatedAt: l.UpdatedAt}
 			found := false
@@ -299,5 +299,5 @@ func (m *Manager) snapshotLocked() Snapshot {
 			}
 		}
 	}
-	return Snapshot{Enabled: m.cfg.Enabled, Repository: m.cfg.GitHubOwner + "/" + m.cfg.GitHubRepo, Current: m.build, Latest: latest, Release: release, State: state, Operation: op, History: history, CheckedAt: checkedAt}
+	return Snapshot{Enabled: m.cfg.Enabled, InstallEnabled: m.cfg.AllowsInstall(), InstallMode: m.cfg.InstallMode, Repository: m.cfg.GitHubOwner + "/" + m.cfg.GitHubRepo, Current: m.build, Latest: latest, Release: release, State: state, Operation: op, History: history, CheckedAt: checkedAt}
 }

@@ -31,10 +31,11 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Verify actual upgrade and recovery on amd64
+      - name: Verify actual backup, restore, upgrade and recovery on amd64
         env:
           RELAYLAB_UPGRADE_INTEGRATION: '1'
-        run: go test ./cmd/relaylab -run TestActualBinaryUpgradeAndRecovery -count=1 -timeout=360s
+          RELAYLAB_BACKUP_INTEGRATION: '1'
+        run: go test ./cmd/relaylab -run '^TestActualBinary(BackupAndRestore|UpgradeAndRecovery)$' -count=1 -timeout=360s
       - name: Verify Windows stop fallback guards
         if: runner.os == 'Windows'
         run: powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/test-stop.ps1
@@ -88,9 +89,9 @@ jobs:
         run: |
           go test ./... -count=1 -timeout=5m
           go vet ./...
-          npm --prefix web test
+          (cd web && node node_modules/vitest/vitest.mjs run --maxWorkers=1)
           npm --prefix web run typecheck
-          python -m unittest discover -s scripts -p 'test_release.py' -v
+          python -m unittest discover -s scripts -p 'test_*.py' -v
 
       - name: Check reachable Go and npm vulnerabilities
         run: |
@@ -105,7 +106,7 @@ jobs:
       - name: Verify concurrency on Linux
         env:
           CGO_ENABLED: '1'
-        run: go test -race ./internal/launcher ./internal/update ./internal/runtimecontrol ./internal/server ./internal/worker -count=1 -timeout=5m
+        run: go test -race ./internal/launcher ./internal/update ./internal/runtimecontrol ./internal/server ./internal/worker ./internal/backup ./internal/backups ./internal/store ./internal/restorestate ./internal/durablejson ./internal/operationlock -count=1 -timeout=5m
 
       - name: Build and validate complete release
         if: startsWith(github.ref, 'refs/tags/v')

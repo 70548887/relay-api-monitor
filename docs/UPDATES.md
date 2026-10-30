@@ -11,7 +11,13 @@ $env:RELAYLAB_UPDATE_GITHUB_TOKEN = '仅授予 Release 读取权限的 Token'
 $env:RELAYLAB_UPDATE_PROXY = ''
 ```
 
-`update.check_interval: 0` 表示只在后台手动检查。`auto_download: true` 只下载和校验，不自动安装；安装动作始终由管理员在后台确认。相对的 `backup_dir` 按配置文件所在目录解析。
+默认开启版本检查：启动时检查一次，此后每 6 小时检查一次。后台顶部常驻显示实际运行版本，发现新版本时显示提示并链接到升级页。页面刷新读取服务端状态，不会触发 GitHub 查询。
+
+`update.enabled: false` 关闭检查与升级；`update.check_interval: 0` 表示只在后台手动检查。已有配置中的明确关闭设置和 `0` 间隔继续生效，不会被新默认值覆盖。
+
+`update.install_mode` 支持 `binary`（默认）与 `container`。原生部署可通过启动器安装；Docker 部署检查版本后，通过重建镜像与容器安装更新，应用拒绝下载、安装和回滚。环境变量对应 `RELAYLAB_UPDATE_INSTALL_MODE`。
+
+`auto_download: true` 在原生部署中只下载和校验，不自动安装；安装动作始终由管理员在后台确认，容器模式跳过自动下载。相对的 `backup_dir` 按配置文件所在目录解析。
 
 不要把 `config.yaml`、Token、代理用户名或代理密码提交到 Git。仓库已经忽略 `config.yaml`、`.env` 和密钥文件。
 

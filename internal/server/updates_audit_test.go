@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"relaylab/internal/config"
@@ -81,6 +82,62 @@ func TestUpdatesDoNotApplyThroughLegacyLauncher(t *testing.T) {
 	for _, action := range []string{"apply", "rollback"} {
 		if w := request(t, h, "POST", "/api/v1/admin/updates/"+action, nil, cookie, csrf); w.Code != 409 {
 			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestManualUpdatesRejectReservedAutomaticCheckBeforeAcceptance(t *testing.T) {
+	s, h := testServer(t)
+	m, err := update.New(config.UpdateConfig{Enabled: true}, t.TempDir(), update.BuildInfo{Version: "1.4.2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetUpdateManager(m)
+	s.ConfigureUpdates(context.Background(), true, 2)
+	cookie, csrf := loginForTest(t, h)
+	release, ok := m.TryReserveOperation()
+	if !ok {
+		t.Fatal("could not reserve automatic check")
+	}
+	defer release()
+	for _, action := range []string{"check", "download", "apply", "rollback"} {
+		w := request(t, h, "POST", "/api/v1/admin/updates/"+action, nil, cookie, csrf)
+		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "update_busy") || s.updateBusy.Load() || m.Snapshot().State != "idle" {
+			t.Fatalf("reserved %s was accepted: %d %s", action, w.Code, w.Body.String())
+		}
+	}
+	release()
+	// Invalid manual requests must release the reservation without starting work.
+	w := request(t, h, "POST", "/api/v1/admin/updates/apply", nil, cookie, csrf)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "update_not_ready") {
+		t.Fatalf("expected not-ready: %d %s", w.Code, w.Body.String())
+	}
+	releaseAgain, ok := m.TryReserveOperation()
+	if !ok {
+		t.Fatal("validation failure leaked reservation")
+	}
+	releaseAgain()
+}
+
+func TestContainerUpdatesExposeVersionAndRejectInstallationImmediately(t *testing.T) {
+	s, h := testServer(t)
+	m, err := update.New(config.UpdateConfig{Enabled: true, InstallMode: "container"}, t.TempDir(), update.BuildInfo{Version: "1.4.2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetUpdateManager(m)
+	s.ConfigureUpdates(context.Background(), true, 2)
+	cookie, csrf := loginForTest(t, h)
+	w := request(t, h, "GET", "/api/v1/admin/updates/status", nil, cookie, "")
+	for _, want := range []string{`"version":"1.4.2"`, `"enabled":true`, `"install_enabled":false`, `"install_mode":"container"`} {
+		if w.Code != 200 || !strings.Contains(w.Body.String(), want) {
+			t.Fatalf("missing %s: %d %s", want, w.Code, w.Body.String())
+		}
+	}
+	for _, action := range []string{"download", "apply", "rollback"} {
+		w := request(t, h, "POST", "/api/v1/admin/updates/"+action, nil, cookie, csrf)
+		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "update_container_managed") || s.updateBusy.Load() || m.Snapshot().State != "idle" {
+			t.Fatalf("container %s: %d %s", action, w.Code, w.Body.String())
 		}
 	}
 }

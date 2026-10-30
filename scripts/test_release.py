@@ -17,12 +17,14 @@ class PackagingTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.binaries, self.output = self.root / 'bin', self.root / 'dist'
         self.binaries.mkdir()
-        files = ('README.md', 'config.example.yaml', 'docs/UPDATES.md', 'docs/RELEASE.md', 'docs/DOCKER.md', 'docs/releases/v9.9.9.md', 'release/THIRD_PARTY_NOTICES.txt', 'deploy/relaylab-launcher.service', 'deploy/relaylab.env.example', '.dockerignore', *release.DOCKER_RUNTIME_FILES.values(), *[f'scripts/{name}' for name in release.SCRIPT_NAMES])
+        files = ('README.md', 'config.example.yaml', 'docs/UPDATES.md', 'docs/RELEASE.md', 'docs/DOCKER.md', 'docs/BACKUPS.md', 'docs/BACKUP-VALIDATION.md', 'docs/releases/v9.9.9.md', 'release/THIRD_PARTY_NOTICES.txt', 'deploy/relaylab-launcher.service', 'deploy/relaylab.env.example', '.dockerignore', *release.DOCKER_RUNTIME_FILES.values(), *[f'scripts/{name}' for name in release.SCRIPT_NAMES])
         for name in files:
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('fixture', encoding='utf-8')
         (self.root / 'VERSION').write_text('9.9.9\n', encoding='utf-8')
+        (self.root / 'docs' / 'BACKUP-AUDIT.md').write_text('fixture', encoding='utf-8')
+        (self.root / 'docs' / 'BACKUP-REPAIR.md').write_text('fixture', encoding='utf-8')
         for goos, arch in release.TARGETS:
             for program in release.PROGRAMS:
                 (self.binaries / release.filename(program, goos, arch)).write_bytes(f'{program}/{goos}/{arch}'.encode())
@@ -41,6 +43,7 @@ class PackagingTests(unittest.TestCase):
         self.assertEqual(manifest['launcher_protocol'], 2)
         self.assertEqual(manifest['usage_guard'], 1)
         self.assertEqual(manifest['min_database_schema'], 1)
+        self.assertEqual(manifest['database_schema'], 4)
         for goos, arch in release.TARGETS:
             stem = f'relaylab-{goos}-{arch}-9.9.9'
             path = self.output / (stem + ('.zip' if goos == 'windows' else '.tar.gz'))
@@ -52,7 +55,7 @@ class PackagingTests(unittest.TestCase):
                     files = archive.getnames()
                     self.assertEqual(archive.getmember(stem + '/bin/relaylab').mode, 0o755)
             ext = '.exe' if goos == 'windows' else ''
-            for required in (f'bin/relaylab{ext}', f'bin/relaylab-launcher{ext}', 'VERSION', 'config.example.yaml', 'scripts/start.ps1', 'scripts/stop.ps1', 'scripts/start.sh', 'docs/UPDATES.md', 'docs/RELEASE.md', 'docs/DOCKER.md', 'deploy/relaylab-launcher.service', 'deploy/relaylab.env.example', 'THIRD_PARTY_NOTICES.txt'):
+            for required in (f'bin/relaylab{ext}', f'bin/relaylab-launcher{ext}', 'VERSION', 'config.example.yaml', 'scripts/start.ps1', 'scripts/stop.ps1', 'scripts/start.sh', 'scripts/restore-docker.sh', 'docs/UPDATES.md', 'docs/RELEASE.md', 'docs/DOCKER.md', 'docs/BACKUPS.md', 'deploy/relaylab-launcher.service', 'deploy/relaylab.env.example', 'THIRD_PARTY_NOTICES.txt'):
                 self.assertIn(f'{stem}/{required}', files)
             if goos == 'linux':
                 for required in release.DOCKER_RUNTIME_FILES:
@@ -75,6 +78,17 @@ class PackagingTests(unittest.TestCase):
                     manifest.pop('usage_guard')
                 else:
                     manifest['usage_guard'] = guard
+                path.write_text(json.dumps(manifest))
+                with self.assertRaisesRegex(ValueError, 'compatibility contract'):
+                    release.validate_release(self.output, '9.9.9')
+
+    def test_schema_four_contract_rejects_old_or_future_schema(self):
+        self.package()
+        path = self.output / 'manifest.json'
+        original = json.loads(path.read_text())
+        for schema in (1, 3, 5, 0):
+            with self.subTest(schema=schema):
+                manifest = dict(original, database_schema=schema)
                 path.write_text(json.dumps(manifest))
                 with self.assertRaisesRegex(ValueError, 'compatibility contract'):
                     release.validate_release(self.output, '9.9.9')

@@ -164,10 +164,19 @@ func (m *Manager) fetchManifest(ctx context.Context, rawURL, tag string) (manife
 	if _, err = time.Parse(time.RFC3339, meta.BuildTime); err != nil {
 		return manifest{}, fmt.Errorf("%w: invalid build_time", ErrInvalidManifest)
 	}
-	if meta.LauncherProtocol != LauncherProtocol || meta.DatabaseSchema <= 0 || meta.MinDatabaseSchema <= 0 || meta.MinDatabaseSchema > meta.DatabaseSchema || (isNewer(tag, m.build.Version) && (meta.DatabaseSchema < DatabaseSchema || meta.MinDatabaseSchema > DatabaseSchema)) {
+	// Discovery still validates the manifest's shape and target identity. A
+	// container installs a complete image, so changes to the binary updater's
+	// protocol or schema contract must not hide an otherwise valid release.
+	if meta.LauncherProtocol <= 0 || meta.DatabaseSchema <= 0 || meta.MinDatabaseSchema <= 0 || meta.MinDatabaseSchema > meta.DatabaseSchema {
+		return manifest{}, fmt.Errorf("%w: invalid launcher protocol or database schema", ErrInvalidManifest)
+	}
+	if meta.UsageGuard < 0 {
+		return manifest{}, fmt.Errorf("%w: invalid usage guard", ErrInvalidManifest)
+	}
+	if m.cfg.InstallMode != "container" && (meta.LauncherProtocol != LauncherProtocol || (isNewer(tag, m.build.Version) && (meta.DatabaseSchema < DatabaseSchema || meta.MinDatabaseSchema > DatabaseSchema))) {
 		return manifest{}, fmt.Errorf("%w: launcher protocol or database schema is incompatible", ErrInvalidManifest)
 	}
-	if meta.UsageGuard < 0 || meta.UsageGuard > RequiredUsageGuard || (isNewer(tag, m.build.Version) && meta.UsageGuard != RequiredUsageGuard) {
+	if m.cfg.InstallMode != "container" && (meta.UsageGuard > RequiredUsageGuard || (isNewer(tag, m.build.Version) && meta.UsageGuard != RequiredUsageGuard)) {
 		return manifest{}, fmt.Errorf("%w: usage guard is incompatible; use a full installation package", ErrInvalidManifest)
 	}
 	if len(meta.Assets) == 0 {

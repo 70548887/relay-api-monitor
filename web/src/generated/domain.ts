@@ -337,3 +337,77 @@ export interface IntelligenceStatusResponse {
   groups: Array<IntelligenceGroupStatus>;
 }
 
+export interface BackupStorageHealth {
+  checked_at?: string | null;
+  status: string;
+  message: string;
+  operation?: string;
+}
+
+export interface BackupStorage {
+  id: string;
+  revision: number;
+  endpoint: string;
+  region: string;
+  bucket: string;
+  prefix: string;
+  force_path_style: boolean;
+  access_key_mask?: string;
+  secret_configured: boolean;
+  health: BackupStorageHealth;
+  created_at: string;
+}
+
+export interface BackupSchedule {
+  active_storage_id?: string;
+  storage_selection_set?: boolean;
+  reconciliation_warnings?: Array<string>;
+  enabled: boolean;
+  cron: string;
+  timezone: string;
+  mode: string;
+  retain_days: number;
+  retain_count: number;
+  monthly_enabled: boolean;
+  monthly_days: Array<number>;
+  monthly_month_end: boolean;
+  monthly_retain_count: number;
+  recipient: string;
+  recipient_id: string;
+  recipient_verified: boolean;
+  next_run_at?: string | null;
+  reconciliation_required: boolean;
+}
+
+export interface BackupRun {
+  cloud_imported?: boolean;
+  id: string;
+  request_id: string;
+  state: string;
+  trigger: string;
+  scheduled_for?: string | null;
+  created_at: string;
+  started_at: string;
+  finished_at?: string | null;
+  heartbeat_at: string;
+  version: string;
+  database_schema: number;
+  recipient_id: string;
+  file_name: string;
+  sha256?: string;
+  size_bytes: number;
+  transferred_bytes: number;
+  local_state: string;
+  remote_state: string;
+  storage_id?: string;
+  protected: boolean;
+  monthly_archive: boolean;
+  archive_dates?: Array<string>;
+  archive_retain_count: number;
+  archive_released?: boolean;
+  policy_snapshot?: BackupSchedule | null;
+  expires_at?: string | null;
+  error_code?: string;
+  message?: string;
+}
+

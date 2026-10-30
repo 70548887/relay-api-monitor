@@ -1,6 +1,7 @@
 package security
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -83,5 +84,71 @@ func TestNewVaultDoesNotClaimUnrelatedDirectory(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "master.key")); !os.IsNotExist(err) {
 		t.Fatal("key was created in unrelated directory")
+	}
+}
+
+func TestNewDataDirectoryAllowsOnlyManagedWriterTemporaryFiles(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		managed string
+		dir     bool
+		allowed bool
+	}{
+		{".launcher-write-0", "1", false, true},
+		{".launcher-write-4294967295", "1", false, true},
+		{"launcher.process.json.0123456789abcdef0123456789abcdef.tmp", "1", false, true},
+		{".launcher-write-123", "", false, false},
+		{"launcher.process.json.0123456789abcdef0123456789abcdef.tmp", "", false, false},
+		{".launcher-write-123", "true", false, false},
+		{".launcher-write-123", "1", true, false},
+		{"launcher.process.json.0123456789abcdef0123456789abcdef.tmp", "1", true, false},
+		{".launcher-write-", "1", false, false},
+		{".launcher-write-4294967296", "1", false, false},
+		{".launcher-write-01234567890", "1", false, false},
+		{".launcher-write-123.txt", "1", false, false},
+		{".launcher-write-+1", "1", false, false},
+		{"launcher.process.json.0123456789abcdef.tmp", "1", false, false},
+		{"launcher.process.json.0123456789abcdef0123456789abcdeg.tmp", "1", false, false},
+		{"launcher.process.json.0123456789abcdef0123456789abcdef.tmp.extra", "1", false, false},
+		{".unrelated-123", "1", false, false},
+	} {
+		t.Run(tc.name+"/managed="+tc.managed+fmt.Sprint("/directory=", tc.dir), func(t *testing.T) {
+			t.Setenv("RELAYLAB_LAUNCHER", tc.managed)
+			dir := t.TempDir()
+			path := filepath.Join(dir, tc.name)
+			if tc.dir {
+				if err := os.Mkdir(path, 0700); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.WriteFile(path, []byte("preserve"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := ValidateNewDataDirectory(dir); (err == nil) != tc.allowed {
+				t.Fatalf("allowed=%t: %v", tc.allowed, err)
+			}
+			if !tc.dir {
+				if b, err := os.ReadFile(path); err != nil || string(b) != "preserve" {
+					t.Fatal("guard modified existing temporary file")
+				}
+			}
+			if _, err := os.Stat(filepath.Join(dir, "master.key")); !os.IsNotExist(err) {
+				t.Fatal("guard created a master key")
+			}
+		})
+	}
+}
+
+func TestManagedInitializationTemporaryRejectsSymlink(t *testing.T) {
+	t.Setenv("RELAYLAB_LAUNCHER", "1")
+	dir := t.TempDir()
+	target := filepath.Join(t.TempDir(), "unrelated")
+	if err := os.WriteFile(target, []byte("preserve"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(dir, ".launcher-write-123")); err != nil {
+		t.Skipf("symbolic links unavailable: %v", err)
+	}
+	if err := ValidateNewDataDirectory(dir); err == nil {
+		t.Fatal("managed temporary symlink accepted")
 	}
 }

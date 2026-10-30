@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Alert, Button } from 'antd';
-import { ApiOutlined, AppstoreOutlined, ArrowLeftOutlined, CloudDownloadOutlined, DashboardOutlined, FileTextOutlined, LogoutOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
+import { ApiOutlined, AppstoreOutlined, ArrowLeftOutlined, CloudDownloadOutlined, DashboardOutlined, DatabaseOutlined, FileTextOutlined, LogoutOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { post, setSession } from '../api';
 import type { Session } from '../types';
+import { AdminVersion, useAdminVersion } from '../components/AdminVersion';
 
 const destinations = [
   { to: '/admin', label: '总览', icon: <DashboardOutlined aria-hidden="true"/>, end: true },
@@ -11,6 +12,7 @@ const destinations = [
   { to: '/admin/models', label: '模型配置', icon: <AppstoreOutlined aria-hidden="true"/> },
   { to: '/admin/jobs', label: '任务与作品', icon: <FileTextOutlined aria-hidden="true"/> },
   { to: '/admin/updates', label: '在线升级', icon: <CloudDownloadOutlined aria-hidden="true"/> },
+  { to: '/admin/backups', label: '备份与恢复', icon: <DatabaseOutlined aria-hidden="true"/> },
   { to: '/admin/user-connections', label: '用户连接', icon: <ApiOutlined aria-hidden="true"/> },
   { to: '/admin/test-records', label: '在线测试记录', icon: <FileTextOutlined aria-hidden="true"/> },
   { to: '/admin/users', label: '用户管理', icon: <UserOutlined aria-hidden="true"/> },
@@ -22,6 +24,8 @@ export function AdminShell({ session }: { session: Session }) {
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState('');
+  const version = useAdminVersion();
+  const newerVersion = version.data?.latest?.available === true && !!version.data.latest.latest_version?.trim();
   const current = destinations.find(item => item.to === location.pathname.replace(/\/$/, '')) || destinations[0];
 
   async function logout() {
@@ -44,12 +48,12 @@ export function AdminShell({ session }: { session: Session }) {
         <div className="brand-mark">r<span>↗</span></div>
         <div><strong>Relay Lab<span className="brand-dot">.</span></strong><span>CONTROL CENTER</span></div>
       </NavLink>
-      <div className="admin-topbar-right"><span className="admin-mode-label">管理工作台</span><NavLink to="/" className="admin-public-link"><ArrowLeftOutlined aria-hidden="true"/>访问用户端</NavLink></div>
+      <div className="admin-topbar-right"><span className="admin-mode-label">管理工作台</span><AdminVersion snapshot={version.data} failed={version.isError}/><NavLink to="/" className="admin-public-link"><ArrowLeftOutlined aria-hidden="true"/>访问用户端</NavLink></div>
     </header>
     <div className="admin-workspace-body">
       <aside className="admin-workspace-sidebar">
         <div className="admin-workspace-caption">工作空间<span>WORKSPACE</span></div>
-        <nav aria-label="管理导航">{destinations.map(item => <NavLink key={item.to} to={item.to} end={item.end}>{item.icon}<span>{item.label}</span></NavLink>)}</nav>
+        <nav aria-label="管理导航">{destinations.map(item => <NavLink key={item.to} to={item.to} end={item.end}>{item.icon}<span>{item.label}</span>{item.to === '/admin/updates' && newerVersion && <span className="admin-version-dot" role="img" aria-label="有新版本"/>}</NavLink>)}</nav>
         <div className="admin-account">
           <div className="admin-account-avatar" aria-hidden="true">{session.user.username.slice(0, 1).toUpperCase()}</div>
           <div className="admin-account-name"><strong>{session.user.username}</strong><span>管理员</span></div>

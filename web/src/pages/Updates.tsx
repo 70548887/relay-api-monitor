@@ -59,11 +59,13 @@ export function UpdatesPage() {
   const latestBody = info?.notes || release?.body || '';
   const latestURL = info?.release_url || release?.url;
   const enabled = data?.enabled === true;
+  const containerManaged = data?.install_mode === 'container';
+  const installEnabled = enabled && data?.install_enabled !== false && !containerManaged;
   const busy = activeStates.has(state);
   const managed = data?.launcher_managed === true && (data?.launcher_protocol || 0) >= 2;
   const compatibleUpdate = info?.compatible === true && info.available === true;
-  const canDownload = enabled && compatibleUpdate && !busy && state !== 'ready' && state !== 'pending_restart';
-  const canApply = enabled && compatibleUpdate && state === 'ready' && managed;
+  const canDownload = installEnabled && compatibleUpdate && !busy && state !== 'ready' && state !== 'pending_restart';
+  const canApply = installEnabled && compatibleUpdate && state === 'ready' && managed;
   const autoRestart = data?.auto_restart !== false;
   const installLabel = autoRestart ? '安装升级' : '准备升级并等待重启';
   const assets = useMemo<UpdateAsset[]>(()=>release?.assets || [], [release?.assets]);
@@ -99,14 +101,15 @@ export function UpdatesPage() {
   const statusMessage = state === 'succeeded' && !confirmedSuccess ? '安装结果已返回，正在确认目标版本与 Worker' : operationMessage(operation || {state});
 
   return <>
-    <PageHeading eyebrow="SYSTEM / 在线升级" title="让服务保持最新。" description="从 GitHub Release 检查、校验并安装 Relay Lab 新版本，升级过程会保留本地数据。" extra={<Space wrap>
+    <PageHeading eyebrow="SYSTEM / 在线升级" title="让服务保持最新。" description={containerManaged ? '检查 GitHub Release 并提示新版本；Docker 部署通过重建镜像和容器完成升级。' : '从 GitHub Release 检查、校验并安装 Relay Lab 新版本，升级过程会保留本地数据。'} extra={<Space wrap>
       <Button icon={<ReloadOutlined aria-hidden="true" spin={snapshot.isFetching}/>} onClick={()=>{void snapshot.refetch();void history.refetch();}}>刷新</Button>
       <Button type="primary" icon={<CloudDownloadOutlined aria-hidden="true"/>} disabled={!enabled || busy || action.isPending} onClick={()=>run('/admin/updates/check','检查请求已受理，请等待结果')}>检查更新</Button>
     </Space>}/>
     <QueryState loading={snapshot.isLoading} error={!data ? snapshot.error : null}>{data && <>
-      {snapshot.isError && <Alert showIcon type="warning" message="与服务暂时断开，正在重新连接" description="安装和重启可能使连接短暂中断；页面会持续轮询，恢复连接后再确认结果。" className="updates-alert"/>}
-      {!enabled && <Alert showIcon type="warning" message="在线升级已禁用" description="请在服务端配置 update.enabled=true 后重新启动程序。" className="updates-alert"/>}
-      {!managed && <Alert showIcon type="warning" message="需要协议 2 启动器才能安装或回滚" description="升级到 v1.2.3 需先手动部署一次完整发布包，替换服务端、启动器及脚本；完成迁移后可使用在线升级。" className="updates-alert"/>}
+      {snapshot.isError && <Alert showIcon type="warning" message="与服务暂时断开，正在重新连接" description={`当前显示上次获取的信息${data.checked_at ? `，上次成功检查：${time(data.checked_at)}` : ''}。安装和重启可能使连接短暂中断；页面会持续轮询，恢复连接后再确认结果。`} className="updates-alert"/>}
+      {!enabled && <Alert showIcon type="warning" message="版本检查已关闭" description="请在服务端配置 update.enabled=true 后重新启动程序。" className="updates-alert"/>}
+      {containerManaged && <Alert showIcon type="info" message="Docker 部署：支持版本检查与更新提示" description="发现新版本后，在宝塔中更新构建版本并重新构建、创建容器，继续使用原数据卷。安装与回滚由 Docker 管理。" className="updates-alert"/>}
+      {!containerManaged && !managed && <Alert showIcon type="warning" message="需要协议 2 启动器才能安装或回滚" description="请使用完整发布包更新服务端、启动器及脚本；完成迁移后可使用在线安装。" className="updates-alert"/>}
       {state==='pending_restart' && <Alert showIcon type="info" message="升级包已准备，等待手动重启" description="自动重启已关闭。当前服务仍在运行，尚未完成新版本安装与健康验证。" className="updates-alert"/>}
       <div className="admin-stats update-stats">
         <div className="summary-card green"><span>当前版本</span><strong className="summary-value update-version">{current?.version || 'dev'}</strong><small>{current?.commit ? `Commit ${current.commit.slice(0,8)}` : '本地构建'}</small></div>
@@ -120,7 +123,7 @@ export function UpdatesPage() {
           <Descriptions size="small" column={1} bordered>
             <Descriptions.Item label="版本"><Tag color="cyan">{latestVersion}</Tag>{release?.name && <span className="muted">{release.name}</span>}</Descriptions.Item>
             <Descriptions.Item label="发布时间">{info.published_at ? time(info.published_at) : '—'}</Descriptions.Item>
-            <Descriptions.Item label="兼容性">{info.compatible ? <Tag color="success">兼容当前平台</Tag> : <Tag color="error">当前平台不兼容</Tag>}{!info.available && <Tag>{olderRelease?'本机版本高于发布版，无需升级':'当前已是最新版本'}</Tag>}</Descriptions.Item>
+            <Descriptions.Item label="兼容性">{containerManaged ? <Tag>通过容器更新</Tag> : info.compatible ? <Tag color="success">兼容当前平台</Tag> : <Tag color="error">当前平台不兼容</Tag>}{!info.available && <Tag>{snapshot.isError?'上次检查未发现新版本':olderRelease?'本机版本高于发布版，无需升级':state==='failed'?'上次检查未发现新版本':'当前已是最新版本'}</Tag>}</Descriptions.Item>
           </Descriptions>
           {latestBody && <pre className="update-release-notes">{latestBody}</pre>}
           <div className="update-actions"><Button icon={<DownloadOutlined aria-hidden="true"/>} disabled={!canDownload || action.isPending} onClick={()=>run('/admin/updates/download','下载请求已受理，正在下载并校验')}>下载并校验</Button>
@@ -140,7 +143,7 @@ export function UpdatesPage() {
         {data.maintenance && <div className="update-maintenance-detail"><span>维护排空：{data.maintenance.active?'进行中':'未开启'}</span><span>在途请求：{data.maintenance.draining_requests ?? 0}</span><span>运行任务：{data.maintenance.running_jobs ?? 0}</span><span>Worker：{data.maintenance.worker_online?'在线':'离线'}</span></div>}
       </div></div>
       <div className="panel update-assets-panel"><div className="section-toolbar"><div><h2>可用安装包</h2><span className="muted">当前 Release 的安装包与校验状态。</span></div></div><div style={{overflowX:'auto'}}><Table rowKey="name" size="small" dataSource={assets} pagination={false} locale={{emptyText:'当前 Release 没有可用安装包'}} columns={[{title:'文件',dataIndex:'name',render:(name:string,asset:UpdateAsset)=><div><strong style={{overflowWrap:'anywhere'}}>{name}</strong>{asset.os&&<div className="muted">{asset.os} / {asset.arch}</div>}</div>},{title:'大小',dataIndex:'size',render:bytes},{title:'SHA-256',dataIndex:'sha256',render:(value:string,asset:UpdateAsset)=><code className="update-sha">{value || (asset.verified?'已验证':'Manifest 未提供')}</code>},{title:'状态',render:(_:unknown,asset:UpdateAsset)=>asset.verified?<Tag color="success">已校验</Tag>:<Tag>待校验</Tag>}]}/></div></div>
-      <div className="panel update-history-panel"><div className="section-toolbar"><div><h2>升级历史</h2><span className="muted">保留最近的检查、安装和回滚操作。</span></div><Popconfirm title="回滚到上一版本？" description="仅在旧版本与当前数据库兼容时执行。" okText="回滚" cancelText="取消" disabled={!enabled||!managed||busy||action.isPending} onConfirm={()=>run('/admin/updates/rollback','回滚请求已受理，请等待验证结果')}><Button danger icon={<RollbackOutlined aria-hidden="true"/>} disabled={!enabled||!managed||busy||action.isPending}>回滚</Button></Popconfirm></div><QueryState loading={data?.history === undefined && history.isLoading} error={data?.history === undefined ? history.error : null} empty={!historyRows.length}><div style={{overflowX:'auto'}}><Table rowKey={(row:UpdateHistory)=>row.id} size="small" dataSource={historyRows} pagination={{pageSize:8}} columns={[{title:'时间',dataIndex:'created_at',render:time},{title:'目标版本',dataIndex:'version',render:(value:string)=><Tag>{value || '—'}</Tag>},{title:'状态',dataIndex:'state',render:(value:string)=><StateTag state={value}/>},{title:'说明',dataIndex:'message',render:(value:string)=>value || '—'}]}/></div></QueryState></div>
+      <div className="panel update-history-panel"><div className="section-toolbar"><div><h2>升级历史</h2><span className="muted">保留最近的检查、安装和回滚操作。</span></div><Popconfirm title="回滚到上一版本？" description="仅在旧版本与当前数据库兼容时执行。" okText="回滚" cancelText="取消" disabled={!installEnabled||!managed||busy||action.isPending} onConfirm={()=>run('/admin/updates/rollback','回滚请求已受理，请等待验证结果')}><Button danger icon={<RollbackOutlined aria-hidden="true"/>} disabled={!installEnabled||!managed||busy||action.isPending}>回滚</Button></Popconfirm></div><QueryState loading={data?.history === undefined && history.isLoading} error={data?.history === undefined ? history.error : null} empty={!historyRows.length}><div style={{overflowX:'auto'}}><Table rowKey={(row:UpdateHistory)=>row.id} size="small" dataSource={historyRows} pagination={{pageSize:8}} columns={[{title:'时间',dataIndex:'created_at',render:time},{title:'目标版本',dataIndex:'version',render:(value:string)=><Tag>{value || '—'}</Tag>},{title:'状态',dataIndex:'state',render:(value:string)=><StateTag state={value}/>},{title:'说明',dataIndex:'message',render:(value:string)=>value || '—'}]}/></div></QueryState></div>
     </>}</QueryState>
   </>;
 }

@@ -16,8 +16,10 @@ const OverviewPage = lazy(() => import('./pages/Admin').then(module => ({ defaul
 const PlatformsPage = lazy(() => import('./pages/Admin').then(module => ({ default: module.PlatformsPage })));
 const ModelsPage = lazy(() => import('./pages/Admin').then(module => ({ default: module.ModelsPage })));
 const JobsPage = lazy(() => import('./pages/Admin').then(module => ({ default: module.JobsPage })));
-const SettingsPage = lazy(() => import('./pages/Admin').then(module => ({ default: module.SettingsPage })));
+const SettingsPage = lazy(() => import('./pages/Settings').then(module => ({ default: module.SettingsPage })));
 const UpdatesPage = lazy(() => import('./pages/Updates').then(module => ({ default: module.UpdatesPage })));
+const BackupsPage = lazy(() => import('./pages/Backups').then(module => ({ default: module.BackupsPage })));
+const RestoreProgressPage = lazy(() => import('./pages/RestoreProgress').then(module => ({ default: module.RestoreProgressPage })));
 const UsersPage = lazy(() => import('./pages/Users').then(module => ({ default: module.UsersPage })));
 const UserLoginPage = lazy(() => import('./pages/UserAccount').then(module => ({ default: module.UserLoginPage })));
 const UserRegisterPage = lazy(() => import('./pages/UserAccount').then(module => ({ default: module.UserRegisterPage })));
@@ -27,6 +29,7 @@ export function AppRoutes() {
   return <Suspense fallback={<div className="center-loading"><Spin size="large"/></div>}><Routes>
     <Route path="/admin/login" element={<AdminLoginPage/>}/>
     <Route path="/admin/setup" element={<AdminSetupPage/>}/>
+    <Route path="/restore-progress/:id" element={<RestoreProgressPage/>}/>
     <Route path="/admin" element={<AdminLayout/>}>
       <Route index element={<OverviewPage/>}/>
       <Route path="platforms" element={<PlatformsPage/>}/>
@@ -34,6 +37,7 @@ export function AppRoutes() {
       <Route path="jobs" element={<JobsPage/>}/>
       <Route path="settings" element={<SettingsPage/>}/>
       <Route path="updates" element={<UpdatesPage/>}/>
+      <Route path="backups" element={<BackupsPage/>}/>
       <Route path="users" element={<UsersPage/>}/>
  <Route path="user-connections" element={<Connections admin/>}/>
  <Route path="test-records" element={<TestRecords admin/>}/>

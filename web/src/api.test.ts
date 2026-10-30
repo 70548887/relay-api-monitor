@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import { api, post, refreshSession, setSession } from './api';
+import { api, captureSessionGuard, post, refreshSession, setSession } from './api';
 import { bindSessionCache } from './sessionCache';
 import type { Session } from './types';
 const first:Session={user:{id:'one',username:'first'},csrf_token:'csrf-first'};
@@ -8,6 +8,20 @@ const second:Session={user:{id:'two',username:'second'},csrf_token:'csrf-second'
 const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json'}});
 afterEach(()=>{setSession(null);vi.unstubAllGlobals()});
 describe('session lifecycle',()=>{
+ it('keeps a captured session guard valid across equivalent session refreshes',()=>{
+  setSession(first);const isCurrent=captureSessionGuard();
+  setSession({...first,user:{...first.user}});
+  expect(isCurrent()).toBe(true);
+ });
+ it('invalidates a captured guard permanently when the session signs out',()=>{
+  setSession(first);const isCurrent=captureSessionGuard();
+  setSession(null);expect(isCurrent()).toBe(false);
+  setSession(first);expect(isCurrent()).toBe(false);
+ });
+ it.each([['administrator',second],['CSRF token',{...first,csrf_token:'renewed-csrf'}]] as const)('invalidates the guard when the %s changes',(_kind,next)=>{
+  setSession(first);const isCurrent=captureSessionGuard();
+  setSession(next);expect(isCurrent()).toBe(false);
+ });
  it('does not sign an administrator out when a visitor API reports an upstream 401',async()=>{
   setSession(first);const fetcher=vi.fn().mockResolvedValueOnce(json({error:{message:'upstream key rejected'}},401)).mockResolvedValueOnce(json({}));vi.stubGlobal('fetch',fetcher);
   await expect(api('/test/models',{method:'POST',body:'{}'})).rejects.toMatchObject({status:401});

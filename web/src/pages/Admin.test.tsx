@@ -12,13 +12,16 @@ describe('model configuration form',()=>{
  it('uses the backend limits on the settings page instead of offering rejected values',async()=>{
   const client=new QueryClient({defaultOptions:{queries:{staleTime:Infinity,retry:false}}});
   client.setQueryData(['admin-settings'],{probe_concurrency:4,artifact_concurrency:2,channel_concurrency:2,probe_timeout_seconds:60,artifact_timeout_seconds:600,retention_days:30,visitor_ip_concurrency:2});
-  render(<QueryClientProvider client={client}><App><SettingsPage/></App></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><App><MemoryRouter><SettingsPage/></MemoryRouter></App></QueryClientProvider>);
   expect(screen.getByLabelText('健康检测并发')).toHaveAttribute('aria-valuemax','32');
   expect(screen.getByLabelText('作品生成并发')).toHaveAttribute('aria-valuemax','16');
   expect(screen.getByLabelText('单分组并发')).toHaveAttribute('aria-valuemax','16');
-  expect(screen.getByLabelText('检测超时（秒）')).toHaveAttribute('aria-valuemin','5');
-  expect(screen.getByLabelText('创作超时（秒）')).toHaveAttribute('aria-valuemin','5');
-  expect(screen.getByLabelText('检测数据保留（天）')).toHaveAttribute('aria-valuemax','365');
+  fireEvent.click(screen.getByRole('tab',{name:'请求策略'}));
+  expect(screen.getByLabelText('检测超时')).toHaveAttribute('aria-valuemin','5');
+  expect(screen.getByLabelText('创作超时')).toHaveAttribute('aria-valuemin','5');
+  fireEvent.click(screen.getByRole('tab',{name:'数据与历史'}));
+  expect(screen.getByLabelText('检测数据保留')).toHaveAttribute('aria-valuemax','365');
+  fireEvent.click(screen.getByRole('tab',{name:'访客额度'}));
   expect(screen.getByLabelText('每 IP 并发')).toHaveAttribute('aria-valuemax','8');client.clear();
  });
  it('allows per-model artwork opt-out while keeping the group interval authoritative',async()=>{

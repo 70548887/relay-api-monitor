@@ -56,6 +56,7 @@ func (s *Supervisor) controlHandler() http.Handler {
 	mux.HandleFunc("/control/resume", s.handleControl(func(w http.ResponseWriter, r *http.Request) { e := s.Resume(); writeControlResult(w, e, s.Status()) }))
 	mux.HandleFunc("/control/replace", s.handleControl(s.handleReplace))
 	mux.HandleFunc("/control/rollback", s.handleControl(s.handleRollback))
+	mux.HandleFunc("/control/restore", s.handleControl(s.handleRestore))
 	mux.HandleFunc("/control/shutdown", s.handleControl(func(w http.ResponseWriter, r *http.Request) {
 		if !s.transactionMu.TryLock() {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "operation_in_progress"})

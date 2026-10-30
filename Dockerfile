@@ -51,7 +51,9 @@ LABEL org.opencontainers.image.title="Relay Lab" \
 ENV RELAYLAB_CONFIG=/etc/relaylab/config.yaml \
     RELAYLAB_DATA_DIR=/var/lib/relaylab/data \
     RELAYLAB_ADDR=0.0.0.0:42783 \
-    RELAYLAB_UPDATE_ENABLED=false
+    RELAYLAB_UPDATE_ENABLED=true \
+    RELAYLAB_UPDATE_INSTALL_MODE=container \
+    RELAYLAB_UPDATE_CHECK_INTERVAL=21600
 WORKDIR /var/lib/relaylab
 USER 10001:10001
 VOLUME ["/var/lib/relaylab"]

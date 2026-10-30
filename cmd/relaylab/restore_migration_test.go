@@ -113,15 +113,15 @@ func TestRestoreMigratesSchemaOneBackupAndPreservesAccountsAndKeys(t *testing.T)
 	}
 	defer s.Close()
 	var version int
-	if err = s.DB.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 3 {
+	if err = s.DB.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 4 {
 		t.Fatal("restored schema version", version, err)
 	}
 	admin, err := s.GetAdminByUsername(ctx, "legacy")
 	if err != nil || admin.ID != "legacy-admin" || admin.PasswordHash != fixture.adminHash || admin.Disabled {
 		t.Fatalf("administrator changed during restore: %#v %v", admin, err)
 	}
-	if session, err := s.GetSession(ctx, fixture.sessionHash); err != nil || session.AdminID != admin.ID || session.CSRFToken != "legacy-csrf" {
-		t.Fatal("existing session changed during restore", session, err)
+	if _, err := s.GetSession(ctx, fixture.sessionHash); err != sql.ErrNoRows {
+		t.Fatal("restored session should be invalidated", err)
 	}
 	if _, err = s.CreateMember(ctx, "new-user", "fixture-hash"); err != nil {
 		t.Fatal("restored member schema unavailable", err)
@@ -152,7 +152,7 @@ func TestRestoreRejectsInvalidSchemaOneBackupsBeforePublishing(t *testing.T) {
 	}{
 		{name: "wrong key", wrongKey: true, want: "解密"},
 		{name: "future database", mutate: func(db *sql.DB) {
-			if _, err := db.Exec("PRAGMA user_version=4"); err != nil {
+			if _, err := db.Exec("PRAGMA user_version=5"); err != nil {
 				t.Fatal(err)
 			}
 		}, want: "unsupported database schema"},

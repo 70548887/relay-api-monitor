@@ -46,6 +46,7 @@ type Server struct {
 	privateLifecycle sync.Mutex
 	privateCancels   map[string]context.CancelFunc
 	publicOrigin     *url.URL
+	backupHTTP       *backupHTTP
 }
 type rateBucket struct {
 	Start time.Time
@@ -103,7 +104,11 @@ func (s *Server) Handler() http.Handler {
 		c.Header("Referrer-Policy", "no-referrer")
 		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
 			c.Header("Cache-Control", "no-store")
-			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2<<20)
+			bodyLimit := int64(2 << 20)
+			if c.Request.URL.Path == "/api/v1/admin/backups/restore/preflight" && strings.HasPrefix(c.ContentType(), "multipart/") {
+				bodyLimit = backupImportLimit + (64 << 10)
+			}
+			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, bodyLimit)
 		}
 		c.Next()
 	})
@@ -122,6 +127,7 @@ func (s *Server) Handler() http.Handler {
 		c.Next()
 	})
 	a := r.Group("/api/v1")
+	a.GET("/admin/backups/operations/:id", s.backupOperation)
 	a.GET("/setup/status", s.setupStatus)
 	a.POST("/setup", s.setup)
 	a.POST("/auth/login", s.login)
@@ -204,6 +210,7 @@ func (s *Server) Handler() http.Handler {
 	admin.POST("/updates/rollback", s.updatesRollback)
 	admin.GET("/updates/status", s.updatesSnapshot)
 	admin.GET("/updates/history", s.updatesHistory)
+	s.registerBackups(admin)
 	a.GET("/public/monitor", s.monitor)
 	a.GET("/public/models/:id/history", s.history)
 	a.GET("/public/templates", s.templates)

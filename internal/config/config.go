@@ -17,6 +17,7 @@ import (
 
 type UpdateConfig struct {
 	Enabled       bool          `yaml:"enabled" json:"enabled"`
+	InstallMode   string        `yaml:"install_mode" json:"install_mode"`
 	GitHubOwner   string        `yaml:"github_owner" json:"github_owner"`
 	GitHubRepo    string        `yaml:"github_repo" json:"github_repo"`
 	GitHubToken   string        `yaml:"-" json:"-"`
@@ -40,7 +41,12 @@ type UpstreamConfig struct {
 }
 
 func defaultUpdate() UpdateConfig {
-	return UpdateConfig{Enabled: true, GitHubOwner: "70548887", GitHubRepo: "relay-api-monitor", AutoRestart: true, BackupDir: filepath.Join("data", "backups")}
+	return UpdateConfig{Enabled: true, InstallMode: "binary", GitHubOwner: "70548887", GitHubRepo: "relay-api-monitor", CheckInterval: 6 * time.Hour, AutoRestart: true, BackupDir: filepath.Join("data", "backups")}
+}
+
+// AllowsInstall keeps the zero value compatible with existing binary deployments.
+func (c UpdateConfig) AllowsInstall() bool {
+	return c.Enabled && (c.InstallMode == "" || c.InstallMode == "binary")
 }
 func Default() Config {
 	d := os.Getenv("RELAYLAB_DATA_DIR")
@@ -74,6 +80,7 @@ func (s *scalar) UnmarshalYAML(decode func(interface{}) error) error {
 
 type rawUpdate struct {
 	Enabled       *scalar `yaml:"enabled"`
+	InstallMode   *scalar `yaml:"install_mode"`
 	GitHubOwner   *scalar `yaml:"github_owner"`
 	GitHubRepo    *scalar `yaml:"github_repo"`
 	GitHubToken   *scalar `yaml:"github_token"`
@@ -194,6 +201,7 @@ func applyRawUpdate(dst *UpdateConfig, raw rawUpdate) error {
 		}
 	}
 	setString(&dst.GitHubOwner, raw.GitHubOwner, true)
+	setString(&dst.InstallMode, raw.InstallMode, true)
 	setString(&dst.GitHubRepo, raw.GitHubRepo, true)
 	setString(&dst.GitHubToken, raw.GitHubToken, false)
 	setString(&dst.Proxy, raw.Proxy, true)
@@ -213,6 +221,7 @@ func applyEnv(cfg *Config) error {
 		dst  *string
 	}{
 		{"RELAYLAB_UPSTREAM_DNS_OVER_HTTPS", &cfg.Upstream.DNSOverHTTPS},
+		{"RELAYLAB_UPDATE_INSTALL_MODE", &cfg.Update.InstallMode},
 		{"RELAYLAB_ADDR", &cfg.Address}, {"RELAYLAB_DATA_DIR", &cfg.DataDir}, {"RELAYLAB_UPDATE_GITHUB_OWNER", &cfg.Update.GitHubOwner}, {"RELAYLAB_UPDATE_GITHUB_REPO", &cfg.Update.GitHubRepo}, {"RELAYLAB_UPDATE_GITHUB_TOKEN", &cfg.Update.GitHubToken}, {"RELAYLAB_UPDATE_PROXY", &cfg.Update.Proxy}, {"RELAYLAB_UPDATE_BACKUP_DIR", &cfg.Update.BackupDir},
 	} {
 		if v := os.Getenv(item.name); v != "" {
@@ -248,6 +257,13 @@ func applyEnv(cfg *Config) error {
 	return nil
 }
 func normalize(cfg Config, base string) (Config, error) {
+	switch cfg.Update.InstallMode {
+	case "":
+		cfg.Update.InstallMode = "binary"
+	case "binary", "container":
+	default:
+		return Config{}, errors.New("config: update.install_mode must be binary or container")
+	}
 	var publicErr error
 	if cfg.PublicURL, publicErr = NormalizePublicURL(cfg.PublicURL); publicErr != nil {
 		return Config{}, publicErr

@@ -6,7 +6,7 @@ Relay Lab 将 API 健康监控、固定提示词作品对照和在线模型测�
 
 [快速开始](#快速开始) · [首次配置](#首次配置) · [使用说明](#使用说明) · [文档导航](#文档导航) · [下载安装包](https://github.com/70548887/relay-api-monitor/releases)
 
-仓库版本以 [VERSION](VERSION) 为准。本文部署示例对应 **v1.4.2**，版本变化见 [发布说明](docs/releases/v1.4.2.md) 与 [更新日志](docs/CHANGELOG.md)。
+仓库版本以 [VERSION](VERSION) 为准。当前版本 **v1.5.0**，备份与恢复使用方法见 [备份说明](docs/BACKUPS.md)；已发布版本与附件以 [GitHub Releases](https://github.com/70548887/relay-api-monitor/releases) 为准。
 
 ## 核心功能
 
@@ -14,6 +14,7 @@ Relay Lab 将 API 健康监控、固定提示词作品对照和在线模型测�
 - **模型作品对照**：通过固定的中文 HTML、英文 SVG 提示词生成作品，支持定时创作、历史预览与源码下载。界面栏目名为“智商测试”，用于观察输出差异，不提供标准化智力评分。
 - **在线模型测试**：用户登录后使用自己的接口地址和 API Key 测试文本或 HTML/SVG，支持保存连接、查询私有历史和预填再次测试。
 - **独立管理后台**：集中管理平台、分组、模型、定时任务、账户与系统设置，查看任务状态和运行记录；普通用户与管理员使用独立账户和会话。
+- **加密备份与恢复**：管理员可创建全量加密备份，设置 S3/R2 兼容存储、定时保留与月度归档；支持云端目录导入、原生在线恢复和 Docker 新卷恢复流程。
 - **多协议与自托管**：支持 Chat Completions、Responses、Anthropic Messages，提供 Windows、Linux、Docker Compose 和宝塔部署方式。网站与后台任务进程（Worker）由启动器统一管理。
 
 ## 快速开始
@@ -25,7 +26,7 @@ Relay Lab 将 API 健康监控、固定提示词作品对照和在线模型测�
 以下命令在仓库根目录执行，通过多阶段构建生成镜像：
 
 ```sh
-git clone --branch v1.4.2 --depth 1 https://github.com/70548887/relay-api-monitor.git
+git clone https://github.com/70548887/relay-api-monitor.git
 cd relay-api-monitor
 docker compose build --pull
 
@@ -49,7 +50,7 @@ RELAYLAB_PUBLIC_URL=https://relay.example.com
 docker compose up -d --no-build --force-recreate
 ```
 
-容器部署通过重建镜像与容器升级，应用内二进制自更新默认关闭。宝塔配置、SSE 反向代理、数据卷及恢复步骤见 [Docker 与宝塔部署指南](docs/DOCKER.md)。
+后台顶部常驻显示当前版本，发现新版本时显示更新提示。默认启动时检查 GitHub Release，此后每 6 小时检查一次。容器部署支持版本检查，通过重建镜像与容器安装更新。宝塔配置、SSE 反向代理、数据卷及恢复步骤见 [Docker 与宝塔部署指南](docs/DOCKER.md)。
 
 ### Windows 完整包
 
@@ -172,7 +173,7 @@ Windows 默认目录的备份与恢复示例：
 
 - **原生部署**：后台“在线升级”支持检查 GitHub Release、下载安装包并校验，再由启动器完成安装。v1.2.2 及更早版本需先按 [升级说明](docs/UPDATES.md) 完整更新启动器和脚本。
 - **容器部署**：使用目标版本源码或完整包重建镜像与容器，保留原数据卷。
-- **版本回退**：当前数据库为 Schema 3，不能仅替换成只支持 Schema 2 的旧程序；恢复旧快照会回退备份之后的数据。
+- **版本回退**：当前数据库为 Schema 4，不能仅替换成只支持 Schema 3 或更早版本的旧程序；恢复旧快照会回退备份之后的数据。
 
 ## 开发与验证
 
@@ -208,7 +209,7 @@ npm --prefix web run dev
 - [Docker 与宝塔部署](docs/DOCKER.md)：镜像构建、HTTPS、SSE 反代、数据卷和容器恢复。
 - [Linux 部署](deploy/README.md)：完整包运行和 systemd 服务配置。
 - [升级说明](docs/UPDATES.md)：在线升级、旧版本迁移与回滚约束。
-- [更新日志](docs/CHANGELOG.md) / [v1.4.2 发布说明](docs/releases/v1.4.2.md)：版本变化、兼容范围和已知限制。
+- [备份与恢复](docs/BACKUPS.md) / [v1.5.0 发布候选说明](docs/releases/v1.5.0.md)：备份、兼容范围和已知限制。
 - [发布流程](docs/RELEASE.md)：安装包结构、版本契约和附件校验。
 - [验证记录](docs/VALIDATION.md) / [历史接口实测](docs/LIVE_TESTS.md)：测试范围、结果与限制。
 - [OpenAPI 契约](docs/openapi.json) / [配置示例](config.example.yaml)：接口与运行配置参考。

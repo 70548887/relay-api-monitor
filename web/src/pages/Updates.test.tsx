@@ -31,6 +31,50 @@ beforeEach(()=>{
 afterEach(()=>{cleanup();clients.splice(0).forEach(client=>client.clear());vi.restoreAllMocks();vi.unstubAllGlobals();});
 
 describe('online updates page',()=>{
+  it.each(['available','ready'])('keeps Docker checking available while blocking %s installation and rollback',async(state)=>{
+    const data=fixture();data.install_enabled=false;data.install_mode='container';data.state=state;data.operation!.state=state;
+    const fetcher=show(data);
+    expect(await screen.findByText('Docker 部署：支持版本检查与更新提示')).toBeInTheDocument();
+    expect(screen.getByRole('button',{name:'检查更新'})).toBeEnabled();
+    expect(screen.getByRole('button',{name:'下载并校验'})).toBeDisabled();
+    expect(screen.getByRole('button',{name:'安装升级'})).toBeDisabled();
+    expect(screen.getByRole('button',{name:'回滚'})).toBeDisabled();
+    fireEvent.click(screen.getByRole('button',{name:'检查更新'}));
+    await waitFor(()=>expect(fetcher).toHaveBeenCalledWith('/api/v1/admin/updates/check',expect.objectContaining({method:'POST'})));
+    expect(fetcher.mock.calls.filter(([,init])=>init?.method==='POST').every(([url])=>String(url).endsWith('/updates/check'))).toBe(true);
+  });
+  it('honors an explicitly disabled check setting',async()=>{
+    const data=fixture();data.enabled=false;show(data);
+    expect(await screen.findByText('版本检查已关闭')).toBeInTheDocument();
+    for(const name of ['检查更新','下载并校验','安装升级','回滚'])expect(screen.getByRole('button',{name})).toBeDisabled();
+  });
+  it('shows a container release beyond binary compatibility without enabling installation',async()=>{
+    const data=fixture();data.install_mode='container';data.install_enabled=false;data.latest!.compatible=false;show(data);
+    expect(await screen.findByText('通过容器更新')).toBeInTheDocument();
+    expect(screen.queryByText('当前平台不兼容')).not.toBeInTheDocument();
+    expect(screen.getByRole('button',{name:'检查更新'})).toBeEnabled();
+    for(const name of ['下载并校验','安装升级','回滚'])expect(screen.getByRole('button',{name})).toBeDisabled();
+  });
+  it('does not claim the latest version when the status API is unavailable',async()=>{
+    vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({error:{code:'unavailable',message:'版本状态暂不可用'}}),{status:503,headers:{'Content-Type':'application/json'}})));
+    const client=new QueryClient({defaultOptions:{queries:{retry:false}}});clients.push(client);
+    render(<QueryClientProvider client={client}><App><UpdatesPage/></App></QueryClientProvider>);
+    expect(await screen.findByText('版本状态暂不可用')).toBeInTheDocument();
+    expect(screen.queryByText('当前已是最新版本')).not.toBeInTheDocument();
+    expect(screen.getByRole('button',{name:'检查更新'})).toBeDisabled();
+  });
+  it('labels cached release information as a prior check after a status request fails',async()=>{
+    const data=fixture();data.latest!.available=false;data.latest!.latest_version=data.current.version;
+    data.state='idle';data.operation={id:'checked',state:'idle',kind:'check'};data.checked_at='2026-10-29T01:00:00Z';
+    vi.stubGlobal('fetch',vi.fn(async(url:RequestInfo|URL)=>new Response(JSON.stringify(String(url).endsWith('/history')?{history:[]}:{error:{message:'版本状态暂不可用'}}),{status:String(url).endsWith('/history')?200:503,headers:{'Content-Type':'application/json'}})));
+    const client=new QueryClient({defaultOptions:{queries:{retry:false}}});clients.push(client);
+    client.setQueryData(['admin-updates'],data);
+    render(<QueryClientProvider client={client}><App><UpdatesPage/></App></QueryClientProvider>);
+    expect(await screen.findByText('与服务暂时断开，正在重新连接')).toBeInTheDocument();
+    expect(screen.getByText('上次检查未发现新版本')).toBeInTheDocument();
+    expect(screen.getByText(/当前显示上次获取的信息，上次成功检查：/)).toBeInTheDocument();
+    expect(screen.queryByText('当前已是最新版本')).not.toBeInTheDocument();
+  });
   it('explains persisted EOF failures and a local version ahead of the release',async()=>{
     const data=fixture();data.current.version='1.3.0';data.latest!.available=false;
     data.state='failed';data.operation={id:'eof',state:'failed',error_code:'github_http_error',message:'Get https://api.github.com: EOF'};

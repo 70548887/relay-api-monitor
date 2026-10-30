@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = (('windows', 'amd64'), ('linux', 'amd64'), ('linux', 'arm64'))
 PROGRAMS = ('relaylab', 'relaylab-launcher')
-SCRIPT_NAMES = ('start.ps1', 'stop.ps1', 'process-common.ps1', 'backup.ps1', 'restore.ps1', 'start.sh')
+SCRIPT_NAMES = ('start.ps1', 'stop.ps1', 'process-common.ps1', 'backup.ps1', 'restore.ps1', 'start.sh', 'restore-docker.sh')
 DOCKER_RUNTIME_FILES = {
     'Dockerfile': 'deploy/docker/Dockerfile.release',
     'compose.yaml': 'deploy/docker/compose.release.yaml',
@@ -75,7 +75,7 @@ def package_files(root, goos, arch, binary_dir, local_names=False):
         files[name] = (root / name, 0o644)
     for name in SCRIPT_NAMES:
         files[f'scripts/{name}'] = (root / 'scripts' / name, 0o755 if name.endswith('.sh') else 0o644)
-    for name in ('UPDATES.md', 'RELEASE.md', 'DOCKER.md'):
+    for name in ('UPDATES.md', 'RELEASE.md', 'DOCKER.md', 'BACKUPS.md', 'BACKUP-VALIDATION.md', 'BACKUP-AUDIT.md', 'BACKUP-REPAIR.md'):
         files[f'docs/{name}'] = (root / 'docs' / name, 0o644)
     if goos == 'linux':
         # Complete Linux archives have binaries but no Go/React source tree.
@@ -147,7 +147,7 @@ def create_release(root, binary_dir, output, version, commit, build_time, target
         for name in names[-3:]:
             path = output / name
             assets.append(dict(name=name, os=goos, arch=arch, size=path.stat().st_size, sha256=digest(path)))
-    manifest = dict(version=version, commit=commit, build_time=build_time, launcher_protocol=2, usage_guard=1, database_schema=3, min_database_schema=1, assets=assets)
+    manifest = dict(version=version, commit=commit, build_time=build_time, launcher_protocol=2, usage_guard=1, database_schema=4, min_database_schema=1, assets=assets)
     atomic_write(output / 'manifest.json', (json.dumps(manifest, ensure_ascii=False, indent=2) + '\n').encode('utf-8'))
     names.append('manifest.json')
     atomic_write(output / 'SHA256SUMS', ''.join(f'{digest(output / name)}  {name}\n' for name in sorted(names)).encode('ascii'))
@@ -158,7 +158,7 @@ def create_release(root, binary_dir, output, version, commit, build_time, target
 def validate_release(output, version, targets=TARGETS):
     manifest = json.loads((output / 'manifest.json').read_text(encoding='utf-8'))
     validate_metadata(manifest['commit'], manifest['build_time'])
-    if manifest['version'] != version or manifest['launcher_protocol'] != 2 or manifest.get('usage_guard') != 1 or manifest['database_schema'] != 3 or manifest['min_database_schema'] != 1:
+    if manifest['version'] != version or manifest['launcher_protocol'] != 2 or manifest.get('usage_guard') != 1 or manifest['database_schema'] != 4 or manifest['min_database_schema'] != 1:
         raise ValueError('invalid release manifest compatibility contract')
     expected = {filename(program, goos, arch) for goos, arch in targets for program in PROGRAMS}
     expected |= {f'relaylab-{goos}-{arch}-{version}' + ('.zip' if goos == 'windows' else '.tar.gz') for goos, arch in targets}

@@ -2,7 +2,7 @@
 name: relaylab
 services:
   relaylab:
-    image: relay-api-monitor:${RELAYLAB_VERSION:-1.4.2}
+    image: relay-api-monitor:${RELAYLAB_VERSION:-1.5.0}
     build:
       context: .
       dockerfile: Dockerfile
@@ -14,7 +14,9 @@ services:
     environment:
       RELAYLAB_ADDR: 0.0.0.0:42783
       RELAYLAB_DATA_DIR: /var/lib/relaylab/data
-      RELAYLAB_UPDATE_ENABLED: "false"
+      RELAYLAB_UPDATE_ENABLED: "true"
+      RELAYLAB_UPDATE_INSTALL_MODE: container
+      RELAYLAB_UPDATE_CHECK_INTERVAL: "21600"
       RELAYLAB_PUBLIC_URL: ${RELAYLAB_PUBLIC_URL:-}
       RELAYLAB_UPSTREAM_DNS_OVER_HTTPS: ${RELAYLAB_UPSTREAM_DNS_OVER_HTTPS:-}
     volumes:

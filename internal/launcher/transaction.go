@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"relaylab/internal/backup"
+	"relaylab/internal/operationlock"
 	"relaylab/internal/update"
 )
 
@@ -212,6 +214,9 @@ func (s *Supervisor) Install(ctx context.Context, req InstallRequest) error {
 	return s.installLocked(ctx, t, false)
 }
 func (s *Supervisor) installLocked(ctx context.Context, t *Transaction, fromRestart bool) error {
+	if restore, err := s.restoreCurrent(); err != nil || (restore != nil && !restoreTerminal(restore.State)) {
+		return errors.New("launcher: data restore requires recovery")
+	}
 	req, target, e := s.validateInstall(ctx, t.Request)
 	if e != nil {
 		_ = s.phase(t, "failed", 0, e.Error(), "validation_failed")
@@ -233,6 +238,12 @@ func (s *Supervisor) installLocked(ctx context.Context, t *Transaction, fromRest
 	if req.DeferRestart && !fromRestart {
 		return s.phase(t, "pending_restart", 10, "Validated update will be installed on the next launcher start", "")
 	}
+	releaseOperation, lockErr := operationlock.Acquire(s.opts.DataDir)
+	if lockErr != nil {
+		_ = s.phase(t, "failed", 0, "Another data operation is active", "operation_busy")
+		return lockErr
+	}
+	defer releaseOperation()
 	t.OldMetadata = current
 	if e = s.phase(t, "draining", 15, "Waiting for both children to acknowledge maintenance and finish active work", ""); e != nil {
 		return e
@@ -280,7 +291,12 @@ func (s *Supervisor) installLocked(ctx context.Context, t *Transaction, fromRest
 	if e = atomicWrite(filepath.Join(opdir, "binary.json"), append(b, '\n'), 0600); e != nil {
 		return failOffline(e)
 	}
-	if e = s.runDataCommand(ctx, t.OldBinary, "backup", "--data-dir", s.opts.DataDir, "--output", t.Snapshot); e != nil {
+	if current.DatabaseSchema >= 4 {
+		e = backup.Create(ctx, s.opts.DataDir, t.Snapshot, backup.Options{Legacy: true, Version: current.Version, Commit: current.Commit, Schema: current.DatabaseSchema})
+	} else {
+		e = s.runDataCommand(ctx, t.OldBinary, "backup", "--data-dir", s.opts.DataDir, "--output", t.Snapshot)
+	}
+	if e != nil {
 		return failOffline(e)
 	}
 	if e = protectFile(t.Snapshot); e != nil {
@@ -437,9 +453,18 @@ func (s *Supervisor) restoreTransaction(ctx context.Context, t *Transaction, cau
 		if e = protectDirectory(temp); e != nil {
 			return e
 		}
-		// Restore validates the archive/key/database in a fresh directory. It does
-		// not replace updates, backups, control state or the journal itself.
-		if e = s.runDataCommand(ctx, t.OldBinary, "restore", "--input", t.Snapshot, "--data-dir", temp); e != nil {
+		// Upgrade failure restores the exact pre-upgrade snapshot behind the
+		// fence. User-requested data recovery additionally invalidates sessions
+		// and old queues, and must not be reused for this precise rollback.
+		sourceDir := temp
+		if t.OldMetadata.DatabaseSchema >= 4 {
+			validated, err := backup.Validate(ctx, t.Snapshot, "", temp)
+			if err != nil {
+				return err
+			}
+			defer validated.Close()
+			sourceDir = validated.Dir
+		} else if e = s.runDataCommand(ctx, t.OldBinary, "restore", "--input", t.Snapshot, "--data-dir", temp); e != nil {
 			return e
 		}
 		for _, name := range []string{"relaylab.db-wal", "relaylab.db-shm"} {
@@ -448,7 +473,7 @@ func (s *Supervisor) restoreTransaction(ctx context.Context, t *Transaction, cau
 			}
 		}
 		for _, name := range []string{"relaylab.db", "master.key"} {
-			if e = replaceFile(filepath.Join(temp, name), filepath.Join(s.opts.DataDir, name)); e != nil {
+			if e = replaceFile(filepath.Join(sourceDir, name), filepath.Join(s.opts.DataDir, name)); e != nil {
 				return e
 			}
 		}
@@ -507,12 +532,22 @@ func (s *Supervisor) Recover(ctx context.Context) error {
 	defer s.transactionMu.Unlock()
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
+	if handled, err := s.recoverRestore(ctx); handled || err != nil {
+		return err
+	}
 	t := s.transactionCopy()
 	if t == nil {
 		if e := s.quiesceOrphans(ctx); e != nil {
 			return e
 		}
 		return s.resumeLocked()
+	}
+	if t.State != "pending_restart" && t.State != "succeeded" && t.State != "rolled_back" && !(t.State == "failed" && !t.BinaryChanged) {
+		release, err := operationlock.Acquire(s.opts.DataDir)
+		if err != nil {
+			return err
+		}
+		defer release()
 	}
 	switch t.State {
 	case "succeeded", "rolled_back":

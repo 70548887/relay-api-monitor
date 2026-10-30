@@ -31,7 +31,7 @@ const (
 	maxReleaseBody          = 4 << 20
 	maxDownloadSize         = 2 << 30
 	LauncherProtocol        = 2
-	DatabaseSchema          = 3
+	DatabaseSchema          = 4
 	RequiredUsageGuard      = 1
 	metadataRequestTimeout  = 2 * time.Minute
 	artifactDownloadTimeout = 15 * time.Minute
@@ -44,6 +44,7 @@ var urlPattern = regexp.MustCompile(`https?://[^\s<>"']+`)
 var bearerPattern = regexp.MustCompile(`(?i)(bearer\s+)[^\s,;]+`)
 var (
 	ErrDisabled            = errors.New("update: updater is disabled")
+	ErrContainerManaged    = errors.New("update: container deployments must be upgraded by recreating the container")
 	ErrNoRelease           = errors.New("update: no compatible release found")
 	ErrBusy                = errors.New("update: another operation is active")
 	ErrApplyUnavailable    = errors.New("update: launcher protocol 2 is required; manually upgrade a 1.2.1 launcher before applying")
@@ -104,6 +105,7 @@ type UpdateInfo struct {
 }
 type Operation struct {
 	ID              string    `json:"id"`
+	Kind            string    `json:"kind,omitempty"`
 	State           string    `json:"state"`
 	Version         string    `json:"version,omitempty"`
 	Progress        int       `json:"progress"`
@@ -124,13 +126,15 @@ type HistoryEntry struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 type Snapshot struct {
-	Enabled    bool        `json:"enabled"`
-	Repository string      `json:"repository"`
-	Current    BuildInfo   `json:"current"`
-	Latest     *UpdateInfo `json:"latest,omitempty"`
-	Release    *Release    `json:"release,omitempty"`
-	State      string      `json:"state"`
-	Operation  *Operation  `json:"operation,omitempty"`
+	Enabled        bool        `json:"enabled"`
+	InstallEnabled bool        `json:"install_enabled"`
+	InstallMode    string      `json:"install_mode"`
+	Repository     string      `json:"repository"`
+	Current        BuildInfo   `json:"current"`
+	Latest         *UpdateInfo `json:"latest,omitempty"`
+	Release        *Release    `json:"release,omitempty"`
+	State          string      `json:"state"`
+	Operation      *Operation  `json:"operation,omitempty"`
 	// Kept for Go callers; local filesystem paths are never serialized.
 	StagedPath string         `json:"-"`
 	History    []HistoryEntry `json:"history"`
@@ -162,11 +166,12 @@ type LauncherStatus struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 type Manager struct {
-	mu      sync.Mutex
-	cfg     config.UpdateConfig
-	dataDir string
-	build   BuildInfo
-	client  *http.Client
+	operationMu sync.Mutex
+	mu          sync.Mutex
+	cfg         config.UpdateConfig
+	dataDir     string
+	build       BuildInfo
+	client      *http.Client
 	// apiBase is package-private and used only by in-process HTTP tests.
 	apiBase        string
 	state          stateJournal
@@ -178,6 +183,13 @@ type Manager struct {
 }
 
 func New(cfg config.UpdateConfig, dataDir string, build BuildInfo) (*Manager, error) {
+	switch cfg.InstallMode {
+	case "":
+		cfg.InstallMode = "binary"
+	case "binary", "container":
+	default:
+		return nil, errors.New("update: install mode must be binary or container")
+	}
 	if dataDir == "" {
 		return nil, errors.New("update: data directory is required")
 	}
@@ -225,6 +237,21 @@ func (m *Manager) SetRollbackWithID(fn func(context.Context, string) error) {
 	m.rollbackWithID = fn
 }
 func (m *Manager) Config() config.UpdateConfig { m.mu.Lock(); defer m.mu.Unlock(); return m.cfg }
+func (m *Manager) CanInstall() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.cfg.AllowsInstall()
+}
+
+func (m *Manager) installErrorLocked() error {
+	if !m.cfg.Enabled {
+		return ErrDisabled
+	}
+	if !m.cfg.AllowsInstall() {
+		return ErrContainerManaged
+	}
+	return nil
+}
 func (m *Manager) Snapshot() Snapshot {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -232,7 +259,7 @@ func (m *Manager) Snapshot() Snapshot {
 	return m.snapshotLocked()
 }
 
-func (m *Manager) beginLocked(state, version string) error {
+func (m *Manager) beginLocked(kind, state, version string) error {
 	m.readLauncherLocked()
 	if !m.cfg.Enabled {
 		return ErrDisabled
@@ -256,7 +283,7 @@ func (m *Manager) beginLocked(state, version string) error {
 		}
 	}
 	now := time.Now().UTC()
-	m.state.Operation = &Operation{ID: randomID(), State: state, Version: version, StartedAt: now, UpdatedAt: now}
+	m.state.Operation = &Operation{ID: randomID(), Kind: kind, State: state, Version: version, StartedAt: now, UpdatedAt: now}
 	m.state.State = state
 	m.state.LauncherOperationID = ""
 	m.launcher = nil
@@ -271,7 +298,7 @@ func (m *Manager) beginLocked(state, version string) error {
 }
 func (m *Manager) Check(ctx context.Context) (Snapshot, error) {
 	m.mu.Lock()
-	if err := m.beginLocked("checking", ""); err != nil {
+	if err := m.beginLocked("check", "checking", ""); err != nil {
 		out := m.snapshotLocked()
 		m.mu.Unlock()
 		return out, err
@@ -287,7 +314,7 @@ func (m *Manager) Check(ctx context.Context) (Snapshot, error) {
 	now := time.Now().UTC()
 	m.state.CheckedAt = &now
 	asset, ok := selectAsset(rel.Assets, runtime.GOOS, runtime.GOARCH)
-	if !ok {
+	if !ok && m.cfg.InstallMode != "container" {
 		return m.finishErrorLocked(ErrNoRelease)
 	}
 	info := makeInfo(m.build, rel, asset)
@@ -317,7 +344,12 @@ func (m *Manager) Check(ctx context.Context) (Snapshot, error) {
 }
 func (m *Manager) Download(ctx context.Context) (Snapshot, error) {
 	m.mu.Lock()
-	if err := m.beginLocked("downloading", ""); err != nil {
+	if err := m.installErrorLocked(); err != nil {
+		out := m.snapshotLocked()
+		m.mu.Unlock()
+		return out, err
+	}
+	if err := m.beginLocked("download", "downloading", ""); err != nil {
 		out := m.snapshotLocked()
 		m.mu.Unlock()
 		return out, err
@@ -487,10 +519,10 @@ func (p *downloadProgress) Write(b []byte) (int, error) {
 }
 func (m *Manager) Apply(ctx context.Context) (Snapshot, error) {
 	m.mu.Lock()
-	if !m.cfg.Enabled {
+	if err := m.installErrorLocked(); err != nil {
 		out := m.snapshotLocked()
 		m.mu.Unlock()
-		return out, ErrDisabled
+		return out, err
 	}
 	m.readLauncherLocked()
 	if m.busy || m.launcherActiveLocked() || isActiveState(m.effectiveStateLocked()) {
@@ -509,7 +541,7 @@ func (m *Manager) Apply(ctx context.Context) (Snapshot, error) {
 		return out, ErrApplyUnavailable
 	}
 	path, info, fn := m.state.StagedPath, *m.state.Latest, m.applier
-	if err := m.beginLocked("validating", info.LatestVersion); err != nil {
+	if err := m.beginLocked("apply", "validating", info.LatestVersion); err != nil {
 		out := m.snapshotLocked()
 		m.mu.Unlock()
 		return out, err
@@ -548,10 +580,10 @@ func (m *Manager) Apply(ctx context.Context) (Snapshot, error) {
 }
 func (m *Manager) Rollback(ctx context.Context) (Snapshot, error) {
 	m.mu.Lock()
-	if !m.cfg.Enabled {
+	if err := m.installErrorLocked(); err != nil {
 		out := m.snapshotLocked()
 		m.mu.Unlock()
-		return out, ErrDisabled
+		return out, err
 	}
 	m.readLauncherLocked()
 	if m.busy || m.launcherActiveLocked() || isActiveState(m.effectiveStateLocked()) {
@@ -564,7 +596,7 @@ func (m *Manager) Rollback(ctx context.Context) (Snapshot, error) {
 		m.mu.Unlock()
 		return out, ErrRollbackUnavailable
 	}
-	if err := m.beginLocked("validating", ""); err != nil {
+	if err := m.beginLocked("rollback", "validating", ""); err != nil {
 		out := m.snapshotLocked()
 		m.mu.Unlock()
 		return out, err
@@ -674,7 +706,12 @@ func makeInfo(build BuildInfo, rel Release, asset Asset) UpdateInfo {
 		v := rel.PublishedAt
 		published = &v
 	}
-	return UpdateInfo{CurrentVersion: build.Version, LatestVersion: rel.TagName, ReleaseURL: rel.URL, PublishedAt: published, AssetName: asset.Name, AssetSize: asset.Size, SHA256: asset.SHA256, Compatible: true, Available: isNewer(rel.TagName, build.Version), Notes: rel.Body, Commit: rel.Commit, LauncherProtocol: rel.LauncherProtocol, UsageGuard: rel.UsageGuard, DatabaseSchema: rel.DatabaseSchema, MinDatabaseSchema: rel.MinDatabaseSchema}
+	available := isNewer(rel.TagName, build.Version)
+	compatible := asset.Name != "" && rel.LauncherProtocol == LauncherProtocol && rel.UsageGuard >= 0 && rel.UsageGuard <= RequiredUsageGuard && rel.DatabaseSchema > 0 && rel.MinDatabaseSchema > 0 && rel.MinDatabaseSchema <= rel.DatabaseSchema
+	if available {
+		compatible = compatible && rel.UsageGuard == RequiredUsageGuard && rel.DatabaseSchema >= DatabaseSchema && rel.MinDatabaseSchema <= DatabaseSchema
+	}
+	return UpdateInfo{CurrentVersion: build.Version, LatestVersion: rel.TagName, ReleaseURL: rel.URL, PublishedAt: published, AssetName: asset.Name, AssetSize: asset.Size, SHA256: asset.SHA256, Compatible: compatible, Available: available, Notes: rel.Body, Commit: rel.Commit, LauncherProtocol: rel.LauncherProtocol, UsageGuard: rel.UsageGuard, DatabaseSchema: rel.DatabaseSchema, MinDatabaseSchema: rel.MinDatabaseSchema}
 }
 func randomID() string {
 	var b [16]byte
@@ -700,7 +737,7 @@ func (m *Manager) safeError(err error) error {
 	if err == nil {
 		return nil
 	}
-	for _, known := range []error{ErrDisabled, ErrNoRelease, ErrBusy, ErrApplyUnavailable, ErrRollbackUnavailable, ErrStateDurability, ErrReleaseChanged} {
+	for _, known := range []error{ErrDisabled, ErrContainerManaged, ErrNoRelease, ErrBusy, ErrApplyUnavailable, ErrRollbackUnavailable, ErrStateDurability, ErrReleaseChanged} {
 		if errors.Is(err, known) {
 			return known
 		}
@@ -743,6 +780,8 @@ func classifyError(err error) string {
 		return ""
 	}
 	switch {
+	case errors.Is(err, ErrContainerManaged):
+		return "update_container_managed"
 	case errors.Is(err, ErrBusy):
 		return "operation_busy"
 	case errors.Is(err, ErrStateDurability):

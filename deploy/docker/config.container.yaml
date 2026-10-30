@@ -3,10 +3,11 @@ server:
   address: "0.0.0.0:42783"
   data_dir: "/var/lib/relaylab/data"
 update:
-  enabled: false
+  enabled: true
+  install_mode: container
   auto_download: false
   auto_restart: false
-  check_interval: 0
+  check_interval: 21600
   github_owner: "70548887"
   github_repo: "relay-api-monitor"
   backup_dir: "/var/lib/relaylab/backups"

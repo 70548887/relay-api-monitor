@@ -14,11 +14,14 @@ upstream:
 # ========== 服务端自更新配置 ==========
 update:
   enabled: true
+  # binary permits installation through the launcher; container only checks releases.
+  install_mode: binary
   github_owner: "70548887"
   github_repo: "relay-api-monitor"
   # Keep credentials outside this file in production.
   github_token: "${RELAYLAB_UPDATE_GITHUB_TOKEN}"
-  check_interval: 0
+  # Check at startup and every 6 hours. Set 0 to check manually only.
+  check_interval: 21600
   proxy: "${RELAYLAB_UPDATE_PROXY}"
   auto_download: false
   auto_restart: true

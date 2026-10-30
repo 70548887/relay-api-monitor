@@ -1,7 +1,6 @@
 package main
 
 import (
-	"archive/zip"
 	"bufio"
 	"context"
 	"encoding/json"
@@ -18,9 +17,13 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	_ "time/tzdata" // Standalone Windows builds must resolve schedule timezones without a Go installation.
 
 	"golang.org/x/term"
+	backupcore "relaylab/internal/backup"
+	"relaylab/internal/backups"
 	"relaylab/internal/config"
+	"relaylab/internal/operationlock"
 	"relaylab/internal/runtimecontrol"
 	"relaylab/internal/security"
 	"relaylab/internal/server"
@@ -35,17 +38,27 @@ var commit = "unknown"
 var buildTime = "unknown"
 
 type automaticUpdater interface {
+	TryReserveOperation() (func(), bool)
 	Check(context.Context) (update.Snapshot, error)
 	Download(context.Context) (update.Snapshot, error)
 	Config() config.UpdateConfig
 }
 
 func runAutomaticCheck(ctx context.Context, manager automaticUpdater) {
+	cfg := manager.Config()
+	if ctx.Err() != nil || !cfg.Enabled {
+		return
+	}
+	release, reserved := manager.TryReserveOperation()
+	if !reserved {
+		return
+	}
+	defer release()
 	snapshot, err := manager.Check(ctx)
 	if err != nil {
 		return
 	}
-	if manager.Config().AutoDownload && snapshot.State == "available" && snapshot.Latest != nil && snapshot.Latest.Available && snapshot.Latest.Compatible {
+	if cfg.AutoDownload && cfg.AllowsInstall() && snapshot.State == "available" && snapshot.Latest != nil && snapshot.Latest.Available && snapshot.Latest.Compatible {
 		_, _ = manager.Download(ctx)
 	}
 }
@@ -57,10 +70,11 @@ func main() {
 	}
 }
 
-func runUpdateChecks(ctx context.Context, manager *update.Manager, interval time.Duration) {
-	if interval <= 0 || manager == nil {
+func runUpdateChecks(ctx context.Context, manager automaticUpdater, interval time.Duration) {
+	if interval <= 0 || manager == nil || ctx.Err() != nil {
 		return
 	}
+	runAutomaticCheck(ctx, manager)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -74,7 +88,7 @@ func runUpdateChecks(ctx context.Context, manager *update.Manager, interval time
 }
 
 func buildMetadata() runtimecontrol.Build {
-	return runtimecontrol.Build{Version: version, Commit: commit, BuildTime: buildTime, OS: runtime.GOOS, Arch: runtime.GOARCH, LauncherProtocol: runtimecontrol.Protocol, DatabaseSchema: 3, MinDatabaseSchema: 1, UsageGuard: 1}
+	return runtimecontrol.Build{Version: version, Commit: commit, BuildTime: buildTime, OS: runtime.GOOS, Arch: runtime.GOARCH, LauncherProtocol: runtimecontrol.Protocol, DatabaseSchema: 4, MinDatabaseSchema: 1, UsageGuard: 1}
 }
 
 func run(args []string) error {
@@ -83,7 +97,7 @@ func run(args []string) error {
 		processStartedAt = stamp
 	}
 	if len(args) == 0 {
-		fmt.Println("Relay Lab — 中转 API 监控与模型测试\n命令: serve | worker | init-admin | backup | restore | version\n运行 scripts/start.ps1 启动网站和任务进程。")
+		fmt.Println("Relay Lab — 中转 API 监控与模型测试\n命令: serve | worker | init-admin | backup | verify-backup | restore | version\n运行 scripts/start.ps1 启动网站和任务进程。")
 		return nil
 	}
 	if args[0] == "version" {
@@ -95,6 +109,9 @@ func run(args []string) error {
 		}
 		fmt.Println(version)
 		return nil
+	}
+	if args[0] == "verify-backup" {
+		return runVerifyBackup(args[1:])
 	}
 	switch args[0] {
 	case "serve", "worker", "init-admin", "backup", "restore":
@@ -111,7 +128,9 @@ func run(args []string) error {
 	flags.StringVar(&publicURLArg, "public-url", publicURLArg, "外部访问 HTTP/HTTPS 源地址，用于反代同源验证")
 	flags.StringVar(&configPath, "config", configPath, "YAML 配置文件")
 	output := flags.String("output", "", "备份 ZIP 输出路径")
-	input := flags.String("input", "", "恢复 ZIP 路径")
+	input := flags.String("input", "", "恢复 ZIP 或加密备份路径")
+	recipient := flags.String("recipient", "", "加密备份的 age 恢复公钥（省略保持兼容 ZIP）")
+	identityFile := flags.String("identity-file", "", "恢复私钥文件，仅用于加密备份")
 	username := flags.String("username", "admin", "管理员账号")
 	if e := flags.Parse(args[1:]); e != nil {
 		return e
@@ -142,7 +161,16 @@ func run(args []string) error {
 	}
 	cfg.DataDir = abs
 	if args[0] == "restore" {
-		return restore(cfg.DataDir, *input)
+		return restoreWithIdentity(cfg.DataDir, *input, *identityFile)
+	}
+	if args[0] == "backup" {
+		// Lock before opening the vault/database, and release only after the DB
+		// defer closes: an installer must never replace files under this handle.
+		releaseBackup, lockErr := operationlock.Acquire(cfg.DataDir)
+		if lockErr != nil {
+			return lockErr
+		}
+		defer releaseBackup()
 	}
 	if args[0] == "serve" || args[0] == "worker" {
 		releaseUsage, guardErr := runtimecontrol.AcquireUsage(cfg.DataDir, args[0])
@@ -268,6 +296,14 @@ func run(args []string) error {
 			return e
 		}
 		app.SetMaintenanceFile(filepath.Join(cfg.DataDir, "maintenance.request"))
+		backupManager, backupErr := backups.New(backups.Options{Store: st, Vault: vault, DataDir: cfg.DataDir, BackupDir: operationlock.BackupRoot(cfg.DataDir), BuildVersion: version, Commit: commit, Enter: app.EnterBackupActivity, AllowedStorageHosts: strings.FieldsFunc(os.Getenv("RELAYLAB_BACKUP_ALLOWED_STORAGE_HOSTS"), func(r rune) bool { return r == ',' || r == ';' })})
+		if backupErr != nil {
+			return backupErr
+		}
+		app.ConfigureBackups(ctx, backupManager, cfg.DataDir)
+		wireLauncherRestore(app)
+		backupManager.Start(ctx)
+		defer backupManager.Close()
 		if e = app.StartPrivateTestMaintenance(ctx); e != nil {
 			return e
 		}
@@ -306,243 +342,72 @@ func run(args []string) error {
 		}
 		return err
 	case "backup":
-		return backup(ctx, st, cfg.DataDir, *output)
+		return writeBackup(ctx, st, cfg.DataDir, *output, *recipient)
 	default:
 		return fmt.Errorf("未知命令 %q", args[0])
 	}
 }
 
 func backup(ctx context.Context, st *store.Store, dataDir, out string) error {
+	return backupWithOptions(ctx, st, dataDir, out, "")
+}
+
+func backupWithOptions(ctx context.Context, st *store.Store, dataDir, out, recipient string) error {
+	release, err := operationlock.Acquire(dataDir)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return writeBackup(ctx, st, dataDir, out, recipient)
+}
+
+func writeBackup(ctx context.Context, st *store.Store, dataDir, out, recipient string) error {
 	if out == "" {
-		out = filepath.Join("backups", "relaylab-"+time.Now().Format("20060102-150405")+".zip")
-	}
-	out, e := filepath.Abs(out)
-	if e != nil {
-		return e
-	}
-	if e = os.MkdirAll(filepath.Dir(out), 0700); e != nil {
-		return e
-	}
-	temp, e := os.MkdirTemp("", "relaylab-backup-")
-	if e != nil {
-		return e
-	}
-	defer os.RemoveAll(temp)
-	if e = security.ProtectDirectory(temp); e != nil {
-		return e
-	}
-	db := filepath.Join(temp, "relaylab.db")
-	if e = st.Backup(ctx, db); e != nil {
-		return e
-	}
-	key, e := os.ReadFile(filepath.Join(dataDir, "master.key"))
-	if e != nil {
-		return e
-	}
-	f, e := os.OpenFile(out, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if e != nil {
-		return e
-	}
-	if e = security.ProtectFile(out); e != nil {
-		f.Close()
-		os.Remove(out)
-		return e
-	}
-	zw := zip.NewWriter(f)
-	success := false
-	defer func() {
-		_ = zw.Close()
-		_ = f.Close()
-		if !success {
-			_ = os.Remove(out)
+		ext := ".zip"
+		if recipient != "" {
+			ext += ".age"
 		}
-	}()
-	for _, item := range []struct {
-		name string
-		data []byte
-	}{{"master.key", key}} {
-		w, e := zw.Create(item.name)
-		if e != nil {
-			return e
-		}
-		if _, e = w.Write(item.data); e != nil {
-			return e
-		}
+		out = filepath.Join(filepath.Dir(dataDir), "backups", "relaylab-"+time.Now().UTC().Format("20060102T150405Z")+ext)
 	}
-	w, e := zw.Create("relaylab.db")
-	if e != nil {
-		return e
+	if err := backupcore.CreateFromStore(ctx, st, dataDir, out, backupcore.Options{Recipient: recipient, Version: version, Commit: commit, Legacy: recipient == ""}); err != nil {
+		return err
 	}
-	df, e := os.Open(db)
-	if e != nil {
-		return e
-	}
-	_, e = io.Copy(w, df)
-	_ = df.Close()
-	if e != nil {
-		return e
-	}
-	meta, _ := json.Marshal(map[string]any{"version": version, "created_at": time.Now().UTC(), "schema": 1})
-	w, e = zw.Create("manifest.json")
-	if e != nil {
-		return e
-	}
-	if _, e = w.Write(meta); e != nil {
-		return e
-	}
-	if e = zw.Close(); e != nil {
-		return e
-	}
-	if e = f.Sync(); e != nil {
-		return e
-	}
-	if e = f.Close(); e != nil {
-		return e
-	}
-	success = true
 	fmt.Println("备份完成：" + out)
 	return nil
 }
+
 func restore(dataDir, input string) error {
-	if input == "" {
-		return errors.New("请使用 --input 指定备份 ZIP")
-	}
-	if _, e := os.Stat(dataDir); e == nil {
-		entries, e := os.ReadDir(dataDir)
-		if e != nil {
-			return e
+	return restoreWithIdentity(dataDir, input, "")
+}
+
+func restoreWithIdentity(dataDir, input, identityFile string) error {
+	identity := ""
+	if identityFile != "" {
+		info, err := os.Lstat(identityFile)
+		if err != nil {
+			return err
 		}
-		if len(entries) > 0 {
-			return errors.New("恢复目标目录必须为空；请选择新的数据目录")
+		if !info.Mode().IsRegular() || info.Size() > 4096 {
+			return errors.New("恢复私钥文件无效")
 		}
-	} else if !os.IsNotExist(e) {
-		return e
-	}
-	zr, e := zip.OpenReader(input)
-	if e != nil {
-		return e
-	}
-	defer zr.Close()
-	parent := filepath.Dir(dataDir)
-	if e = os.MkdirAll(parent, 0700); e != nil {
-		return e
-	}
-	temp, e := os.MkdirTemp(parent, ".relaylab-restore-")
-	if e != nil {
-		return e
-	}
-	defer os.RemoveAll(temp)
-	if e = security.ProtectDirectory(temp); e != nil {
-		return e
-	}
-	seen := map[string]bool{}
-	for _, f := range zr.File {
-		if f.Name != "relaylab.db" && f.Name != "master.key" && f.Name != "manifest.json" {
-			return errors.New("备份包含未知文件")
+		secret, err := os.ReadFile(identityFile)
+		if err != nil {
+			return err
 		}
-		if seen[f.Name] {
-			return errors.New("备份包含重复文件")
-		}
-		seen[f.Name] = true
-		if f.FileInfo().IsDir() || f.Mode()&os.ModeSymlink != 0 {
-			return errors.New("备份成员必须为普通文件")
-		}
-		limit := int64(2 << 30)
-		switch f.Name {
-		case "master.key":
-			limit = 32
-			if f.UncompressedSize64 != 32 {
-				return errors.New("备份主密钥必须为32字节")
+		defer clear(secret)
+		for _, line := range strings.Split(string(secret), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
 			}
-		case "manifest.json":
-			limit = 64 << 10
-		}
-		if f.UncompressedSize64 > uint64(limit) {
-			return errors.New("备份成员超过大小限制")
-		}
-		r, e := f.Open()
-		if e != nil {
-			return e
-		}
-		dest, e := os.OpenFile(filepath.Join(temp, f.Name), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-		if e != nil {
-			r.Close()
-			return e
-		}
-		var copied int64
-		copied, e = io.Copy(dest, io.LimitReader(r, limit+1))
-		if e == nil && (copied > limit || uint64(copied) != f.UncompressedSize64) {
-			e = errors.New("备份成员实际长度与声明不符")
-		}
-		if syncErr := dest.Sync(); e == nil {
-			e = syncErr
-		}
-		if closeErr := r.Close(); e == nil {
-			e = closeErr
-		}
-		if closeErr := dest.Close(); e == nil {
-			e = closeErr
-		}
-		if e != nil {
-			return e
-		}
-	}
-	if !seen["relaylab.db"] || !seen["master.key"] {
-		return errors.New("备份缺少数据库或主密钥")
-	}
-	if seen["manifest.json"] {
-		manifest, readErr := os.ReadFile(filepath.Join(temp, "manifest.json"))
-		if readErr != nil {
-			return readErr
-		}
-		var meta struct {
-			Schema int `json:"schema"`
-		}
-		if readErr = json.Unmarshal(manifest, &meta); readErr != nil || meta.Schema != 1 {
-			return errors.New("备份格式版本不受支持")
-		}
-	}
-	v, e := security.LoadVault(temp, true)
-	if e != nil {
-		return e
-	}
-	st, e := store.OpenForRestore(filepath.Join(temp, "relaylab.db"))
-	if e != nil {
-		return e
-	}
-	ch, e := st.ListChannels(context.Background())
-	if e == nil {
-		for _, c := range ch {
-			if c.EncryptedKey != "" {
-				if _, e = v.Decrypt(c.EncryptedKey); e != nil {
-					break
-				}
+			if identity != "" {
+				return errors.New("恢复私钥文件只能包含一个私钥")
 			}
+			identity = line
 		}
 	}
-	if e == nil {
-		e = validateUserConnectionKeys(st, v)
-	}
-	if e == nil {
-		var message string
-		e = st.DB.QueryRow("PRAGMA integrity_check").Scan(&message)
-		if e == nil && message != "ok" {
-			e = errors.New("数据库完整性校验失败")
-		}
-	}
-	st.Close()
-	if e != nil {
-		return e
-	}
-	if _, statErr := os.Stat(dataDir); statErr == nil {
-		// Remove only the already validated empty directory; a concurrent write
-		// makes this fail rather than deleting any user data.
-		if e = os.Remove(dataDir); e != nil {
-			return e
-		}
-	}
-	if e = os.Rename(temp, dataDir); e != nil {
-		return e
+	if err := backupcore.Restore(context.Background(), dataDir, input, identity); err != nil {
+		return err
 	}
 	fmt.Println("恢复完成：" + dataDir)
 	return nil

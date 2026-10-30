@@ -76,6 +76,21 @@ func (s *Server) startUpdateOperation(c *gin.Context, action string) {
 		updateError(c, update.ErrDisabled)
 		return
 	}
+	if action != "check" && !m.CanInstall() {
+		updateError(c, update.ErrContainerManaged)
+		return
+	}
+	release, reserved := m.TryReserveOperation()
+	if !reserved {
+		updateError(c, update.ErrBusy)
+		return
+	}
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			release()
+		}
+	}()
 	snapshot := m.Snapshot()
 	switch snapshot.State {
 	case "accepted", "checking", "downloading", "draining", "stopping", "stopped", "backing_up", "backed_up", "replacing", "starting", "validating", "rolling_back", "recovering", "recovery_required", "pending_restart":
@@ -99,6 +114,7 @@ func (s *Server) startUpdateOperation(c *gin.Context, action string) {
 		parent = context.Background()
 	}
 	go func() {
+		defer release()
 		defer s.updateBusy.Store(false)
 		ctx, cancel := context.WithTimeout(parent, 15*time.Minute)
 		defer cancel()
@@ -113,6 +129,7 @@ func (s *Server) startUpdateOperation(c *gin.Context, action string) {
 			_, _ = m.Rollback(ctx)
 		}
 	}()
+	handedOff = true
 	c.JSON(http.StatusAccepted, s.updateSnapshot(c.Request.Context(), m))
 }
 
@@ -123,6 +140,8 @@ func updateError(c *gin.Context, err error) {
 		status, code, message = http.StatusConflict, "update_busy", "已有升级操作正在执行"
 	case errors.Is(err, update.ErrDisabled):
 		status, code, message = http.StatusNotImplemented, "update_disabled", "在线升级未启用"
+	case errors.Is(err, update.ErrContainerManaged):
+		status, code, message = http.StatusConflict, "update_container_managed", "Docker 部署支持检查新版本；请在宝塔重新构建并创建容器以完成升级，保留原有数据卷"
 	case errors.Is(err, update.ErrApplyUnavailable):
 		status, code, message = http.StatusConflict, "launcher_required", "升级包已就绪，需要启动器执行替换和重启"
 	case errors.Is(err, update.ErrRollbackUnavailable):

@@ -2,10 +2,13 @@ import { useSyncExternalStore } from 'react';
 import type { Session } from './types';
 let session:Session|null=null;
 let sessionVersion=0;
+let sessionIdentityVersion=0;
 const listeners=new Set<()=>void>();
 const clearListeners=new Set<()=>void>();
 export function onSessionCleared(callback:()=>void){clearListeners.add(callback);return()=>clearListeners.delete(callback)}
-export function setSession(next:Session|null){const cleared=!!session&&!next;sessionVersion++;session=next;if(cleared)clearListeners.forEach(fn=>fn());listeners.forEach(fn=>fn())}
+/** A request may finish after logout or another login; ordinary session refreshes keep this guard valid. */
+export function captureSessionGuard(){const version=sessionIdentityVersion;return()=>version===sessionIdentityVersion}
+export function setSession(next:Session|null){const cleared=!!session&&!next;if(session?.user.id!==next?.user.id||session?.csrf_token!==next?.csrf_token)sessionIdentityVersion++;sessionVersion++;session=next;if(cleared)clearListeners.forEach(fn=>fn());listeners.forEach(fn=>fn())}
 export async function refreshSession(signal?:AbortSignal){const version=sessionVersion;const data=await api<Session>('/auth/me',{signal});if(version===sessionVersion&&!signal?.aborted)setSession(data);return data}
 export const useSession=()=>useSyncExternalStore(callback=>{listeners.add(callback);return()=>listeners.delete(callback)},()=>session);
 export class APIError extends Error {constructor(public status:number,public code:string,message:string){super(message)}}
