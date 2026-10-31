@@ -6,6 +6,7 @@ server:
   public_url: ""
 
 # Optional DNS-over-HTTPS JSON resolver for proxy Fake-IP environments.
+# Shared by model requests and backup S3/R2 connections; no implicit proxy use.
 # Only synthetic DNS answers use this fallback; private addresses remain blocked.
 # Example: https://1.1.1.1/dns-query (only domain/type are sent; no API keys).
 upstream:

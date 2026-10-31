@@ -1049,10 +1049,31 @@
             "format": "date-time",
             "type": "string"
           },
+          "cleanup_error_code": {
+            "type": "string"
+          },
+          "cleanup_message": {
+            "type": "string"
+          },
+          "duration_ms": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "error_code": {
+            "type": "string"
+          },
+          "http_status": {
+            "description": "上游HTTP状态，不是本地登录状态",
+            "type": "integer"
+          },
           "message": {
             "type": "string"
           },
           "operation": {
+            "type": "string"
+          },
+          "stage": {
             "type": "string"
           },
           "status": {
@@ -1099,6 +1120,112 @@
         "required": [
           "endpoint",
           "bucket"
+        ],
+        "type": "object"
+      },
+      "BackupStorageTestError": {
+        "properties": {
+          "error": {
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "type": "object"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "result": {
+            "$ref": "#/components/schemas/BackupStorageTestResult"
+          }
+        },
+        "required": [
+          "error",
+          "request_id",
+          "result"
+        ],
+        "type": "object"
+      },
+      "BackupStorageTestResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result": {
+            "$ref": "#/components/schemas/BackupStorageTestResult"
+          }
+        },
+        "required": [
+          "ok",
+          "result"
+        ],
+        "type": "object"
+      },
+      "BackupStorageTestResult": {
+        "properties": {
+          "cleanup_error_code": {
+            "type": "string"
+          },
+          "cleanup_message": {
+            "type": "string"
+          },
+          "duration_ms": {
+            "type": "integer"
+          },
+          "error_code": {
+            "type": "string"
+          },
+          "http_status": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "description": "服务端生成的诊断编号，可关联运行日志和审计，不含凭据",
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "storage_id": {
+            "description": "仅saved时提供，绑定测试开始时实际使用的存储修订",
+            "type": "string"
+          },
+          "storage_revision": {
+            "description": "仅saved时提供；旧修订结果不代表当前配置已验证",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "test_scope": {
+            "description": "服务端精确比较配置和凭据确定的测试归属；不以浏览器表单推测",
+            "enum": [
+              "saved",
+              "draft"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "stage",
+          "message",
+          "duration_ms"
         ],
         "type": "object"
       },
@@ -3627,7 +3754,7 @@
   "info": {
     "description": "中转监控、公开作品、用户私有测试与管理员加密备份。所有时间为UTC ISO8601。管理写操作需要X-CSRF-Token。普通JSON请求体是单个完整对象且不超过2MiB；备份导入使用专用multipart流式上限3GiB。浏览器Origin必须同源，非浏览器JSON CLI可省略Origin。默认本机端口42783。分组核验仅标记Token绑定，不证明实际路由。",
     "title": "Relay Lab API",
-    "version": "1.5.0"
+    "version": "1.5.1"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -5589,7 +5716,7 @@
             "cookieAuth": []
           }
         ],
-        "summary": "保存新的存储修订，凭据不回显"
+        "summary": "幂等保存存储配置；相同配置及凭据保留修订和验证结果，实际变更才创建新修订"
       }
     },
     "/admin/backups/storage/test": {
@@ -5619,7 +5746,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/BackupStorageTestResponse"
+                }
               }
             },
             "description": "成功"
@@ -5628,17 +5757,34 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/BackupStorageTestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    }
+                  ]
                 }
               }
             },
-            "description": "无效请求"
+            "description": "连接测试失败，保留主错误及独立清理结果；上游401/403不撤销管理员登录"
           },
           "401": {
             "description": "需要登录"
           },
           "403": {
             "description": "来源或 CSRF 验证失败"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupStorageTestError"
+                }
+              }
+            },
+            "description": "连接测试失败，保留主错误及独立清理结果；上游401/403不撤销管理员登录"
           },
           "409": {
             "description": "状态冲突"
@@ -5647,7 +5793,24 @@
             "description": "超过限流"
           },
           "502": {
-            "description": "上游失败"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupStorageTestError"
+                }
+              }
+            },
+            "description": "连接测试失败，保留主错误及独立清理结果；上游401/403不撤销管理员登录"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupStorageTestError"
+                }
+              }
+            },
+            "description": "连接测试失败，保留主错误及独立清理结果；上游401/403不撤销管理员登录"
           }
         },
         "security": [
@@ -5655,7 +5818,7 @@
             "cookieAuth": []
           }
         ],
-        "summary": "执行存储小对象写读校验与删除"
+        "summary": "执行存储小对象写读校验与删除，返回阶段、耗时及脱敏诊断"
       }
     },
     "/admin/channels": {

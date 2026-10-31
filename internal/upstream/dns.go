@@ -19,14 +19,25 @@ func fakeIP(ip netip.Addr) bool {
 	return fakeIPv4.Contains(ip.Unmap()) || fakeIPv6.Contains(ip)
 }
 
-// NewWithDNS optionally replaces synthetic proxy DNS answers with an explicit
-// administrator-configured DNS-over-HTTPS JSON resolver. Its answers still pass
-// the normal public-IP validation and are pinned by the production dialer.
-func NewWithDNS(endpoint string) (*Client, error) {
-	c := New()
+// IsSyntheticDNSAddress identifies proxy Fake-IP ranges without exempting them
+// from the caller's public-address checks.
+func IsSyntheticDNSAddress(ip netip.Addr) bool { return fakeIP(ip) }
+
+// DNSResolver resolves addresses only. Callers must validate every returned
+// address and pin the approved addresses when establishing a connection.
+type DNSResolver func(context.Context, string) ([]netip.Addr, error)
+
+// NewDNSResolver shares the explicit HTTPS DNS-JSON fallback used by model
+// requests. Only an all-synthetic hostname answer invokes the fallback; literal
+// IPs, DNS errors and mixed public/private answers never gain an exemption.
+func NewDNSResolver(endpoint string) (DNSResolver, error) {
+	return newDNSResolver(endpoint, lookupIPs, New())
+}
+
+func newDNSResolver(endpoint string, system DNSResolver, dnsClient *Client) (DNSResolver, error) {
 	endpoint = strings.TrimSpace(endpoint)
 	if endpoint == "" {
-		return c, nil
+		return system, nil
 	}
 	u, err := url.Parse(endpoint)
 	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
@@ -35,11 +46,22 @@ func NewWithDNS(endpoint string) (*Client, error) {
 	if err = ValidatePublicURL(endpoint, "", ""); err != nil {
 		return nil, errors.New("upstream: dns_over_https must use a public, permitted resolver address")
 	}
-	dnsClient := New()
 	cache := newDNSCache(func(ctx context.Context, host string) ([]netip.Addr, time.Duration, error) {
 		return lookupDNSJSONResult(ctx, dnsClient, u, host)
 	})
-	c.resolver = withDNSFallback(lookupIPs, cache.resolve)
+	return withDNSFallback(system, cache.resolve), nil
+}
+
+// NewWithDNS optionally replaces synthetic proxy DNS answers with an explicit
+// administrator-configured DNS-over-HTTPS JSON resolver. Its answers still pass
+// the normal public-IP validation and are pinned by the production dialer.
+func NewWithDNS(endpoint string) (*Client, error) {
+	c := New()
+	resolver, err := NewDNSResolver(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	c.resolver = resolver
 	return c, nil
 }
 

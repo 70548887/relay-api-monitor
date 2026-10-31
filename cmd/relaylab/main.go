@@ -296,7 +296,7 @@ func run(args []string) error {
 			return e
 		}
 		app.SetMaintenanceFile(filepath.Join(cfg.DataDir, "maintenance.request"))
-		backupManager, backupErr := backups.New(backups.Options{Store: st, Vault: vault, DataDir: cfg.DataDir, BackupDir: operationlock.BackupRoot(cfg.DataDir), BuildVersion: version, Commit: commit, Enter: app.EnterBackupActivity, AllowedStorageHosts: strings.FieldsFunc(os.Getenv("RELAYLAB_BACKUP_ALLOWED_STORAGE_HOSTS"), func(r rune) bool { return r == ',' || r == ';' })})
+		backupManager, backupErr := backups.New(backups.Options{Store: st, Vault: vault, DataDir: cfg.DataDir, BackupDir: operationlock.BackupRoot(cfg.DataDir), BuildVersion: version, Commit: commit, Enter: app.EnterBackupActivity, DNSOverHTTPS: cfg.Upstream.DNSOverHTTPS, AllowedStorageHosts: strings.FieldsFunc(os.Getenv("RELAYLAB_BACKUP_ALLOWED_STORAGE_HOSTS"), func(r rune) bool { return r == ',' || r == ';' })})
 		if backupErr != nil {
 			return backupErr
 		}

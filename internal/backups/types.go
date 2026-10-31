@@ -37,6 +37,7 @@ type Options struct {
 	DataDir, BackupDir, BuildVersion, Commit string
 	Enter                                    func() (func(), bool)
 	AllowedStorageHosts                      []string
+	DNSOverHTTPS                             string
 }
 
 var ErrBusy = errors.New("已有备份、恢复或升级操作正在执行")

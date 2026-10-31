@@ -32,6 +32,20 @@ func addBackupContract(schemas, paths object, add func(string, string, string, s
 	schemas["BackupSnapshot"].(object)["properties"].(object)["restore_operation"] = ref("BackupRestoreOperation")
 	schemas["BackupPreview"] = obj(object{"next_runs": object{"type": "array", "items": object{"type": "string", "format": "date-time"}}}, "next_runs")
 	schemas["BackupStorageHealth"] = obj(object{"checked_at": object{"type": "string", "format": "date-time"}, "status": object{"type": "string", "enum": []string{"untested", "ok", "failed"}}, "message": str(), "operation": str()}, "status", "message")
+	healthProps := schemas["BackupStorageHealth"].(object)["properties"].(object)
+	for _, name := range []string{"stage", "error_code", "cleanup_error_code", "cleanup_message"} {
+		healthProps[name] = str()
+	}
+	healthProps["duration_ms"] = object{"type": "integer", "format": "int64", "minimum": 0}
+	healthProps["http_status"] = object{"type": "integer", "description": "上游HTTP状态，不是本地登录状态"}
+	testProps := schemas["BackupStorageTestResult"].(object)["properties"].(object)
+	testProps["status"] = object{"type": "string", "enum": []string{"ok", "failed"}}
+	testProps["request_id"] = object{"type": "string", "description": "服务端生成的诊断编号，可关联运行日志和审计，不含凭据"}
+	testProps["test_scope"] = object{"type": "string", "enum": []string{"saved", "draft"}, "description": "服务端精确比较配置和凭据确定的测试归属；不以浏览器表单推测"}
+	testProps["storage_id"] = object{"type": "string", "description": "仅saved时提供，绑定测试开始时实际使用的存储修订"}
+	testProps["storage_revision"] = object{"type": "integer", "minimum": 1, "description": "仅saved时提供；旧修订结果不代表当前配置已验证"}
+	schemas["BackupStorageTestResponse"] = obj(object{"ok": object{"type": "boolean"}, "result": ref("BackupStorageTestResult")}, "ok", "result")
+	schemas["BackupStorageTestError"] = obj(object{"error": obj(object{"code": str(), "message": str()}, "code", "message"), "request_id": str(), "result": ref("BackupStorageTestResult")}, "error", "request_id", "result")
 	schemas["BackupStorage"].(object)["properties"].(object)["health"] = ref("BackupStorageHealth")
 	schemas["BackupRetentionItem"] = obj(object{"id": str(), "file_name": str(), "size_bytes": object{"type": "integer", "format": "int64"}, "local_state": str(), "remote_state": str(), "started_at": object{"type": "string", "format": "date-time"}}, "id", "file_name", "size_bytes", "local_state", "remote_state", "started_at")
 	schemas["BackupRetentionPreview"] = obj(object{"count": object{"type": "integer"}, "local_copies": object{"type": "integer"}, "remote_copies": object{"type": "integer"}, "total_bytes": object{"type": "integer", "format": "int64"}, "items": object{"type": "array", "items": ref("BackupRetentionItem")}}, "count", "local_copies", "remote_copies", "total_bytes", "items")
@@ -46,8 +60,8 @@ func addBackupContract(schemas, paths object, add func(string, string, string, s
 	}{
 		{"/status", "get", "读取备份运行状态与部署恢复能力", "", "BackupSnapshot", false},
 		{"/storage", "get", "读取脱敏存储配置", "", "BackupStorage", false},
-		{"/storage", "put", "保存新的存储修订，凭据不回显", "BackupStorageInput", "BackupStorage", false},
-		{"/storage/test", "post", "执行存储小对象写读校验与删除", "BackupStorageInput", "", false},
+		{"/storage", "put", "幂等保存存储配置；相同配置及凭据保留修订和验证结果，实际变更才创建新修订", "BackupStorageInput", "BackupStorage", false},
+		{"/storage/test", "post", "执行存储小对象写读校验与删除，返回阶段、耗时及脱敏诊断", "BackupStorageInput", "BackupStorageTestResponse", false},
 		{"/schedule", "get", "读取定时备份和保留策略", "", "BackupSchedule", false},
 		{"/schedule", "put", "保存备份策略，保存不立即执行", "BackupScheduleWrite", "BackupSchedule", false},
 		{"/schedule/preview", "post", "预览未来三次执行时间", "BackupScheduleWrite", "BackupPreview", false},
@@ -74,6 +88,11 @@ func addBackupContract(schemas, paths object, add func(string, string, string, s
 		add("/admin/backups"+r.path, r.method, r.summary, r.request, r.response, true, r.array)
 	}
 	base := "/admin/backups"
+	connectionResponses := paths[base+"/storage/test"].(object)["post"].(object)["responses"].(object)
+	for _, status := range []string{"400", "408", "502", "504"} {
+		connectionResponses[status] = object{"description": "连接测试失败，保留主错误及独立清理结果；上游401/403不撤销管理员登录", "content": object{"application/json": object{"schema": ref("BackupStorageTestError")}}}
+	}
+	connectionResponses["400"].(object)["content"].(object)["application/json"].(object)["schema"] = object{"oneOf": []any{ref("BackupStorageTestError"), ref("Error")}}
 	for _, v := range []struct{ path, method string }{{"/records", "post"}, {"/records/{id}/retry-upload", "post"}, {"/restore/apply", "post"}} {
 		responses := paths[base+v.path].(object)[v.method].(object)["responses"].(object)
 		responses["202"] = responses["200"]

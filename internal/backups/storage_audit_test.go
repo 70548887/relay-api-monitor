@@ -142,15 +142,24 @@ func TestStorageConnectionHealthMatchesOnlySavedConfiguration(t *testing.T) {
 	if saved.Health.Status != "ok" || saved.Health.CheckedAt == nil {
 		t.Fatalf("successful test not recorded %+v", saved.Health)
 	}
-	second, e := m.SaveStorage(ctx, withoutCredentials)
+	unchanged, e := m.SaveStorage(ctx, withoutCredentials)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if unchanged.ID != first.ID || unchanged.Revision != first.Revision || unchanged.Health.Status != "ok" {
+		t.Fatal("saving identical configuration must retain its tested revision")
+	}
+	changed := withoutCredentials
+	changed.Prefix += "-changed"
+	second, e := m.SaveStorage(ctx, changed)
 	if e != nil {
 		t.Fatal(e)
 	}
 	if second.ID == first.ID || second.Health.Status != "untested" {
-		t.Fatal("storage revision must not inherit a previous revision's health")
+		t.Fatal("changed storage revision must start untested")
 	}
 	deny.Store(true)
-	if e = m.TestStorage(ctx, withoutCredentials); e == nil {
+	if e = m.TestStorage(ctx, changed); e == nil {
 		t.Fatal("denied connection test should fail")
 	} else if strings.Contains(e.Error(), in.SecretAccessKey) || strings.Contains(e.Error(), in.AccessKeyID) {
 		t.Fatal("connection error leaked raw credentials")

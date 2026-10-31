@@ -6,7 +6,7 @@ Relay Lab 将 API 健康监控、固定提示词作品对照和在线模型测�
 
 [快速开始](#快速开始) · [首次配置](#首次配置) · [使用说明](#使用说明) · [文档导航](#文档导航) · [下载安装包](https://github.com/70548887/relay-api-monitor/releases)
 
-仓库版本以 [VERSION](VERSION) 为准。当前版本 **v1.5.0**，备份与恢复使用方法见 [备份说明](docs/BACKUPS.md)；已发布版本与附件以 [GitHub Releases](https://github.com/70548887/relay-api-monitor/releases) 为准。
+仓库版本以 [VERSION](VERSION) 为准。当前版本 **v1.5.1**，备份与恢复使用方法见 [备份说明](docs/BACKUPS.md)；已发布版本与附件以 [GitHub Releases](https://github.com/70548887/relay-api-monitor/releases) 为准。
 
 ## 核心功能
 
@@ -209,7 +209,7 @@ npm --prefix web run dev
 - [Docker 与宝塔部署](docs/DOCKER.md)：镜像构建、HTTPS、SSE 反代、数据卷和容器恢复。
 - [Linux 部署](deploy/README.md)：完整包运行和 systemd 服务配置。
 - [升级说明](docs/UPDATES.md)：在线升级、旧版本迁移与回滚约束。
-- [备份与恢复](docs/BACKUPS.md) / [v1.5.0 发布候选说明](docs/releases/v1.5.0.md)：备份、兼容范围和已知限制。
+- [备份与恢复](docs/BACKUPS.md) / [v1.5.1 发布说明](docs/releases/v1.5.1.md)：备份、兼容范围和已知限制。
 - [发布流程](docs/RELEASE.md)：安装包结构、版本契约和附件校验。
 - [验证记录](docs/VALIDATION.md) / [历史接口实测](docs/LIVE_TESTS.md)：测试范围、结果与限制。
 - [OpenAPI 契约](docs/openapi.json) / [配置示例](config.example.yaml)：接口与运行配置参考。

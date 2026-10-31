@@ -1,9 +1,18 @@
-import { APIError, api, setSession } from './api';
+import { APIError, api, captureSessionGuard, setSession } from './api';
+
+export interface BackupStorageTestResult {
+  status: 'ok' | 'failed'; stage: string; error_code?: string; message: string; duration_ms?: number;
+  http_status?: number; cleanup_error_code?: string; cleanup_message?: string; request_id?: string;
+  test_scope?: 'saved' | 'draft'; storage_id?: string; storage_revision?: number;
+}
+export class StorageTestError extends APIError {
+  constructor(status: number, code: string, message: string, public result?: BackupStorageTestResult) { super(status, code, message); }
+}
 
 export interface BackupStorage {
   id: string; revision: number; endpoint: string; region: string; bucket: string; prefix: string;
   force_path_style: boolean; access_key_mask?: string; secret_configured: boolean; created_at?: string;
-  health?: { checked_at?: string; status: 'untested' | 'ok' | 'failed'; message: string };
+  health?: { checked_at?: string; status: 'untested' | 'ok' | 'failed'; message: string; error_code?: string; stage?: string; duration_ms?: number; http_status?: number; cleanup_error_code?: string; cleanup_message?: string };
 }
 export interface BackupFilter { state?: string; trigger?: string; protection?: '' | 'ordinary' | 'monthly' | 'protected'; from?: string; to?: string; }
 export interface RetentionPreview { count: number; local_copies: number; remote_copies: number; total_bytes: number; items: Pick<BackupRun, 'id' | 'file_name' | 'size_bytes' | 'local_state' | 'remote_state' | 'started_at'>[]; }
@@ -56,7 +65,20 @@ export const backupAPI = {
   create: (requestID: string) => api<BackupRun>(`${base}/records`, { method: 'POST', body: JSON.stringify({ request_id: requestID }) }),
   storage: () => api<BackupStorage>(`${base}/storage`),
   saveStorage: (input: BackupStorageInput) => api<BackupStorage>(`${base}/storage`, { method: 'PUT', body: JSON.stringify(input) }),
-  testStorage: (input: BackupStorageInput) => api<void>(`${base}/storage/test`, { method: 'POST', body: JSON.stringify(input) }),
+  async testStorage(input: BackupStorageInput, options: { signal?: AbortSignal; csrfToken?: string } = {}) {
+    const validSession = captureSessionGuard();
+    const headers = new Headers({ 'Content-Type': 'application/json' });
+    if (options.csrfToken) headers.set('X-CSRF-Token', options.csrfToken);
+    const response = await fetch(`/api/v1${base}/storage/test`, { method: 'POST', body: JSON.stringify(input), signal: options.signal, credentials: 'same-origin', headers });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) {
+      if (response.status === 401 && validSession()) setSession(null);
+      throw new StorageTestError(response.status, body?.error?.code || 'storage_test_failed', body?.error?.message || `连接测试失败 (${response.status})`, body?.result);
+    }
+    if(body?.result && ['ok','failed'].includes(body.result.status)) return body.result as BackupStorageTestResult;
+    if(body?.ok===true)return { status: 'ok', stage: 'completed', message: '对象写入、读取和删除验证已通过' } as BackupStorageTestResult;
+    throw new StorageTestError(response.status,'storage_test_invalid_response','服务端未返回有效连接测试结果，请刷新健康状态核对。');
+  },
   schedule: () => api<BackupSchedule>(`${base}/schedule`),
   saveSchedule: (input: BackupSchedule) => api<BackupSchedule>(`${base}/schedule`, { method: 'PUT', body: JSON.stringify(input) }),
   preview: (input: BackupSchedule) => api<{ next_runs: string[] }>(`${base}/schedule/preview`, { method: 'POST', body: JSON.stringify(input) }),

@@ -11,6 +11,7 @@ import { PageHeading, QueryState } from '../components/Common';
 import { downloadText, time } from '../lib';
 import { trackRestore } from '../restoreTracking';
 import { CloudBackupBrowser } from '../components/CloudBackupBrowser';
+import { StorageConnectionTest } from '../components/StorageConnectionTest';
 
 const activeStates = new Set(['queued', 'snapshotting', 'validating', 'encrypting', 'local_ready', 'uploading', 'verifying_remote']);
 const terminalRestoreStates = new Set(['succeeded', 'failed', 'rolled_back']);
@@ -33,6 +34,8 @@ export function BackupsPage() {
   const [page, setPage] = useState(1);
   const [cloudOpen, setCloudOpen] = useState(false);
   const [busy, setBusy] = useState('');
+  const [storageTesting, setStorageTesting] = useState(false);
+  const [storageEditVersion, setStorageEditVersion] = useState(0);
   const [error, setError] = useState('');
   const [now, setNow] = useState(Date.now());
   const [detail, setDetail] = useState<BackupRun>();
@@ -115,10 +118,10 @@ export function BackupsPage() {
     try{const result=await backupAPI.apply(id);if(result.status_token)trackRestore(result.operation_id,result.status_token);navigate(`/restore-progress/${encodeURIComponent(result.operation_id)}`,{replace:true});}
     catch(failure){handoffRef.current=false;setHandoff(false);throw failure;}
   }
-  async function saveStorage(values: BackupStorageInput) { await backupAPI.saveStorage(values); storageForm.resetFields(); void message.success('存储配置已保存，凭据只显示掩码'); }
+  async function saveStorage(values: BackupStorageInput) { const saved=await backupAPI.saveStorage(values); storageForm.resetFields(); storageForm.setFieldsValue({...saved,access_key_id:'',secret_access_key:''}); void message.success('存储配置已保存，凭据只显示掩码'); }
   const hasFilters=Object.values(filters).some(Boolean);
   const rows = records.data || (!hasFilters && page === 1 ? data?.records || [] : []);
-  const updating = !!busy||handoff;
+  const updating = !!busy||handoff||storageTesting;
   const currentDetail=recordDetail.data||detail;
 
   return <div className="backups-page">
@@ -179,9 +182,9 @@ export function BackupsPage() {
         </Form><aside className="backup-settings-aside"><SafetyOutlined /><h3>保留策略摘要</h3><p>{draft?.enabled ? '定时备份已选择开启，保存后生效。' : '定时备份关闭，可随时手动创建。'}</p><p>{(draft?.retain_days ?? schedule.retain_days) === 0 ? '不按天数清理' : `保留 ${draft?.retain_days ?? schedule.retain_days} 天内备份`}；{(draft?.retain_count ?? schedule.retain_count) === 0 ? '不限制普通份数' : `最多 ${draft?.retain_count ?? schedule.retain_count} 份普通备份`}。</p><p>达到任一条件时清理旧普通备份，至少保留最后一个已验证恢复点。</p><p>月度归档和手动保护独立计算，不占普通份数。</p><span>预计触发时间不承诺实际开始时间。</span></aside></div> },
         { key: 'storage', label: '存储与恢复密钥', children: <div className="backup-storage-stack">
           <section><div className="backup-section-heading"><div><h2><DatabaseOutlined /> 本地存储</h2><p>快照暂存与加密文件位于持久目录，不依赖容器 /tmp。</p></div><Tag>加密归档</Tag></div><code className="backup-path">{data.backup_dir || '由服务端指定的备份目录'}</code></section>
-          <section><div className="backup-section-heading"><div><h2><CloudUploadOutlined /> S3 兼容存储</h2><p>支持 R2 等兼容服务。保存凭据后仅显示掩码。</p></div>{data.storage && <Tag color={storageHealth?.status==='ok'?'success':storageHealth?.status==='failed'?'error':'default'}>{storageHealth?.status==='ok'?'连接已验证':storageHealth?.status==='failed'?'最近检查失败':'已配置 · 尚未验证'}</Tag>}</div>{storageHealth?.message&&<Alert type={storageHealth.status==='failed'?'warning':'info'} showIcon message={storageHealth.message} description={storageHealth.checked_at?`最近检查：${time(storageHealth.checked_at)}`:undefined}/>}<Form form={storageForm} layout="vertical" initialValues={{ region: 'auto', prefix: 'backups/', force_path_style: false }} onFinish={values => void perform('storage', () => saveStorage(values))}>
+          <section><div className="backup-section-heading"><div><h2><CloudUploadOutlined /> S3 兼容存储</h2><p>支持 R2 等兼容服务。保存凭据后仅显示掩码。</p></div>{data.storage && <Tag color={storageHealth?.status==='ok'?'success':storageHealth?.status==='failed'?'error':'default'}>{storageHealth?.status==='ok'?'连接已验证':storageHealth?.status==='failed'?'最近检查失败':'已配置 · 尚未验证'}</Tag>}</div>{storageHealth?.message&&<Alert type={storageHealth.status==='failed'?'warning':'info'} showIcon message={storageHealth.message} description={storageHealth.checked_at?`最近检查：${time(storageHealth.checked_at)}`:undefined}/>}<Form form={storageForm} layout="vertical" initialValues={{ region: 'auto', prefix: 'backups/', force_path_style: false }} onValuesChange={() => setStorageEditVersion(version => version + 1)} onFinish={values => void perform('storage', () => saveStorage(values))}>
             <div className="backup-form-grid"><Form.Item name="endpoint" label="端点地址" rules={[{ required: true, message: '请输入 S3 端点地址' }, { type: 'url', message: '请输入完整 URL' }]}><Input placeholder="https://<account-id>.r2.cloudflarestorage.com" autoComplete="off" /></Form.Item><Form.Item name="region" label="区域" rules={[{ required: true }]}><Input placeholder="R2 使用 auto" /></Form.Item><Form.Item name="bucket" label="存储桶" rules={[{ required: true }]}><Input placeholder="relaylab-backups" /></Form.Item><Form.Item name="prefix" label="对象 Key 前缀"><Input placeholder="backups/" /></Form.Item><Form.Item name="access_key_id" label="Access Key ID" extra={data.storage?.access_key_mask ? `当前 ${data.storage.access_key_mask}；留空保留。` : '首次配置需填写。'}><Input.Password autoComplete="new-password" placeholder={data.storage ? '留空保留当前 Access Key' : '输入 Access Key ID'} /></Form.Item><Form.Item name="secret_access_key" label="Secret Access Key" extra={data.storage?.secret_configured ? '已加密保存；留空保留。' : '首次配置需填写。'}><Input.Password autoComplete="new-password" placeholder="留空保留，填写则替换" /></Form.Item></div>
-            <Form.Item name="force_path_style" valuePropName="checked"><Checkbox>使用路径风格寻址</Checkbox></Form.Item><p className="backup-help">更换端点身份时需要重新输入凭据。连接测试会创建、读取并删除一个专用测试对象。</p><div className="backup-form-actions"><Button disabled={updating} loading={busy === 'test-storage'} onClick={() => void perform('test-storage', async () => { const values = await storageForm.validateFields(); await backupAPI.testStorage(values); void message.success('对象写入、读取和删除验证已通过'); })}>测试连接</Button><Button type="primary" htmlType="submit" disabled={updating} loading={busy === 'storage'}>保存存储配置</Button></div>
+            <Form.Item name="force_path_style" valuePropName="checked"><Checkbox>使用路径风格寻址</Checkbox></Form.Item><p className="backup-help">更换端点身份时需要重新输入凭据。连接测试会创建、读取并删除一个专用测试对象；结果显示在测试按钮下方。</p><div className="backup-storage-actions"><StorageConnectionTest form={storageForm} storage={data.storage} editVersion={storageEditVersion} disabled={!!busy||handoff} onRunningChange={setStorageTesting} onSettled={refresh}/><Button type="primary" htmlType="submit" disabled={updating} loading={busy === 'storage'}>保存存储配置</Button></div>
           </Form></section>
           <section><div className="backup-section-heading"><div><h2><LockOutlined /> 独立恢复密钥</h2><p>服务端只保留公钥，恢复私钥由您离线保管。丢失私钥将无法解密对应备份。</p></div><Tag color={schedule.recipient_verified ? 'success' : 'warning'}>{schedule.recipient_verified ? '已验证' : '待设置 / 校验'}</Tag></div>
             <Form form={recipientForm} layout="vertical" onFinish={values => void perform('recipient', async () => { await backupAPI.setRecipient(values.recipient); recipientForm.setFieldValue('identity', ''); void message.success('恢复公钥已保存，请提供私钥完成匹配校验'); })}><Form.Item name="recipient" label="恢复公钥" rules={[{ required: true, message: '请输入 age 恢复公钥' }]} extra={schedule.recipient_id ? `公钥标识：${schedule.recipient_id}` : '以 age1 开头的公钥。'}><Input autoComplete="off" placeholder="age1…" /></Form.Item><div className="backup-form-actions"><Button type="primary" htmlType="submit" disabled={updating}>保存公钥</Button><Button disabled={updating} onClick={() => requirePassword('生成新的恢复密钥', '新私钥仅在本次弹窗显示。更换公钥后，旧备份仍需要原来的私钥。', async () => { setKeyPair(await backupAPI.generateKey()); setExported(false); })}>生成并导出新密钥</Button></div></Form>

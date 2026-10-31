@@ -342,6 +342,27 @@ export interface BackupStorageHealth {
   status: string;
   message: string;
   operation?: string;
+  stage?: string;
+  error_code?: string;
+  duration_ms?: number;
+  http_status?: number;
+  cleanup_error_code?: string;
+  cleanup_message?: string;
+}
+
+export interface BackupStorageTestResult {
+  request_id?: string;
+  test_scope?: string;
+  storage_id?: string;
+  storage_revision?: number;
+  status: string;
+  stage: string;
+  error_code?: string;
+  message: string;
+  duration_ms: number;
+  http_status?: number;
+  cleanup_error_code?: string;
+  cleanup_message?: string;
 }
 
 export interface BackupStorage {

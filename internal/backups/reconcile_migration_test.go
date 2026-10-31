@@ -167,6 +167,7 @@ func TestRestoredStorageRevisionCollisionPreservesActiveSelection(t *testing.T) 
 	if e != nil {
 		t.Fatal(e)
 	}
+	in.Prefix = "old-second"
 	oldSecond, e := m.SaveStorage(ctx, in)
 	if e != nil {
 		t.Fatal(e)
@@ -185,6 +186,7 @@ func TestRestoredStorageRevisionCollisionPreservesActiveSelection(t *testing.T) 
 	if e = m.opts.Store.SaveBackupPolicy(ctx, p); e != nil {
 		t.Fatal(e)
 	}
+	in.Prefix = "fresh-replacement"
 	fresh, e := m.SaveStorage(ctx, in)
 	if e != nil {
 		t.Fatal(e)

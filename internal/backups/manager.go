@@ -21,25 +21,30 @@ import (
 	"relaylab/internal/domain"
 	"relaylab/internal/durablejson"
 	"relaylab/internal/operationlock"
+	"relaylab/internal/upstream"
 )
 
 type Manager struct {
-	opts     Options
-	mu       sync.Mutex
-	policyMu sync.Mutex
-	activeID string
-	ctx      context.Context
-	cancel   context.CancelFunc
-	wg       sync.WaitGroup
-	started  bool
-	closed   bool
+	storageResolver upstream.DNSResolver
+	opts            Options
+	mu              sync.Mutex
+	policyMu        sync.Mutex
+	activeID        string
+	ctx             context.Context
+	cancel          context.CancelFunc
+	wg              sync.WaitGroup
+	started         bool
+	closed          bool
 }
 
 func New(opts Options) (*Manager, error) {
 	if opts.Store == nil || opts.Vault == nil || opts.DataDir == "" {
 		return nil, errors.New("备份管理器配置不完整")
 	}
-	var err error
+	resolver, err := upstream.NewDNSResolver(opts.DNSOverHTTPS)
+	if err != nil {
+		return nil, err
+	}
 	opts.DataDir, err = filepath.Abs(opts.DataDir)
 	if err != nil {
 		return nil, err
@@ -63,7 +68,7 @@ func New(opts Options) (*Manager, error) {
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Manager{opts: opts, ctx: ctx, cancel: cancel}, nil
+	return &Manager{opts: opts, storageResolver: resolver, ctx: ctx, cancel: cancel}, nil
 }
 func (m *Manager) Start(ctx context.Context) {
 	m.mu.Lock()

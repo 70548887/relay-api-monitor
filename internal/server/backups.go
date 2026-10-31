@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"mime"
 	"net"
 	"net/http"
@@ -197,7 +198,7 @@ func (s *Server) registerBackups(a *gin.RouterGroup) {
 	b := a.Group("/backups")
 	b.Use(func(c *gin.Context) {
 		c.Next()
-		if c.Writer.Status() < 300 && c.Request.Method != "GET" && c.Request.Method != "HEAD" {
+		if c.Writer.Status() < 300 && c.Request.Method != "GET" && c.Request.Method != "HEAD" && c.FullPath() != "/api/v1/admin/backups/storage/test" {
 			s.auditEvent(c.Request.Context(), "backup_management", c.Param("id"), "管理员操作 "+c.Request.Method+" "+c.FullPath())
 		}
 	})
@@ -340,13 +341,48 @@ func (s *Server) backupStorageTest(c *gin.Context) {
 	defer leave()
 	var b backups.StorageInput
 	if !bind(c, &b) {
+		s.recordStorageTest(c, domain.BackupStorageTestResult{Status: "failed", Stage: "validating", ErrorCode: "invalid_request", Message: "连接测试请求格式无效，未发送云端请求"})
 		return
 	}
-	if e := m.TestStorage(c.Request.Context(), b); e != nil {
-		backupError(c, e)
+	log.Printf("backup_storage_test_started request_id=%s", c.Writer.Header().Get("X-Request-ID"))
+	result, err := m.TestStorageDetailed(c.Request.Context(), b)
+	result.RequestID = c.Writer.Header().Get("X-Request-ID")
+	if err != nil {
+		// Never use the raw SDK error or request body as an API/log message.
+		if result.ErrorCode == "" {
+			result.Status, result.ErrorCode, result.Message = "failed", "storage_test_failed", "存储连接测试失败，请使用诊断编号核对日志"
+		}
+		s.recordStorageTest(c, result)
+		status := http.StatusBadRequest
+		if strings.Contains(result.ErrorCode, "timeout") {
+			status = http.StatusGatewayTimeout
+		} else if result.ErrorCode == "canceled" {
+			status = http.StatusRequestTimeout
+		} else if result.HTTPStatus >= 400 {
+			// An upstream 401/403 must not revoke the administrator's session.
+			status = http.StatusBadGateway
+		}
+		c.AbortWithStatusJSON(status, gin.H{"error": gin.H{"code": result.ErrorCode, "message": result.Message}, "result": result, "request_id": result.RequestID})
 		return
 	}
-	c.JSON(200, gin.H{"ok": true})
+	s.recordStorageTest(c, result)
+	c.JSON(200, gin.H{"ok": true, "result": result})
+}
+
+func (s *Server) recordStorageTest(c *gin.Context, result domain.BackupStorageTestResult) {
+	result.RequestID = c.Writer.Header().Get("X-Request-ID")
+	// The result contains only fixed diagnostic categories/messages, no endpoint,
+	// object path, credentials, authorization headers or upstream response text.
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return
+	}
+	log.Printf("backup_storage_test %s", encoded)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err = s.Store.AddAudit(ctx, domain.AuditEvent{ID: domain.NewID(), Action: "backup_storage_test", EntityID: result.RequestID, Detail: string(encoded), CreatedAt: time.Now().UTC()}); err != nil {
+		log.Printf("backup_storage_test_audit_failed request_id=%s", result.RequestID)
+	}
 }
 func (s *Server) backupSchedule(c *gin.Context) {
 	m, ok := s.backupManager(c)
