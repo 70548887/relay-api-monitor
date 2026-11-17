@@ -95,6 +95,17 @@ type ArtifactOverrides struct {
 	English *bool `json:"english,omitempty"`
 }
 
+// DefaultArtifactMaxTokens is the output limit given to newly added models.
+// Anthropic Messages counts thinking against max_tokens and current models may
+// think by default, so the general 8192 limit is often exhausted before any
+// visible text arrives. Existing models keep the limit they were saved with.
+func DefaultArtifactMaxTokens(protocol string) int {
+	if protocol == "anthropic" {
+		return 32000
+	}
+	return 8192
+}
+
 func (c Channel) ScheduledProbeEnabled(m Model) bool {
 	if plan := c.IntelligenceSchedule; plan != nil && plan.ModelScope != "all" && plan.ModelID != m.ID {
 		return false

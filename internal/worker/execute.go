@@ -260,6 +260,9 @@ func (w *Worker) execute(parent context.Context, j domain.Job) error {
 	if requestErr != nil {
 		j.State = "failed"
 		code, message = errorDetails(requestErr)
+		if code == "truncated" {
+			message = truncatedMessage(j.Kind, maxTokens)
+		}
 	} else if !result.Complete {
 		j.State = "failed"
 		code, message = "incomplete_response", "上游响应未完整结束"
@@ -289,6 +292,15 @@ func (w *Worker) execute(parent context.Context, j domain.Job) error {
 	parameters, _ := json.Marshal(snapshot.Parameters)
 	art := &domain.Artifact{ModelID: m.ID, ChannelID: c.ID, TemplateID: template.ID, TemplateVersion: template.Version, Prompt: prompt, Protocol: protocol, RequestedModel: m.UpstreamID, ReturnedModel: result.ReturnedModel, Parameters: string(parameters), ReasoningEffort: effort, ThinkingMode: thinkingMode, ThinkingBudget: thinkingBudget, VerifiedGroup: snapshot.VerifiedGroup, GroupVerificationStatus: snapshot.GroupVerificationStatus, RawResponse: result.Text, Code: extracted, Kind: actualKind, FirstTextMS: result.FirstTextMS, DurationMS: result.DurationMS, Usage: result.Usage, FinishReason: result.FinishReason, StartedAt: started, CreatedAt: time.Now().UTC()}
 	return w.complete(j, nil, art, false)
+}
+
+// truncatedMessage states the limit that was hit and where it is changed; the
+// upstream text alone does not tell an administrator what to adjust.
+func truncatedMessage(kind string, maxTokens int) string {
+	if kind == "probe" {
+		return fmt.Sprintf("上游输出达到本次 %d Tokens 上限后被截断；模型可能默认开启思考并占用了输出额度", maxTokens)
+	}
+	return fmt.Sprintf("上游输出达到本次 %d Tokens 上限后被截断，内容不完整；请调大该模型的“创作最大 Tokens”，或降低推理强度 / Thinking 后重试", maxTokens)
 }
 func errorDetails(err error) (string, string) {
 	var upstreamErr *upstream.Error

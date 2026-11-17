@@ -1,4 +1,5 @@
 import type { Channel, Model, Platform, Settings } from './types';
+import { defaultArtifactMaxTokens } from './reasoning';
 
 export function activeRecords<T extends {archived:boolean}>(items:readonly T[]|undefined){return (items||[]).filter(item=>!item.archived)}
 export function channelModelControls(channel?:Channel){
@@ -7,7 +8,7 @@ export function channelModelControls(channel?:Channel){
  if(plan)return {probe_enabled:true,artifact_chinese:plan.enabled&&plan.template_ids.includes('cn_html'),artifact_english:plan.enabled&&plan.template_ids.includes('en_svg')};
  return {probe_enabled:true,artifact_chinese:true,artifact_english:true};
 }
-export function newModelDefaults(settings?:Settings,channel?:Channel){return {public:channel?.public??true,source:'manual',protocol:'',reasoning_effort:'',thinking_mode:'',thinking_budget:0,max_tokens:8192,...channelModelControls(channel),probe_interval_seconds:settings?.probe_interval_seconds||300,artifact_interval_seconds:settings?.artifact_interval_seconds||1800,timeout_seconds:settings?.artifact_timeout_seconds||600,sort:0}}
+export function newModelDefaults(settings?:Settings,channel?:Channel){return {public:channel?.public??true,source:'manual',protocol:'',reasoning_effort:'',thinking_mode:'',thinking_budget:0,max_tokens:defaultArtifactMaxTokens(channel?.protocol),...channelModelControls(channel),probe_interval_seconds:settings?.probe_interval_seconds||300,artifact_interval_seconds:settings?.artifact_interval_seconds||1800,timeout_seconds:settings?.artifact_timeout_seconds||600,sort:0}}
 export function effectiveArtifactFlags(model:Model,channel?:Channel){
  const controls=channel?.model_controls,plan=channel?.intelligence_schedule;
  const selected=!plan||plan.model_scope==='all'||plan.model_id===model.id;

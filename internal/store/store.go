@@ -275,7 +275,8 @@ func validateSchemaColumns(ctx context.Context, q queryer, tables []string) erro
 }
 
 func (s *Store) ListPlatforms(ctx context.Context) ([]domain.Platform, error) {
-	return list[domain.Platform](ctx, s.DB, "SELECT data FROM platforms ORDER BY json_extract(data,'$.sort'),json_extract(data,'$.name'),id")
+	// Equal sort values keep the order in which records were added.
+	return list[domain.Platform](ctx, s.DB, "SELECT data FROM platforms ORDER BY json_extract(data,'$.sort'),json_extract(data,'$.created_at'),id")
 }
 func (s *Store) GetPlatform(ctx context.Context, id string) (*domain.Platform, error) {
 	return load[domain.Platform](ctx, s.DB, "SELECT data FROM platforms WHERE id=?", id)
@@ -311,7 +312,7 @@ func (s *Store) ListChannels(ctx context.Context, platformID ...string) ([]domai
 		q += " WHERE platform_id=?"
 		args = append(args, platformID[0])
 	}
-	q += " ORDER BY json_extract(data,'$.sort'),json_extract(data,'$.name'),id"
+	q += " ORDER BY json_extract(data,'$.sort'),json_extract(data,'$.created_at'),id"
 	rows, e := s.DB.QueryContext(ctx, q, args...)
 	if e != nil {
 		return nil, e
@@ -501,7 +502,7 @@ func (s *Store) SyncModels(ctx context.Context, channelID string, upstreamIDs []
 			controls = *c.ModelControls
 		}
 		for id := range seen {
-			m := domain.Model{ID: domain.NewID(), ChannelID: channelID, UpstreamID: id, DisplayName: id, Source: "sync", Public: c.Public, ProbeEnabled: controls.ProbeEnabled, ArtifactChinese: controls.ArtifactChinese, ArtifactEnglish: controls.ArtifactEnglish, MaxTokens: 8192, TimeoutSeconds: defaults.ArtifactTimeoutSeconds, ProbeIntervalSeconds: defaults.ProbeIntervalSeconds, ArtifactIntervalSeconds: defaults.ArtifactIntervalSeconds, CreatedAt: nowUTC()}
+			m := domain.Model{ID: domain.NewID(), ChannelID: channelID, UpstreamID: id, DisplayName: id, Source: "sync", Public: c.Public, ProbeEnabled: controls.ProbeEnabled, ArtifactChinese: controls.ArtifactChinese, ArtifactEnglish: controls.ArtifactEnglish, MaxTokens: domain.DefaultArtifactMaxTokens(c.Protocol), TimeoutSeconds: defaults.ArtifactTimeoutSeconds, ProbeIntervalSeconds: defaults.ProbeIntervalSeconds, ArtifactIntervalSeconds: defaults.ArtifactIntervalSeconds, CreatedAt: nowUTC()}
 			if e = saveModel(ctx, tx, m); e != nil {
 				return e
 			}

@@ -141,6 +141,15 @@ func (s *Store) ListJobs(ctx context.Context, limit ...int) ([]domain.Job, error
 	}
 	return jobs(ctx, s.DB, "ORDER BY created_at DESC,id DESC LIMIT ?", n)
 }
+
+// ListChannelJobs returns the latest jobs of one group, so its history is not
+// displaced by the busier groups in the global list.
+func (s *Store) ListChannelJobs(ctx context.Context, channelID string, limit int) ([]domain.Job, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	return jobs(ctx, s.DB, "WHERE channel_id=? ORDER BY created_at DESC,id DESC LIMIT ?", channelID, limit)
+}
 func (s *Store) ClaimJob(ctx context.Context, kind, owner string, now time.Time) (*domain.Job, error) {
 	return s.ClaimJobForChannels(ctx, kind, owner, now, nil)
 }

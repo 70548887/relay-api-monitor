@@ -1,5 +1,7 @@
 import type { Protocol } from './types';
 
+/** Mirrors domain.DefaultArtifactMaxTokens: Anthropic counts thinking against the output limit. */
+export const defaultArtifactMaxTokens=(protocol?:string)=>protocol==='anthropic'?32000:8192;
 export const reasoningOptions=(protocol:Protocol|''|undefined,inherit=false)=>[
  {value:'',label:inherit?'继承分组':'上游默认'},
  ...(inherit?[{value:'default',label:'上游默认（覆盖分组）'}]:[]),

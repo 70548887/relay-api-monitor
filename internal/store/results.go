@@ -133,6 +133,32 @@ func (s *Store) ListChannelArtifactsSummary(ctx context.Context, channelID, temp
 	return s.listChannelArtifactsSummary(ctx, channelID, templateID, limit, false)
 }
 
+// ListChannelArtifactsSummaryPage reads one bounded admin history page and its
+// total from the same database snapshot. Unlike the public history, admin
+// history must remain browsable when model-scoped retention exceeds 100 works.
+func (s *Store) ListChannelArtifactsSummaryPage(ctx context.Context, channelID string, limit, offset int) ([]domain.Artifact, int, error) {
+	if limit < 1 || limit > 100 || offset < 0 {
+		return nil, 0, errors.New("store: invalid artifact page")
+	}
+	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, 0, err
+	}
+	defer tx.Rollback()
+	var total int
+	if err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM artifacts JOIN models ON models.id=artifacts.model_id WHERE models.channel_id=?", channelID).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	items, err := list[domain.Artifact](ctx, tx, "SELECT json_remove(artifacts.data,'$.code','$.raw_response') FROM artifacts JOIN models ON models.id=artifacts.model_id WHERE models.channel_id=? ORDER BY artifacts.created_at DESC,artifacts.id DESC LIMIT ? OFFSET ?", channelID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
 // ListPublicChannelArtifactsSummary applies catalog visibility before LIMIT so
 // hidden or private artifacts cannot displace the eight public history items.
 func (s *Store) ListPublicChannelArtifactsSummary(ctx context.Context, channelID, templateID string, limit int) ([]domain.Artifact, error) {

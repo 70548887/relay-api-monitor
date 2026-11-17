@@ -1,13 +1,44 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App } from 'antd';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {MemoryRouter} from 'react-router-dom';
-import { ModelsPage, PlatformsPage, SettingsPage } from './Admin';
+import { JobsPage, ModelsPage, PlatformsPage, SettingsPage } from './Admin';
 import type { Model } from '../types';
 
 beforeEach(()=>{const getStyle=window.getComputedStyle.bind(window);vi.spyOn(window,'getComputedStyle').mockImplementation(element=>getStyle(element));vi.stubGlobal('matchMedia',vi.fn().mockReturnValue({matches:false,addListener:vi.fn(),removeListener:vi.fn(),addEventListener:vi.fn(),removeEventListener:vi.fn(),dispatchEvent:vi.fn()}));vi.stubGlobal('ResizeObserver',class{observe(){}unobserve(){}disconnect(){}})});
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.unstubAllGlobals()});
+
+it('browses every retained group work across bounded pages',async()=>{
+ const client=new QueryClient({defaultOptions:{queries:{staleTime:Infinity,retry:false}}});
+ client.setQueryData(['admin-platforms'],[{id:'p',name:'Platform',public:true}]);
+ client.setQueryData(['admin-channels'],[{id:'c',platform_id:'p',name:'Group',public:true,enabled:true,archived:false}]);
+ client.setQueryData(['admin-models'],[{id:'m',channel_id:'c',upstream_id:'fixture',public:true}]);
+ client.setQueryData(['admin-templates'],[{id:'cn_html',name:'中文动画'}]);
+ client.setQueryData(['admin-intelligence-status'],{groups:[],worker_online:true});
+ const works=Array.from({length:27},(_,i)=>({id:`work-${i}`,model_id:'m',channel_id:'c',template_id:'cn_html',created_at:new Date(2026,0,1,0,0,i).toISOString()}));
+ const fetcher=vi.fn(async(url:RequestInfo|URL)=>{
+  const path=String(url);
+  if(path.startsWith('/api/v1/admin/jobs?'))return new Response('[]');
+  if(path==='/api/v1/admin/artifacts?channel_id=c&page=1')return new Response(JSON.stringify({items:works.slice(0,25),total:27,page:1,page_size:25}));
+  if(path==='/api/v1/admin/artifacts?channel_id=c&page=2')return new Response(JSON.stringify({items:works.slice(25),total:27,page:2,page_size:25}));
+  throw new Error(`unexpected request ${path}`);
+ });
+ vi.stubGlobal('fetch',fetcher);
+ render(<QueryClientProvider client={client}><App><MemoryRouter initialEntries={['/admin/jobs?channel=c']}><JobsPage/></MemoryRouter></App></QueryClientProvider>);
+ fireEvent.click(screen.getByRole('tab',{name:'生成作品'}));
+ expect(await screen.findByText('作品 1–25 / 27')).toBeInTheDocument();
+ expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(26);
+ fireEvent.click(screen.getByRole('button',{name:'下一页'}));
+ expect(await screen.findByText('作品 26–27 / 27')).toBeInTheDocument();
+ expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(3);
+ expect(screen.getByRole('button',{name:'下一页'})).toBeDisabled();
+ fireEvent.click(screen.getByRole('button',{name:'上一页'}));
+ expect(await screen.findByText('作品 1–25 / 27')).toBeInTheDocument();
+ expect(fetcher).toHaveBeenCalledWith('/api/v1/admin/artifacts?channel_id=c&page=2',expect.anything());
+ client.clear();
+},40000);
+
 describe('model configuration form',()=>{
  it('uses the backend limits on the settings page instead of offering rejected values',async()=>{
   const client=new QueryClient({defaultOptions:{queries:{staleTime:Infinity,retry:false}}});

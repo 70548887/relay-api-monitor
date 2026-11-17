@@ -141,6 +141,7 @@ func generate() error {
 	schemas["GenerateRequest"].(object)["properties"].(object)["template_version"] = object{"type": "integer", "minimum": 0, "description": "必须匹配实际提示词；0代表未知或自定义"}
 	schemas["GenerateRequest"].(object)["properties"].(object)["source_record_id"] = object{"type": "string", "description": "再次测试时用于验证本人历史记录的提示词与模板版本"}
 	schemas["AdminJobView"] = object{"allOf": []any{ref("Job"), object{"type": "object", "properties": object{"requested_model": object{"type": "string"}, "channel_name": object{"type": "string"}, "context_policy": object{"type": "string", "enum": []string{"independent"}}, "visibility_reasons": object{"type": "array", "items": object{"type": "string"}}}}}}
+	schemas["AdminArtifactSummaryPage"] = object{"type": "object", "required": []string{"items", "total", "page", "page_size"}, "properties": object{"items": object{"type": "array", "items": ref("Artifact")}, "total": object{"type": "integer", "minimum": 0}, "page": object{"type": "integer", "minimum": 1}, "page_size": object{"type": "integer", "const": 25}}}
 	paths := object{}
 	add := func(path, method, summary, request, response string, secured, array bool) {
 		op := object{"operationId": strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(strings.Trim(path, "/"), "/", "_"), "{", ""), "}", "") + "_" + method, "summary": summary, "responses": object{"200": object{"description": "成功", "content": object{"application/json": object{"schema": object{}}}}, "400": object{"description": "无效请求", "content": object{"application/json": object{"schema": ref("Error")}}}, "401": object{"description": "需要登录"}, "403": object{"description": "来源或 CSRF 验证失败"}, "409": object{"description": "状态冲突"}, "429": object{"description": "超过限流"}, "502": object{"description": "上游失败"}}}
@@ -214,10 +215,13 @@ func generate() error {
 	add("/admin/overview", "get", "Worker心跳与任务概览", "", "", true, false)
 	add("/admin/audit", "get", "审计记录", "", "AuditEvent", true, true)
 	add("/admin/jobs", "get", "任务列表", "", "AdminJobView", true, true)
+	paths["/admin/jobs"].(object)["get"].(object)["parameters"] = []any{object{"name": "limit", "in": "query", "schema": object{"type": "integer", "minimum": 1}}, object{"name": "channel_id", "in": "query", "schema": object{"type": "string"}}}
 	add("/admin/jobs", "post", "创建立即执行任务", "JobCreate", "Job", true, false)
 	add("/admin/jobs/{id}", "get", "任务详情", "", "Job", true, false)
 	add("/admin/jobs/{id}/cancel", "post", "请求取消", "", "", true, false)
-	add("/admin/artifacts", "get", "作品元数据列表，不含源码", "", "", true, true)
+	add("/admin/artifacts", "get", "作品元数据列表，不含源码；指定分组和页码时返回分页对象", "", "", true, true)
+	paths["/admin/artifacts"].(object)["get"].(object)["parameters"] = []any{object{"name": "channel_id", "in": "query", "schema": object{"type": "string"}}, object{"name": "page", "in": "query", "description": "与 channel_id 一起使用；指定后返回 items/total/page/page_size", "schema": object{"type": "integer", "minimum": 1}}}
+	paths["/admin/artifacts"].(object)["get"].(object)["responses"].(object)["200"].(object)["content"].(object)["application/json"].(object)["schema"] = object{"oneOf": []any{object{"type": "array", "items": ref("Artifact")}, ref("AdminArtifactSummaryPage")}}
 	add("/admin/artifacts/{id}", "get", "管理员作品详情及原始回复", "", "Artifact", true, false)
 	add("/admin/artifacts/{id}", "patch", "隐藏或公开作品", "ArtifactVisibility", "", true, false)
 	add("/admin/artifacts/{id}", "delete", "删除作品", "", "", true, false)

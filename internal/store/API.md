@@ -75,6 +75,7 @@ LatestChannelArtifactAttempts(ctx, channelID, templateID string) ([]domain.Job, 
 LatestPublicChannelArtifactAttempts(ctx, channelID, templateID string) ([]domain.Job, error)
 GetJob(ctx, id string) (*domain.Job, error)
 ListJobs(ctx, limit ...int) ([]domain.Job, error)
+ListChannelJobs(ctx, channelID string, limit int) ([]domain.Job, error)
 RecoverJobs(ctx, now time.Time) error
 AcquireWorkerLease(ctx, owner string, now time.Time) (bool, error)
 RenewWorkerLease(ctx, owner string, now time.Time) error
@@ -87,6 +88,7 @@ ListAllProbeResults(ctx, since time.Time) ([]domain.ProbeResult, error)
 ListArtifacts(ctx, modelID string) ([]domain.Artifact, error)
 ListArtifactsSummary(ctx, modelID string) ([]domain.Artifact, error)
 ListChannelArtifactsSummary(ctx, channelID, templateID string, limit int) ([]domain.Artifact, error)
+ListChannelArtifactsSummaryPage(ctx, channelID string, limit, offset int) ([]domain.Artifact, int, error)
 ListPublicChannelArtifactsSummary(ctx, channelID, templateID string, limit int) ([]domain.Artifact, error)
 GetArtifact(ctx, id string) (*domain.Artifact, error)
 SetArtifactHidden(ctx, id string, hidden bool) error

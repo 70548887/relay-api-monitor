@@ -564,7 +564,10 @@ func (s *generationState) consumeSSE(event, data string) error {
 
 func (s *generationState) incomplete() error {
 	reason := s.result.FinishReason
-	if reason == "length" || reason == "max_tokens" || reason == "max_output_tokens" || reason == "model_context_window_exceeded" {
+	if reason == "model_context_window_exceeded" {
+		return &Error{Code: "context_window_exceeded", Message: "模型上下文窗口已用尽，无法继续生成", HTTPStatus: s.result.HTTPStatus}
+	}
+	if reason == "length" || reason == "max_tokens" || reason == "max_output_tokens" {
 		return &Error{Code: "truncated", Message: "Upstream generation reached its output limit", HTTPStatus: s.result.HTTPStatus}
 	}
 	return &Error{Code: "incomplete", Message: "Upstream generation did not complete", HTTPStatus: s.result.HTTPStatus}

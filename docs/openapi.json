@@ -55,6 +55,35 @@
         },
         "type": "object"
       },
+      "AdminArtifactSummaryPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Artifact"
+            },
+            "type": "array"
+          },
+          "page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "page_size": {
+            "const": 25,
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "type": "object"
+      },
       "AdminJobView": {
         "allOf": [
           {
@@ -3754,18 +3783,48 @@
   "info": {
     "description": "中转监控、公开作品、用户私有测试与管理员加密备份。所有时间为UTC ISO8601。管理写操作需要X-CSRF-Token。普通JSON请求体是单个完整对象且不超过2MiB；备份导入使用专用multipart流式上限3GiB。浏览器Origin必须同源，非浏览器JSON CLI可省略Origin。默认本机端口42783。分组核验仅标记Token绑定，不证明实际路由。",
     "title": "Relay Lab API",
-    "version": "1.5.1"
+    "version": "1.6.0"
   },
   "openapi": "3.1.0",
   "paths": {
     "/admin/artifacts": {
       "get": {
         "operationId": "admin_artifacts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "channel_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "与 channel_id 一起使用；指定后返回 items/total/page/page_size",
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "oneOf": [
+                    {
+                      "items": {
+                        "$ref": "#/components/schemas/Artifact"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdminArtifactSummaryPage"
+                    }
+                  ]
+                }
               }
             },
             "description": "成功"
@@ -3801,7 +3860,7 @@
             "cookieAuth": []
           }
         ],
-        "summary": "作品元数据列表，不含源码"
+        "summary": "作品元数据列表，不含源码；指定分组和页码时返回分页对象"
       }
     },
     "/admin/artifacts/{id}": {
@@ -6348,6 +6407,23 @@
     "/admin/jobs": {
       "get": {
         "operationId": "admin_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "channel_id",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {

@@ -2,15 +2,16 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, App, Button, Checkbox, Form, InputNumber, Modal, Select, Space, Switch } from 'antd';
 import { PlayCircleOutlined } from '@ant-design/icons';
-import { api, post, put } from '../api';
+import { APIError, api, post, put } from '../api';
 import type { Channel, IntelligenceSchedule, Job, Model, PromptTemplate, IntelligenceGroupStatus, Protocol } from '../types';
 import { ReasoningFields } from './ReasoningFields';
 import { ScheduleStatus } from './ScheduleStatus';
 import { intervalLabel } from '../intelligence';
 import { nameOf } from '../lib';
-import { channelModelControls, effectiveArtifactFlags } from '../adminState';
+import { channelModelControls, effectiveArtifactFlags, modelUpdate } from '../adminState';
 
 interface Props { channel: Channel; models?: readonly Model[]; status?:IntelligenceGroupStatus }
+interface TestValues {model_id:string;template_id:string;reasoning_effort?:string;thinking_mode?:string;thinking_budget?:number;max_tokens?:number|null}
 const modelChoices = ({channel, models}:Props) => (models || []).filter(m=>m.channel_id===channel.id&&!m.archived&&!m.missing);
 const defaultModel = (channel:Channel, models:readonly Model[]) => {
   const configured=channel.intelligence_schedule?.model_id||channel.intelligence_model_id;
@@ -28,29 +29,33 @@ export function groupScheduleEnabled(channel:Channel, models?:readonly Model[]) 
 
 export function RunChannelTestButton(props:Props) {
   const {channel}=props;const models=modelChoices(props);
-  const [open,setOpen]=useState(false);const [form]=Form.useForm<{model_id:string;template_id:string;reasoning_effort?:string;thinking_mode?:string;thinking_budget?:number}>();
+  const [open,setOpen]=useState(false);const [form]=Form.useForm<TestValues>();
   const {message}=App.useApp();const client=useQueryClient();
   const templates=useQuery({queryKey:['admin-templates'],queryFn:()=>api<PromptTemplate[]>('/admin/templates'),enabled:open});
   const templateID=Form.useWatch('template_id',form);
   const submit=useMutation({
-    mutationFn:(values:{model_id:string;template_id:string;reasoning_effort?:string;thinking_mode?:string;thinking_budget?:number})=>{
-      const {model_id,template_id,reasoning_effort,thinking_mode,thinking_budget}=values;
+    mutationFn:async(values:TestValues)=>{
+      const {model_id,template_id,reasoning_effort,thinking_mode,thinking_budget,max_tokens}=values;
+      const model=models.find(item=>item.id===model_id);
+      // The limit is stored on the model, so later scheduled runs use the corrected value as well.
+      if(model&&max_tokens&&max_tokens!==model.max_tokens)await put<Model>(`/admin/models/${model.id}`,modelUpdate(model,{max_tokens},channel));
       return post<Job>('/admin/jobs',{model_id,template_id,kind:'artifact',...(reasoning_effort?{reasoning_effort}:{}),...(thinking_mode?{thinking_mode}:{}),...(thinking_budget?{thinking_budget}: {})});
     },
-    onSuccess:job=>{setOpen(false);void client.invalidateQueries();void message.success(<span>测试任务 {job.id.slice(0,8)} 已提交，<a href="/admin/jobs">查看任务进度</a></span>);},
+    onSuccess:job=>{setOpen(false);void client.invalidateQueries();void message.success(<span>测试任务 {job.id.slice(0,8)} 已提交，<a href={`/admin/jobs?channel=${encodeURIComponent(channel.id)}`}>查看任务进度</a></span>);},
   });
-  const start=()=>{submit.reset();form.resetFields();form.setFieldsValue({model_id:defaultModel(channel,models),template_id:'cn_html',reasoning_effort:'',thinking_mode:'',thinking_budget:0});setOpen(true);};
+  const start=()=>{submit.reset();form.resetFields();const id=defaultModel(channel,models);form.setFieldsValue({model_id:id,template_id:'cn_html',reasoning_effort:'',thinking_mode:'',thinking_budget:0,max_tokens:models.find(m=>m.id===id)?.max_tokens??null});setOpen(true);};
   const selectedModel=Form.useWatch('model_id',form);
   const selected= models.find(m=>m.id===selectedModel);
   const protocol=(selected?.protocol||channel.protocol||'chat') as Protocol;
   return <>
     <Button size="small" icon={<PlayCircleOutlined aria-hidden="true"/>} disabled={!channel.enabled||models.length===0} onClick={start}>执行测试</Button>
     <Modal title={`执行测试 · ${channel.name}`} open={open} onCancel={()=>!submit.isPending&&setOpen(false)} onOk={()=>form.submit()} okText="提交测试任务" cancelText="取消" confirmLoading={submit.isPending} destroyOnClose>
-      {submit.error&&<Alert showIcon type="error" message={submit.error.message}/>}
+      {submit.error&&<Alert showIcon type="error" message={submit.error.message} description={submit.error instanceof APIError&&submit.error.code==='model_busy'?<a href={`/admin/jobs?channel=${encodeURIComponent(channel.id)}`}>查看该分组的任务进度</a>:undefined}/>}
       {templates.error&&<Alert showIcon type="error" message="模板加载失败" description={templates.error.message}/>}
       <Form form={form} layout="vertical" onFinish={values=>submit.mutate(values)}>
-        <Form.Item name="model_id" label="测试模型" rules={[{required:true,message:'请选择当前分组的模型'}]}><Select showSearch optionFilterProp="label" onChange={()=>{form.setFieldsValue({reasoning_effort:'',thinking_mode:'',thinking_budget:0})}} options={models.map(m=>({value:m.id,label:nameOf(m)}))}/></Form.Item>
+        <Form.Item name="model_id" label="测试模型" rules={[{required:true,message:'请选择当前分组的模型'}]}><Select showSearch optionFilterProp="label" onChange={id=>{form.setFieldsValue({reasoning_effort:'',thinking_mode:'',thinking_budget:0,max_tokens:models.find(m=>m.id===id)?.max_tokens??null})}} options={models.map(m=>({value:m.id,label:nameOf(m)}))}/></Form.Item>
         <ReasoningFields form={form} protocol={protocol} inherit />
+        <Form.Item name="max_tokens" label="创作最大 Tokens" extra="输出因达到上限被截断时调大；修改后保存到该模型，定时创作同样生效。思考会占用此额度，默认开启思考的 Claude 等模型建议 32000。" rules={[{type:'number',min:1,max:131072,message:'须为 1 至 131072'}]}><InputNumber min={1} max={131072} precision={0} style={{width:'100%'}} placeholder="沿用模型当前设置"/></Form.Item>
         <Form.Item name="template_id" label="测试模板" rules={[{required:true,message:'请选择测试模板'}]}><Select loading={templates.isLoading} options={templates.data?.map(t=>({value:t.id,label:t.name}))}/></Form.Item>
         {templates.data?.find(t=>t.id===templateID)&&<Alert type="info" message="模板原文" description={templates.data.find(t=>t.id===templateID)?.prompt}/>}
         <p className="muted">每次使用独立上下文，只发送本次模板，不读取历史作品。提交后由 Worker 执行一次作品生成，可在“任务与作品”查看结果；已公开模型的作品也会出现在智商测试页面。使用所选模型及分组保存的参数，可能产生 API 用量。</p>

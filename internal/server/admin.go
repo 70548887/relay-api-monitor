@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"relaylab/internal/artifact"
 	"relaylab/internal/domain"
 	"relaylab/internal/security"
+	"relaylab/internal/store"
 	"relaylab/internal/upstream"
 )
 
@@ -378,6 +380,9 @@ func (s *Server) saveModel(c *gin.Context) {
 	maxTokens := b.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = 8192
+		if c.Param("id") == "" {
+			maxTokens = domain.DefaultArtifactMaxTokens(p)
+		}
 	}
 	effort, mode, budget := upstream.ResolveReasoning(b, *ch)
 	if e = upstream.ValidateReasoning(p, effort, mode, budget, maxTokens); e != nil {
@@ -416,7 +421,7 @@ func (s *Server) saveModel(c *gin.Context) {
 			return
 		}
 		if b.MaxTokens == 0 {
-			b.MaxTokens = 8192
+			b.MaxTokens = domain.DefaultArtifactMaxTokens(p)
 		}
 		if b.TimeoutSeconds == 0 {
 			b.TimeoutSeconds = settings.ArtifactTimeoutSeconds
@@ -553,7 +558,13 @@ func (s *Server) jobs(c *gin.Context) {
 	if n == 0 {
 		n = 100
 	}
-	v, e := s.Store.ListJobs(c.Request.Context(), n)
+	var v []domain.Job
+	var e error
+	if channelID := c.Query("channel_id"); channelID != "" {
+		v, e = s.Store.ListChannelJobs(c.Request.Context(), channelID, n)
+	} else {
+		v, e = s.Store.ListJobs(c.Request.Context(), n)
+	}
 	if e != nil {
 		dbError(c, e)
 		return
@@ -625,11 +636,57 @@ func (s *Server) enqueue(c *gin.Context) {
 	j := domain.Job{ID: domain.NewID(), ModelID: m.ID, ChannelID: ch.ID, Kind: b.Kind, TemplateID: b.TemplateID, ReasoningEffort: b.ReasoningEffort, ThinkingMode: b.ThinkingMode, ThinkingBudget: b.ThinkingBudget, State: "queued", ChannelRevision: ch.Revision, ScheduledAt: now, CreatedAt: now}
 	j, e = s.Store.EnqueueJob(ctx, j)
 	if e != nil {
+		if errors.Is(e, store.ErrConflict) && !errors.Is(e, store.ErrConfigurationChanged) {
+			fail(c, 409, "model_busy", s.busyJobMessage(ctx, m.ID, b.Kind))
+			return
+		}
 		dbError(c, e)
 		return
 	}
 	s.auditEvent(ctx, "job_created", j.ID, b.Kind)
 	c.JSON(201, j)
+}
+
+// busyJobMessage names the job holding the one-active-job-per-model fence, so
+// a rejected manual run is not mistaken for a stale page or a broken group.
+func (s *Server) busyJobMessage(ctx context.Context, modelID, kind string) string {
+	label := "创作"
+	if kind == "probe" {
+		label = "健康检测"
+	}
+	advice := "同一模型的同类任务同时只运行 1 个，请等待其结束，或在“任务与作品”中取消后再提交。"
+	active, err := s.Store.ListActiveJobs(ctx)
+	if err == nil {
+		for _, running := range active {
+			if running.ModelID != modelID || running.Kind != kind {
+				continue
+			}
+			source := "手动"
+			if running.ScheduleID != "" {
+				source = "定时"
+			}
+			state := "正在执行"
+			switch running.State {
+			case "queued":
+				state = "正在排队"
+			case "uncertain":
+				state = "结果未确认，需等待原请求截止"
+			}
+			detail := ""
+			switch running.TemplateID {
+			case "cn_html":
+				detail = "中文 HTML，"
+			case "en_svg":
+				detail = "英文 SVG，"
+			}
+			id := running.ID
+			if len(id) > 8 {
+				id = id[:8]
+			}
+			return "该模型的" + source + label + "任务（" + detail + id + "）" + state + "。" + advice
+		}
+	}
+	return "该模型已有" + label + "任务在排队或执行。" + advice
 }
 func (s *Server) cancelJob(c *gin.Context) {
 	if e := s.Store.RequestCancel(c.Request.Context(), c.Param("id")); e != nil {
@@ -667,7 +724,32 @@ func (s *Server) overview(c *gin.Context) {
 	c.JSON(200, gin.H{"worker": wh, "counts": counts, "recent_jobs": js})
 }
 func (s *Server) adminArtifacts(c *gin.Context) {
-	v, e := s.Store.ListArtifactsSummary(c.Request.Context(), "")
+	var v []domain.Artifact
+	var e error
+	if channelID := c.Query("channel_id"); channelID != "" {
+		if rawPage := c.Query("page"); rawPage != "" {
+			const pageSize = 25
+			page, err := strconv.Atoi(rawPage)
+			if err != nil || page < 1 || page-1 > int(^uint(0)>>1)/pageSize {
+				fail(c, 400, "invalid_page", "作品页码超出允许范围")
+				return
+			}
+			items, total, err := s.Store.ListChannelArtifactsSummaryPage(c.Request.Context(), channelID, pageSize, (page-1)*pageSize)
+			if err != nil {
+				dbError(c, err)
+				return
+			}
+			out := make([]map[string]any, 0, len(items))
+			for _, a := range items {
+				out = append(out, artifactMap(a, false))
+			}
+			c.JSON(200, gin.H{"items": out, "total": total, "page": page, "page_size": pageSize})
+			return
+		}
+		v, e = s.Store.ListChannelArtifactsSummary(c.Request.Context(), channelID, "", 100)
+	} else {
+		v, e = s.Store.ListArtifactsSummary(c.Request.Context(), "")
+	}
 	if e != nil {
 		dbError(c, e)
 		return

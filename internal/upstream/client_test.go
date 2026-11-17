@@ -98,6 +98,7 @@ func TestIncompleteAndErrors(t *testing.T) {
 		{"empty", "chat", `{"choices":[{"message":{"content":""},"finish_reason":"stop"}]}`, "application/json", "empty_output"},
 		{"tool only", "chat", `{"choices":[{"message":{"tool_calls":[{}]},"finish_reason":"tool_calls"}]}`, "application/json", "empty_output"},
 		{"responses limit", "responses", `{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}`, "application/json", "truncated"},
+		{"context window", "responses", `{"status":"incomplete","incomplete_details":{"reason":"model_context_window_exceeded"}}`, "application/json", "context_window_exceeded"},
 		{"responses fail", "responses", "event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"message\":\"failed\"}}}\n\n", "text/event-stream", "upstream_error"},
 		{"anthropic missing stop", "anthropic", "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "text/event-stream", "anthropic_missing_terminal"},
 		{"event error", "anthropic", "event: error\ndata: {\"error\":{\"type\":\"overloaded_error\",\"message\":\"busy\"}}\n\n", "text/event-stream", "upstream_error"},
