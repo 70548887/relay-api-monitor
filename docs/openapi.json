@@ -3783,7 +3783,7 @@
   "info": {
     "description": "中转监控、公开作品、用户私有测试与管理员加密备份。所有时间为UTC ISO8601。管理写操作需要X-CSRF-Token。普通JSON请求体是单个完整对象且不超过2MiB；备份导入使用专用multipart流式上限3GiB。浏览器Origin必须同源，非浏览器JSON CLI可省略Origin。默认本机端口42783。分组核验仅标记Token绑定，不证明实际路由。",
     "title": "Relay Lab API",
-    "version": "1.6.0"
+    "version": "1.6.1"
   },
   "openapi": "3.1.0",
   "paths": {

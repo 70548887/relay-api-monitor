@@ -141,6 +141,12 @@ func TestCheckDownloadDurableVerifiedAndPrivatePaths(t *testing.T) {
 	if err != nil || len(content) == 0 {
 		t.Fatal("missing staged artifact")
 	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(m.state.StagedPath)
+		if err != nil || info.Mode().Perm() != 0700 {
+			t.Fatalf("verified download must be executable only by its owner: info=%v error=%v", info, err)
+		}
+	}
 	b, _ := json.Marshal(snap)
 	if strings.Contains(string(b), m.dataDir) || strings.Contains(string(b), "local_path") || strings.Contains(string(b), "staged_path") {
 		t.Fatal("public local path exposed")
@@ -257,6 +263,10 @@ func TestDownloadRejectsMismatchTruncationAnd404(t *testing.T) {
 			if len(entries) > 0 {
 				t.Fatal("partial file leaked")
 			}
+			finals, err := filepath.Glob(filepath.Join(m.dataDir, "updates", "*", f.manifest.Assets[0].Name))
+			if err != nil || len(finals) != 0 {
+				t.Fatalf("unverified download published an executable: %v %v", finals, err)
+			}
 		})
 	}
 }
@@ -290,9 +300,20 @@ func TestApplyRequiresEnabledVerifiedReadyAndRechecksHash(t *testing.T) {
 	if err := os.WriteFile(m.state.StagedPath, []byte(strings.Repeat("X", int(m.state.Latest.AssetSize))), 0600); err != nil {
 		t.Fatal(err)
 	}
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(m.state.StagedPath, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	snap, err := m.Apply(context.Background())
 	if err == nil || snap.State != "failed" || calls != 0 || snap.Operation == nil || snap.Operation.ErrorCode != "checksum_mismatch" {
 		t.Fatalf("unverified apply: %#v %v", snap, err)
+	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(m.state.StagedPath)
+		if err != nil || info.Mode().Perm() != 0600 {
+			t.Fatalf("checksum failure must not grant execute permission: info=%v error=%v", info, err)
+		}
 	}
 }
 func TestApplyWithoutLauncherRemainsReady(t *testing.T) {

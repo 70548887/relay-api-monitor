@@ -464,6 +464,12 @@ func (m *Manager) download(ctx context.Context, asset Asset, opID string) (path 
 	if !strings.EqualFold(hex.EncodeToString(h.Sum(nil)), asset.SHA256) {
 		return "", errors.New("update: SHA-256 mismatch")
 	}
+	// CreateTemp starts with 0600 on Unix. The launcher executes this exact
+	// path for its metadata probe, so grant owner execute only after verifying
+	// every byte and before committing the file as ready.
+	if e = prepareStagedExecutable(tmp); e != nil {
+		return "", e
+	}
 	if tmp.Sync() != nil {
 		return "", errors.New("update: cannot sync staged artifact")
 	}
@@ -668,6 +674,17 @@ func (m *Manager) verifyStaged(path string, info UpdateInfo) error {
 	}
 	if !strings.EqualFold(hex.EncodeToString(h.Sum(nil)), info.SHA256) {
 		return errors.New("update: staged SHA-256 mismatch")
+	}
+	// Cached downloads from older releases can still be 0600. Repair the
+	// verified open file before handing its path to the launcher.
+	return prepareStagedExecutable(f)
+}
+
+func prepareStagedExecutable(f *os.File) error {
+	if runtime.GOOS != "windows" {
+		if err := f.Chmod(0700); err != nil {
+			return errors.New("update: cannot set owner-only executable permissions on staged artifact")
+		}
 	}
 	return nil
 }

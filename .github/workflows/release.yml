@@ -31,6 +31,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Verify downloaded candidates execute without copying or chmod
+        run: go test ./internal/update -run '^Test(DownloadedCandidateExecutesWithoutCopy|RecoveredDownloadedCandidateRepairsPrivateExecutableMode|CheckDownloadDurableVerifiedAndPrivatePaths|DownloadRejectsMismatchTruncationAnd404|ApplyRequiresEnabledVerifiedReadyAndRechecksHash)$' -count=1 -timeout=120s -v
       - name: Verify actual backup, restore, upgrade and recovery on amd64
         env:
           RELAYLAB_UPGRADE_INTEGRATION: '1'
