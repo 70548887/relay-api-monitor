@@ -257,6 +257,25 @@ func TestActualBinaryUpgradeAndRecovery(t *testing.T) {
 		_ = json.Unmarshal(b, &v)
 		return v
 	}
+	waitResumed := func() {
+		t.Helper()
+		// The transaction commits durably before the maintenance fence is
+		// removed. Observing its terminal journal alone does not yet permit
+		// business writes; wait for the launcher's actual running state.
+		wait("launcher released maintenance after commit", func() bool {
+			status, v, err := request("GET", control+"/status", nil, token)
+			if err != nil || status != http.StatusOK || v["state"] != "running" || v["maintenance"] != false {
+				return false
+			}
+			for _, role := range []string{"serve", "worker"} {
+				child, ok := v[role].(map[string]any)
+				if !ok || child["running"] != true {
+					return false
+				}
+			}
+			return true
+		})
+	}
 	wait("upgrade succeeded with both children", func() bool {
 		v := readTransaction()
 		if v["operation_id"] != op {
@@ -267,6 +286,7 @@ func TestActualBinaryUpgradeAndRecovery(t *testing.T) {
 		}
 		return v["state"] == "succeeded"
 	})
+	waitResumed()
 	status, snapshot = api("GET", "/admin/updates", nil, "")
 	if status != 200 {
 		t.Fatal(status)
@@ -293,6 +313,7 @@ func TestActualBinaryUpgradeAndRecovery(t *testing.T) {
 		v := readTransaction()
 		return v["operation_id"] == "integration-rollback-002" && (v["state"] == "rolled_back" || v["state"] == "succeeded" && v["kind"] == "rollback")
 	})
+	waitResumed()
 	status, snapshot = api("GET", "/admin/updates", nil, "")
 	if status != 200 {
 		t.Fatal(status)
@@ -352,6 +373,7 @@ func main(){
 		}
 		return v["state"] == "rolled_back"
 	})
+	waitResumed()
 	status, snapshot = api("GET", "/admin/updates", nil, "")
 	if status != 200 {
 		t.Fatal("database/session was not restored", status, snapshot)
