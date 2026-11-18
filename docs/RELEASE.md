@@ -1,12 +1,14 @@
 # 发布规范
 
-版本以根目录 `VERSION` 的 `MAJOR.MINOR.PATCH` 为准：新增向后兼容功能递增 MINOR，缺陷修复递增 PATCH，不兼容的对外接口变更递增 MAJOR。稳定版 Tag 必须严格等于 `v` 加该版本，例如 `v1.6.1`；预发布不可标记为稳定最新版。本次标题为 `Release v1.6.1 - 修复 Linux 在线升级暂存文件权限`，中文说明位于 `docs/releases/v1.6.1.md`，按修复、升级兼容、附件校验、验证和已知限制组织。
+版本以根目录 `VERSION` 的 `MAJOR.MINOR.PATCH` 为准：新增向后兼容功能递增 MINOR，缺陷修复递增 PATCH，不兼容的对外接口变更递增 MAJOR。稳定版 Tag 必须严格等于 `v` 加该版本，例如 `v1.6.2`；预发布不可标记为稳定最新版。本次标题为 `Release v1.6.2 - 修复 Linux 在线升级暂存文件权限`，中文说明位于 `docs/releases/v1.6.2.md`，按修复、升级兼容、附件校验、验证和已知限制组织。
 
 ## 构建与资源
 
 工作流从 `go.mod` 读取 Go 基线，使用 Node.js 22、`npm ci` 和锁定的模块版本。前端测试单并发运行；Go 测试设置明确超时并执行 `go vet`。Windows 与 Linux amd64 的真实二进制备份恢复、升级回退及容器构建/运行检查通过后才进入发布任务；Linux arm64 容器通过 QEMU 运行检查，不等于原生 arm64 主机验收。发布 CI 在 Linux 临时启用 CGO 执行并发 race 测试，包含备份管理、存储与恢复模块；发布二进制始终 `CGO_ENABLED=0`。
 
-运行 `python scripts/release.py --tag v1.6.1` 会一次性取得完整 commit 与 UTC 构建时间，并将相同的 `version`、`commit`、`buildTime` 注入网站程序和启动器。正式附件从已提交且与 Tag 一致的源码构建，不直接发布带未提交修改的候选包。`scripts/build.ps1` 同样从 VERSION 读取版本，将元数据保存到 `bin/BUILD_METADATA.json`；本地 `package.ps1` 复用该元数据，防止压缩包宣称另一构建。
+当前锁文件中 picomatch 4.0.7 对应的 GHSA-fc5q-39xc-vjpf（source `1247710`）尚无上游修复，影响 6 个仅限开发／构建／测试的 npm 依赖条目。发布门禁由 [scripts/audit_npm.py](../scripts/audit_npm.py) 检查：生产依赖审计必须无发现；完整审计只允许该精确 source 沿锁文件中已确认的开发依赖链传播，并用最终锁文件的 SHA-256 绑定例外。锁文件变动、其他告警或审计异常均失败。此例外在 `2026-11-25T00:00:00Z` 到期；当前完整审计不能记为零告警，待上游修复后应升级依赖并移除例外。
+
+运行 `python scripts/release.py --tag v1.6.2` 会一次性取得完整 commit 与 UTC 构建时间，并将相同的 `version`、`commit`、`buildTime` 注入网站程序和启动器。正式附件从已提交且与 Tag 一致的源码构建，不直接发布带未提交修改的候选包。`scripts/build.ps1` 同样从 VERSION 读取版本，将元数据保存到 `bin/BUILD_METADATA.json`；本地 `package.ps1` 复用该元数据，防止压缩包宣称另一构建。
 
 稳定 Release 固定包含 11 个附件：Windows amd64、Linux amd64、Linux arm64 各自的服务端与启动器，共 6 个裸可执行文件；Windows 完整 ZIP、两个 Linux 完整 tar.gz；`manifest.json` 和 `SHA256SUMS`。完整包包含 `bin/relaylab(.exe)`、`bin/relaylab-launcher(.exe)`、启动停止及备份脚本、VERSION、示例 YAML、README、升级/发布文档、部署示例和第三方声明。Linux 通过 `scripts/start.sh` 前台启动，长期运行使用包内 systemd 示例。Linux 完整包还包含可直接利用 `bin/` 的运行时 Dockerfile、Compose 和容器配置；源码仓库的根 Dockerfile 使用多阶段源码构建。两套配方不混用，完整包不要求缺失的 Go/React 源码。Windows 包附部署文档，运行 Docker 应使用 Linux 对应架构包。
 
@@ -18,7 +20,7 @@ Manifest 必须包含 `version`、`commit`、`build_time`、`launcher_protocol: 
 
 ## 草稿发布与重试
 
-`scripts/publish_release.py --tag v1.6.1` 要求 Tag 已存在且与 VERSION 一致。脚本使用中文 `--notes-file` 创建草稿，上传全部附件，再重新下载验证文件名、大小和 SHA-256，最后才发布并设为 latest。失败时草稿保留，不会以不完整附件成为最新正式版。
+`scripts/publish_release.py --tag v1.6.2` 要求 Tag 已存在且与 VERSION 一致。脚本使用中文 `--notes-file` 创建草稿，上传全部附件，再重新下载验证文件名、大小和 SHA-256，最后才发布并设为 latest。失败时草稿保留，不会以不完整附件成为最新正式版。
 
 同一 Tag 的草稿可重试，允许替换草稿附件。已经发布的 Release 与 Tag 均不可覆写；修复必须递增 VERSION 并使用新 Tag。当前工作区修改工作流不改变旧 Tag 指向的旧工作流。
 

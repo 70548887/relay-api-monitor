@@ -98,7 +98,7 @@ jobs:
       - name: Check reachable Go and npm vulnerabilities
         run: |
           go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./cmd/...
-          npm --prefix web audit --audit-level=high
+          python scripts/audit_npm.py
 
       - name: Build embedded frontend
         run: |
