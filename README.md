@@ -6,7 +6,7 @@ Relay Lab 将 API 健康监控、固定提示词作品对照和在线模型测�
 
 [快速开始](#快速开始) · [首次配置](#首次配置) · [使用说明](#使用说明) · [文档导航](#文档导航) · [下载安装包](https://github.com/70548887/relay-api-monitor/releases)
 
-仓库版本以 [VERSION](VERSION) 为准。当前源码版本 **v1.6.2**，备份与恢复使用方法见 [备份说明](docs/BACKUPS.md)；正式发布版本与附件以 [GitHub Releases](https://github.com/70548887/relay-api-monitor/releases) 为准。
+仓库版本以 [VERSION](VERSION) 为准。当前源码版本 **v1.6.3**，备份与恢复使用方法见 [备份说明](docs/BACKUPS.md)；正式发布版本与附件以 [GitHub Releases](https://github.com/70548887/relay-api-monitor/releases) 为准。
 
 ## 核心功能
 
@@ -137,7 +137,7 @@ Create code for an SVG of a pelican riding a bicycle as nicely as you can.
 - 在线测试：独立使用全局 8、每 IP 2 的并发额度，可在后台调整。
 - 超时：模型发现 20 秒、健康检测 60 秒、新作品配置默认 600 秒。
 - 输出上限：健康检测 1,024；新增模型的作品上限默认 8,192，Anthropic Messages 协议的分组默认 32,000（思考会占用输出额度）。已有模型保持原值，可在模型设置或“执行测试”窗口中调整。
-- 列表顺序：平台与分组先按“排序”值，数值相同时按添加先后排列。
+- 列表顺序：平台、分组和模型按人工“排序”值，小值优先；同值最新添加在前。账号及按时间展示的历史记录最新在前，无可信时间的历史记录后置。
 - 首段有效正文超过 10 秒标记为偏慢；监控样本超过检测间隔的两倍标记为过期。
 
 已发出但结果无法确认的请求不会自动重发。停止本系统的等待不代表上游已经停止计算或计费。
@@ -210,7 +210,7 @@ npm --prefix web run dev
 - [Docker 与宝塔部署](docs/DOCKER.md)：镜像构建、HTTPS、SSE 反代、数据卷和容器恢复。
 - [Linux 部署](deploy/README.md)：完整包运行和 systemd 服务配置。
 - [升级说明](docs/UPDATES.md)：在线升级、旧版本迁移与回滚约束。
-- [备份与恢复](docs/BACKUPS.md) / [v1.6.2 发布说明](docs/releases/v1.6.2.md)：备份、兼容范围和已知限制。
+- [备份与恢复](docs/BACKUPS.md) / [v1.6.3 发布说明](docs/releases/v1.6.3.md)：备份、兼容范围和已知限制。
 - [发布流程](docs/RELEASE.md)：安装包结构、版本契约和附件校验。
 - [验证记录](docs/VALIDATION.md) / [历史接口实测](docs/LIVE_TESTS.md)：测试范围、结果与限制。
 - [OpenAPI 契约](docs/openapi.json) / [配置示例](config.example.yaml)：接口与运行配置参考。

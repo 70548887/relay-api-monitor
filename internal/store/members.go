@@ -24,7 +24,7 @@ func (s *Store) GetMemberByID(ctx context.Context, id string) (*domain.Member, e
 }
 
 func (s *Store) ListMembers(ctx context.Context) ([]domain.Member, error) {
-	rows, err := s.DB.QueryContext(ctx, "SELECT id,username,disabled,created_at FROM users ORDER BY username,id")
+	rows, err := s.DB.QueryContext(ctx, "SELECT id,username,disabled,created_at FROM users ORDER BY created_at DESC,id DESC")
 	if err != nil {
 		return nil, err
 	}

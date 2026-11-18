@@ -1,12 +1,12 @@
 name: relaylab
 services:
   relaylab:
-    image: relay-api-monitor:${RELAYLAB_VERSION:-1.6.2}
+    image: relay-api-monitor:${RELAYLAB_VERSION:-1.6.3}
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        VERSION: ${RELAYLAB_VERSION:-1.6.2}
+        VERSION: ${RELAYLAB_VERSION:-1.6.3}
         COMMIT: ${RELAYLAB_BUILD_COMMIT:-unknown}
         BUILD_TIME: ${RELAYLAB_BUILD_TIME:-unknown}
     init: true

@@ -74,16 +74,17 @@ it('saves an edited group before fetching only its model catalogue',async()=>{
  const platform={id:'platform-new',name:'Fixture Platform',archived:false,public:true};
  const channel={id:'channel-new',platform_id:platform.id,name:'Fixture Group',base_url:'https://fixture.example/v1',protocol:'chat',discovery_protocol:'openai',enabled:true,public:true,archived:false,revision:1,key_mask:'••••1234'};
  const model={id:'model-new',channel_id:channel.id,upstream_id:'model-from-fixture',display_name:'model-from-fixture',archived:false,missing:false,public:false};
+ let synced=false;
  const fetcher=vi.fn(async(url:RequestInfo|URL,init?:RequestInit)=>{
   const path=String(url),method=init?.method||'GET';
   if(path==='/api/v1/admin/platforms')return new Response(JSON.stringify([platform]));
   if(path==='/api/v1/admin/channels'&&method==='GET')return new Response(JSON.stringify([channel]));
   if(path==='/api/v1/admin/channels/channel-new'&&method==='PUT')return new Response(JSON.stringify(channel));
-  if(path==='/api/v1/admin/models'&&method==='GET')return new Response(JSON.stringify([]));
+  if(path==='/api/v1/admin/models'&&method==='GET')return new Response(JSON.stringify(synced?[model]:[]));
   if(path==='/api/v1/admin/models'&&method==='POST')return new Response(JSON.stringify([model]));
   if(path==='/api/v1/admin/intelligence-status')return new Response(JSON.stringify({groups:[],worker_online:true,maintenance:false,updated_at:new Date().toISOString()}));
   if(path==='/api/v1/admin/templates')return new Response(JSON.stringify([{id:'cn_html',name:'中文 HTML 动画',prompt:'fixture prompt'}]));
-  if(path==='/api/v1/admin/channels/channel-new/sync-models')return new Response(JSON.stringify({count:1,models:[model]}));
+  if(path==='/api/v1/admin/channels/channel-new/sync-models'){synced=true;return new Response(JSON.stringify({count:1,models:[model]}))}
   throw new Error(`unexpected request ${method} ${path}`);
  });
  vi.stubGlobal('fetch',fetcher);
@@ -94,7 +95,7 @@ it('saves an edited group before fetching only its model catalogue',async()=>{
  fireEvent.click(await screen.findByRole('button',{name:'保存并获取模型'}));
  await waitFor(()=>expect(fetcher).toHaveBeenCalledWith('/api/v1/admin/channels/channel-new/sync-models',expect.objectContaining({method:'POST'})));
  expect(fetcher.mock.calls.filter(call=>String(call[0]).includes('/sync-models'))).toHaveLength(1);
- expect(client.getQueryData<Model[]>(['admin-models'])).toEqual([model]);
+ await waitFor(()=>expect(client.getQueryData<Model[]>(['admin-models'])).toEqual([model]));
  fireEvent.click(screen.getByRole('tab',{name:'模型与开关'}));
  fireEvent.mouseDown(screen.getByLabelText('定时测试模型'));expect(await screen.findByRole('option',{name:'model-from-fixture'})).toBeInTheDocument();
  client.clear();
@@ -104,16 +105,16 @@ it('creates a new group first, then fetches and selects only its models',async()
  const platform={id:'platform-new',name:'Fixture Platform',archived:false,public:true};
  const channel={id:'channel-new',platform_id:platform.id,name:'Fixture Group',base_url:'https://fixture.example/v1',protocol:'chat',discovery_protocol:'openai',enabled:true,public:true,archived:false,revision:1,key_mask:'••••1234'};
  const model={id:'model-new',channel_id:channel.id,upstream_id:'model-from-fixture',display_name:'model-from-fixture',archived:false,missing:false,public:false};
- let saved=false;
+ let saved=false,synced=false;
  const fetcher=vi.fn(async(url:RequestInfo|URL,init?:RequestInit)=>{
   const path=String(url),method=init?.method||'GET';
   if(path==='/api/v1/admin/platforms')return new Response(JSON.stringify([platform]));
   if(path==='/api/v1/admin/channels'&&method==='GET')return new Response(JSON.stringify(saved?[channel]:[]));
   if(path==='/api/v1/admin/channels'&&method==='POST'){saved=true;return new Response(JSON.stringify(channel))}
-  if(path==='/api/v1/admin/models'&&method==='GET')return new Response(JSON.stringify([]));
+  if(path==='/api/v1/admin/models'&&method==='GET')return new Response(JSON.stringify(synced?[model]:[]));
   if(path==='/api/v1/admin/models'&&method==='POST')return new Response(JSON.stringify([model]));
   if(path==='/api/v1/admin/intelligence-status')return new Response(JSON.stringify({groups:[],worker_online:true,maintenance:false,updated_at:new Date().toISOString()}));
-  if(path==='/api/v1/admin/channels/channel-new/sync-models')return new Response(JSON.stringify({count:1,models:[model]}));
+  if(path==='/api/v1/admin/channels/channel-new/sync-models'){synced=true;return new Response(JSON.stringify({count:1,models:[model]}))}
   throw new Error('unexpected request '+method+' '+path);
  });
  vi.stubGlobal('fetch',fetcher);const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
@@ -128,7 +129,7 @@ it('creates a new group first, then fetches and selects only its models',async()
  const calls=fetcher.mock.calls.map(call=>String(call[0]));
  expect(calls.indexOf('/api/v1/admin/channels')).toBeLessThan(calls.indexOf('/api/v1/admin/channels/channel-new/sync-models'));
  expect(calls.filter(path=>path.includes('/sync-models'))).toEqual(['/api/v1/admin/channels/channel-new/sync-models']);
- expect(client.getQueryData<Model[]>(['admin-models'])).toEqual([model]);
+ await waitFor(()=>expect(client.getQueryData<Model[]>(['admin-models'])).toEqual([model]));
  fireEvent.click(screen.getByRole('tab',{name:'模型与开关'}));
  fireEvent.mouseDown(screen.getByLabelText('定时测试模型'));
  expect(await screen.findByRole('option',{name:'model-from-fixture'})).toBeInTheDocument();client.clear();

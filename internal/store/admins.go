@@ -58,7 +58,7 @@ func migrateAdminAccounts(ctx context.Context, tx *sql.Tx) error {
 }
 
 func (s *Store) ListAdmins(ctx context.Context) ([]domain.Admin, error) {
-	rows, err := s.DB.QueryContext(ctx, "SELECT id,username,disabled,created_at FROM admins ORDER BY username,id")
+	rows, err := s.DB.QueryContext(ctx, "SELECT id,username,disabled,created_at FROM admins ORDER BY created_at DESC,id DESC")
 	if err != nil {
 		return nil, err
 	}

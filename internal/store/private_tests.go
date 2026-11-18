@@ -51,7 +51,7 @@ func (s *Store) ListUserConnections(ctx context.Context, userID string) ([]domai
 		query += " WHERE c.user_id=?"
 		args = append(args, userID)
 	}
-	query += " ORDER BY json_extract(c.data,'$.created_at') DESC,c.id"
+	query += " ORDER BY rtrim(json_extract(c.data,'$.created_at'),'Z') DESC,c.id DESC"
 	rows, err := s.DB.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err

@@ -2,9 +2,9 @@ import { App, Button } from 'antd';
 import { SyncOutlined } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { post } from '../api';
-import type { Channel, Model } from '../types';
+import type { Channel } from '../types';
 
-interface SyncResult { count:number; models:Model[] }
+interface SyncResult { count:number }
 
 export function ChannelModelSyncButton({channel,disabled=false}:{channel:Channel;disabled?:boolean}) {
  const client=useQueryClient();
@@ -12,10 +12,7 @@ export function ChannelModelSyncButton({channel,disabled=false}:{channel:Channel
  const sync=useMutation({
   mutationFn:()=>post<SyncResult>(`/admin/channels/${channel.id}/sync-models`,{}),
   onSuccess:async(result)=>{
-   client.setQueryData<Model[]>(['admin-models'],current=>[
-    ...(current||[]).filter(model=>model.channel_id!==channel.id),
-    ...result.models,
-   ]);
+   await client.invalidateQueries({queryKey:['admin-models']});
    client.setQueryData<Channel[]>(['admin-channels'],current=>current?.map(item=>item.id===channel.id?{...item,last_sync_at:new Date().toISOString(),sync_error:''}:item));
    await Promise.all([
     client.invalidateQueries({queryKey:['admin-intelligence-status']}),

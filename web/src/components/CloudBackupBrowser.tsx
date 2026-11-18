@@ -56,7 +56,8 @@ export function CloudBackupBrowser({ open, storageConfigured, disabled, onClose,
       setRows(existing => {
         const byID = new Map((more ? existing : []).map(row => [row.id, row]));
         result.items.forEach(row => byID.set(row.id, row));
-        return [...byID.values()];
+        return [...byID.values()].sort((a, b) =>
+          (Date.parse(b.last_modified || '') || 0) - (Date.parse(a.last_modified || '') || 0));
       });
       setContinuation(result.continuation_token); setTruncated(result.truncated); setScanned(true);
       if (!more) { setSelected(undefined); setIdentity(''); }
@@ -101,7 +102,7 @@ export function CloudBackupBrowser({ open, storageConfigured, disabled, onClose,
       <div className="backup-cloud-browser">
         <Alert showIcon type="info" message="扫描已配置存储中的备份" description="云端对象先列为待核对。导入时使用对应恢复私钥完整校验，只新增受保护的备份记录；业务数据恢复需要另行执行。未知对象不会自动删除。" />
         {!storageConfigured && <Alert type="warning" showIcon message="请先保存 S3 存储配置" action={<Button onClick={() => { onClose(); onConfigure(); }}>配置云端存储</Button>} />}
-        <div className="backup-cloud-toolbar"><Space wrap><Button type="primary" icon={<ReloadOutlined spin={busy === 'scan'} />} disabled={!storageConfigured || !!busy || disabled} loading={busy === 'scan' && !continuation} onClick={() => void scan(false)}>扫描云端备份</Button>{truncated && <Button disabled={!continuation || !!busy || disabled} loading={busy === 'scan' && !!continuation} onClick={() => void scan(true)}>继续扫描</Button>}</Space><span>已列出 {rows.length} 份{truncated ? ' · 尚有更多对象' : scanned ? ' · 本次扫描完成' : ''}</span></div>
+        <div className="backup-cloud-toolbar"><Space wrap><Button type="primary" icon={<ReloadOutlined spin={busy === 'scan'} />} disabled={!storageConfigured || !!busy || disabled} loading={busy === 'scan' && !continuation} onClick={() => void scan(false)}>扫描云端备份</Button>{truncated && <Button disabled={!continuation || !!busy || disabled} loading={busy === 'scan' && !!continuation} onClick={() => void scan(true)}>继续扫描</Button>}</Space><span>已列出 {rows.length} 份{truncated ? ' · 尚有更多对象' : scanned ? ' · 本次扫描完成' : ''}{scanned ? ' · 已扫描项目按修改时间从新到旧；继续扫描可加载更多' : ''}</span></div>
         {error && <Alert type="error" showIcon message="云端操作未完成" description={error} />}
         {notice && <Alert type="success" showIcon message={notice} />}
         <Table<CloudCandidate> rowKey="id" dataSource={rows} pagination={false} loading={busy === 'scan'} scroll={{ x: 700, y: 320 }} locale={{ emptyText: <Empty description={scanned ? '当前前缀没有可导入的备份文件' : '点击扫描读取已配置存储中的备份'} /> }} columns={[

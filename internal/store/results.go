@@ -85,9 +85,9 @@ func (s *Store) ReleaseWorkerLease(ctx context.Context, owner string) error {
 }
 func (s *Store) ListProbeResults(ctx context.Context, modelID string, since time.Time) ([]domain.ProbeResult, error) {
 	if modelID == "" {
-		return list[domain.ProbeResult](ctx, s.DB, "SELECT data FROM probe_results WHERE created_at>=? ORDER BY created_at DESC,id", ts(since))
+		return list[domain.ProbeResult](ctx, s.DB, "SELECT data FROM probe_results WHERE created_at>=? ORDER BY created_at DESC,id DESC", ts(since))
 	}
-	return list[domain.ProbeResult](ctx, s.DB, "SELECT data FROM probe_results WHERE model_id=? AND created_at>=? ORDER BY created_at DESC,id", modelID, ts(since))
+	return list[domain.ProbeResult](ctx, s.DB, "SELECT data FROM probe_results WHERE model_id=? AND created_at>=? ORDER BY created_at DESC,id DESC", modelID, ts(since))
 }
 func (s *Store) ListAllProbeResults(ctx context.Context, since time.Time) ([]domain.ProbeResult, error) {
 	return s.ListProbeResults(ctx, "", since)
@@ -106,13 +106,13 @@ func (s *Store) ListProbeResultsLimit(ctx context.Context, modelID string, since
 		args = append(args, modelID)
 	}
 	args = append(args, limit)
-	return list[domain.ProbeResult](ctx, s.DB, q+" ORDER BY created_at DESC,id LIMIT ?", args...)
+	return list[domain.ProbeResult](ctx, s.DB, q+" ORDER BY created_at DESC,id DESC LIMIT ?", args...)
 }
 func (s *Store) ListArtifacts(ctx context.Context, modelID string) ([]domain.Artifact, error) {
 	if modelID == "" {
-		return list[domain.Artifact](ctx, s.DB, "SELECT data FROM artifacts ORDER BY created_at DESC,id")
+		return list[domain.Artifact](ctx, s.DB, "SELECT data FROM artifacts ORDER BY created_at DESC,id DESC")
 	}
-	return list[domain.Artifact](ctx, s.DB, "SELECT data FROM artifacts WHERE model_id=? ORDER BY created_at DESC,id", modelID)
+	return list[domain.Artifact](ctx, s.DB, "SELECT data FROM artifacts WHERE model_id=? ORDER BY created_at DESC,id DESC", modelID)
 }
 
 // ListArtifactsSummary excludes generated source and request/response payloads
@@ -124,7 +124,7 @@ func (s *Store) ListArtifactsSummary(ctx context.Context, modelID string) ([]dom
 		q += " WHERE model_id=?"
 		args = append(args, modelID)
 	}
-	return list[domain.Artifact](ctx, s.DB, q+" ORDER BY created_at DESC,id", args...)
+	return list[domain.Artifact](ctx, s.DB, q+" ORDER BY created_at DESC,id DESC", args...)
 }
 
 // ListChannelArtifactsSummary supports channel history without loading source

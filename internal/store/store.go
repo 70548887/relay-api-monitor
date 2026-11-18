@@ -274,9 +274,13 @@ func validateSchemaColumns(ctx context.Context, q queryer, tables []string) erro
 	return nil
 }
 
+// Saved catalog timestamps are UTC RFC3339Nano. Removing the trailing Z makes
+// whole-second and fractional timestamps compare chronologically, without
+// discarding sub-millisecond precision. Explicit sort values take precedence.
+const catalogListOrder = "json_extract(data,'$.sort') ASC,rtrim(json_extract(data,'$.created_at'),'Z') DESC,id ASC"
+
 func (s *Store) ListPlatforms(ctx context.Context) ([]domain.Platform, error) {
-	// Equal sort values keep the order in which records were added.
-	return list[domain.Platform](ctx, s.DB, "SELECT data FROM platforms ORDER BY json_extract(data,'$.sort'),json_extract(data,'$.created_at'),id")
+	return list[domain.Platform](ctx, s.DB, "SELECT data FROM platforms ORDER BY "+catalogListOrder)
 }
 func (s *Store) GetPlatform(ctx context.Context, id string) (*domain.Platform, error) {
 	return load[domain.Platform](ctx, s.DB, "SELECT data FROM platforms WHERE id=?", id)
@@ -312,7 +316,7 @@ func (s *Store) ListChannels(ctx context.Context, platformID ...string) ([]domai
 		q += " WHERE platform_id=?"
 		args = append(args, platformID[0])
 	}
-	q += " ORDER BY json_extract(data,'$.sort'),json_extract(data,'$.created_at'),id"
+	q += " ORDER BY " + catalogListOrder
 	rows, e := s.DB.QueryContext(ctx, q, args...)
 	if e != nil {
 		return nil, e
@@ -444,7 +448,7 @@ func (s *Store) ListModels(ctx context.Context, channelID ...string) ([]domain.M
 		q += " WHERE channel_id=?"
 		args = append(args, channelID[0])
 	}
-	return list[domain.Model](ctx, s.DB, q+" ORDER BY json_extract(data,'$.sort'),json_extract(data,'$.display_name'),id", args...)
+	return list[domain.Model](ctx, s.DB, q+" ORDER BY "+catalogListOrder, args...)
 }
 func (s *Store) GetModel(ctx context.Context, id string) (*domain.Model, error) {
 	return load[domain.Model](ctx, s.DB, "SELECT data FROM models WHERE id=?", id)

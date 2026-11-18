@@ -18,8 +18,9 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCKFILE = Path('web/package-lock.json')
-# Reviewed v1.6.2 web/package-lock.json; any change requires a fresh review.
-EXCEPTION_LOCK_SHA256 = '73ef78c39977f0a065fbf0b04e045797457194edd2edf34e5aae7f5e625cbcac'
+# Reviewed v1.6.3 web/package-lock.json; only the root package version changed.
+# Any further lockfile change requires a fresh review.
+EXCEPTION_LOCK_SHA256 = '0096c7f9038985ee98cd376a0976491275eb9d055a9aa052aacceab8192581c3'
 EXCEPTION_EXPIRES = datetime(2026, 11, 25, tzinfo=timezone.utc)
 ADVISORY_URL = 'https://github.com/advisories/GHSA-fc5q-39xc-vjpf'
 ADVISORY_SOURCE = 1247710

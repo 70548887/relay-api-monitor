@@ -3,13 +3,14 @@ package store
 import (
 	"context"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
 	"relaylab/internal/domain"
 )
 
-func TestPlatformsAndChannelsListInAddedOrder(t *testing.T) {
+func TestCatalogListsNewestFirstWithinExplicitSort(t *testing.T) {
 	ctx := context.Background()
 	s, err := Open(filepath.Join(t.TempDir(), "order.db"))
 	if err != nil {
@@ -17,39 +18,121 @@ func TestPlatformsAndChannelsListInAddedOrder(t *testing.T) {
 	}
 	t.Cleanup(func() { s.Close() })
 	base := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
-	// Names and IDs sort in the opposite direction of the creation times.
-	names := []string{"zulu", "mike", "alpha"}
-	for i, name := range names {
-		p := domain.Platform{ID: "p-" + name, Name: name, Public: true, CreatedAt: base.Add(time.Duration(i) * time.Hour)}
+	// Neither names nor IDs encode creation order. Whole and fractional seconds
+	// must compare correctly, and identical times need a stable ID tie-breaker.
+	entries := []struct {
+		id, name string
+		created  time.Time
+	}{
+		{"z-old", "zulu", base},
+		{"b-fraction", "alpha", base.Add(time.Nanosecond)},
+		{"c-tenth", "november", base.Add(100 * time.Millisecond)},
+		{"d-eleven", "echo", base.Add(110 * time.Millisecond)},
+		{"a-tie", "mike", base.Add(time.Hour)},
+		{"z-tie", "bravo", base.Add(time.Hour)},
+	}
+	for _, entry := range entries {
+		p := domain.Platform{ID: "p-" + entry.id, Name: entry.name, Public: true, CreatedAt: entry.created}
 		if err = s.SavePlatform(ctx, p); err != nil {
 			t.Fatal(err)
 		}
-		c := domain.Channel{ID: "c-" + name, PlatformID: p.ID, Name: name, Enabled: true, EncryptedKey: "opaque-secret", CreatedAt: base.Add(time.Duration(i) * time.Hour)}
+		c := domain.Channel{ID: "c-" + entry.id, PlatformID: "p-z-old", Name: entry.name, Enabled: true, EncryptedKey: "opaque-secret", CreatedAt: entry.created}
 		if err = s.SaveChannel(ctx, c); err != nil {
 			t.Fatal(err)
 		}
-	}
-	platforms, err := s.ListPlatforms(ctx)
-	if err != nil || len(platforms) != len(names) {
-		t.Fatal(err, platforms)
-	}
-	channels, err := s.ListChannels(ctx)
-	if err != nil || len(channels) != len(names) {
-		t.Fatal(err, channels)
-	}
-	for i, name := range names {
-		if platforms[i].Name != name || channels[i].Name != name {
-			t.Fatalf("position %d: platform %q channel %q, want %q", i, platforms[i].Name, channels[i].Name, name)
+		m := domain.Model{ID: "m-" + entry.id, ChannelID: "c-z-old", UpstreamID: entry.id, DisplayName: entry.name, CreatedAt: entry.created}
+		if err = s.SaveModel(ctx, m); err != nil {
+			t.Fatal(err)
 		}
 	}
-	// An explicit sort value still takes precedence over the creation time.
-	pinned := domain.Platform{ID: "p-pinned", Name: "pinned", Public: true, Sort: -1, CreatedAt: base.Add(24 * time.Hour)}
-	if err = s.SavePlatform(ctx, pinned); err != nil {
+	check := func(want []string) {
+		t.Helper()
+		platforms, e := s.ListPlatforms(ctx)
+		if e != nil {
+			t.Fatal(e)
+		}
+		platformIDs := make([]string, len(platforms))
+		for i, p := range platforms {
+			platformIDs[i] = p.ID[2:]
+		}
+		if !reflect.DeepEqual(platformIDs, want) {
+			t.Fatalf("platform order %v, want %v", platformIDs, want)
+		}
+		for _, filter := range []string{"", "p-z-old"} {
+			channels, e := s.ListChannels(ctx, filter)
+			if e != nil {
+				t.Fatal(e)
+			}
+			ids := make([]string, len(channels))
+			for i, c := range channels {
+				ids[i] = c.ID[2:]
+			}
+			if !reflect.DeepEqual(ids, want) {
+				t.Fatalf("channel order (filter %q) %v, want %v", filter, ids, want)
+			}
+		}
+		for _, filter := range []string{"", "c-z-old"} {
+			models, e := s.ListModels(ctx, filter)
+			if e != nil {
+				t.Fatal(e)
+			}
+			ids := make([]string, len(models))
+			for i, m := range models {
+				ids[i] = m.ID[2:]
+			}
+			if !reflect.DeepEqual(ids, want) {
+				t.Fatalf("model order (filter %q) %v, want %v", filter, ids, want)
+			}
+		}
+	}
+	want := []string{"a-tie", "z-tie", "d-eleven", "c-tenth", "b-fraction", "z-old"}
+	check(want)
+	// Renaming never changes the added-time order.
+	p, err := s.GetPlatform(ctx, "p-b-fraction")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if platforms, err = s.ListPlatforms(ctx); err != nil || len(platforms) != len(names)+1 || platforms[0].ID != pinned.ID || platforms[1].Name != names[0] {
-		t.Fatal(err, platforms)
+	c, err := s.GetChannel(ctx, "c-b-fraction")
+	if err != nil {
+		t.Fatal(err)
 	}
+	m, err := s.GetModel(ctx, "m-b-fraction")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Name, c.Name, m.DisplayName = "renamed", "renamed", "renamed"
+	if err = s.SavePlatform(ctx, *p); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.SaveChannel(ctx, *c); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.SaveModel(ctx, *m); err != nil {
+		t.Fatal(err)
+	}
+	check(want)
+	// A manually pinned old entry still precedes the newest records.
+	if err = s.SavePlatform(ctx, domain.Platform{ID: "p-pinned", Name: "pinned", Sort: -1, CreatedAt: base.Add(-time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.SaveChannel(ctx, domain.Channel{ID: "c-pinned", PlatformID: "p-z-old", Name: "pinned", Sort: -1, CreatedAt: base.Add(-time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.SaveModel(ctx, domain.Model{ID: "m-pinned", ChannelID: "c-z-old", UpstreamID: "pinned", Sort: -1, CreatedAt: base.Add(-time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	check(append([]string{"pinned"}, want...))
+	// A larger explicit sort value remains last even for a newer record.
+	if err = s.SavePlatform(ctx, domain.Platform{ID: "p-last", Name: "last", Sort: 1, CreatedAt: base.Add(24 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.SaveChannel(ctx, domain.Channel{ID: "c-last", PlatformID: "p-z-old", Name: "last", Sort: 1, CreatedAt: base.Add(24 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.SaveModel(ctx, domain.Model{ID: "m-last", ChannelID: "c-z-old", UpstreamID: "last", Sort: 1, CreatedAt: base.Add(24 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	check(append(append([]string{"pinned"}, want...), "last"))
 }
 
 func TestListChannelJobsIsScopedToOneGroup(t *testing.T) {

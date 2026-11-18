@@ -115,9 +115,6 @@ export function ChannelEditor({open,channel,platforms,models,modelsLoading=false
    client.invalidateQueries({queryKey:['intelligence']}),
   ]);
  }
- function cacheChannel(saved:Channel) {
-  client.setQueryData<Channel[]>(['admin-channels'],previous=>previous?.some(item=>item.id===saved.id)?previous.map(item=>item.id===saved.id?saved:item):[...(previous||[]),saved]);
- }
  async function perform(operation:Operation) {
   if(lock.current)return;
   lock.current=true;setBusy(operation);setError('');if(operation==='sync')setSyncCount(undefined);
@@ -129,13 +126,12 @@ export function ChannelEditor({open,channel,platforms,models,modelsLoading=false
    const saved=record
     ?await put<Channel>(`/admin/channels/${record.id}`,channelUpdate(record,body))
     :await post<Channel>('/admin/channels',body);
-   savedCompleted=true;setRecord(saved);cacheChannel(saved);targetEdited.current=false;
+   savedCompleted=true;setRecord(saved);targetEdited.current=false;
    // Once stored, discard the replacement secret. The response carries only its mask.
    form.setFieldsValue({...submitted,...saved,model_controls:channelModelControls(saved),api_key:''});
    if(operation==='sync'){
     const result=await post<{count:number;models:Model[]}>(`/admin/channels/${saved.id}/sync-models`,{});
-    client.setQueryData<Model[]>(['admin-models'],previous=>[...(previous||[]).filter(item=>item.channel_id!==saved.id),...result.models]);
-    setSyncCount(result.count);await invalidate();
+    setSyncCount(result.count);await Promise.all([invalidate(),client.invalidateQueries({queryKey:['admin-models']})]);
     const latest=client.getQueryData<Channel[]>(['admin-channels'])?.find(item=>item.id===saved.id);
     if(latest)setRecord(latest);
     void message.success(`已保存并同步当前分组的 ${result.count} 个模型`);
@@ -196,7 +192,7 @@ export function ChannelEditor({open,channel,platforms,models,modelsLoading=false
    {sectionTitle('接口路径与兼容设置','自定义路径替换整个地址路径；留空才使用协议默认路径。')}
    <div className="channel-editor-form-grid"><Form.Item name="models_path" label="模型列表路径" rules={pathRules}><Input placeholder="留空使用默认 /models" maxLength={4096}/></Form.Item><Form.Item name="generate_path" label="生成路径" rules={pathRules}><Input placeholder={`留空使用默认 ${suffix}`} maxLength={4096}/></Form.Item></div>
    <div className="channel-editor-endpoints"><p><span>模型列表：</span><code>{endpointPreview(values.base_url,values.models_path)}</code></p><p><span>生成接口：</span><code>{endpointPreview(values.base_url,values.generate_path,suffix)}</code></p></div>
-   <div className="channel-editor-form-grid">{protocol==='chat'&&<Form.Item name="chat_token_field" label="Chat Token 字段"><Select options={[{label:'max_tokens',value:'max_tokens'},{label:'max_completion_tokens',value:'max_completion_tokens'}]}/></Form.Item>}{(protocol==='anthropic'||discovery==='anthropic')&&<Form.Item name="anthropic_version" label="Anthropic Version"><Input placeholder="2023-06-01" maxLength={100}/></Form.Item>}<Form.Item name="sort" label="排序" extra="数值越小，在列表中越靠前。"><InputNumber style={{width:'100%'}}/></Form.Item></div>
+   <div className="channel-editor-form-grid">{protocol==='chat'&&<Form.Item name="chat_token_field" label="Chat Token 字段"><Select options={[{label:'max_tokens',value:'max_tokens'},{label:'max_completion_tokens',value:'max_completion_tokens'}]}/></Form.Item>}{(protocol==='anthropic'||discovery==='anthropic')&&<Form.Item name="anthropic_version" label="Anthropic Version"><Input placeholder="2023-06-01" maxLength={100}/></Form.Item>}<Form.Item name="sort" label="排序" extra="数值越小越靠前；数值相同时，最新添加的在前。"><InputNumber style={{width:'100%'}}/></Form.Item></div>
    {sectionTitle('令牌绑定组验证','可选，仅查询 Key 的绑定信息，不证明请求实际路由；未配置不影响模型调用。')}
    <Form.Item name="group_provider" label="分组查询方式"><Select options={[{value:'none',label:'不支持 / 不查询'},{value:'newapi',label:'New API 令牌信息'},{value:'custom',label:'自定义接口'}]}/></Form.Item>
    {provider==='newapi'&&<div className="channel-editor-endpoints"><p><span>固定查询路径：</span><code>/api/token/self</code></p><small>仅查询令牌绑定组信息，不读取账户列表。</small></div>}

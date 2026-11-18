@@ -56,6 +56,19 @@ describe('cloud backup directory', () => {
     expect(new Headers(fetcher.mock.calls[1][1].headers).get('X-CSRF-Token')).toBe('csrf-cloud');
     expect(screen.queryByRole('button', { name: '继续扫描' })).not.toBeInTheDocument();
   });
+  it('orders only scanned candidates by last modified time across pages', async () => {
+    const newest = { ...second, last_modified: '2026-10-31T02:00:00Z' };
+    const fetcher = vi.fn().mockResolvedValueOnce(response({ items: [first], continuation_token: 'next', truncated: true }))
+      .mockResolvedValueOnce(response({ items: [newest], truncated: false }));
+    show(fetcher); await scan();
+    expect(await screen.findByText(first.file_name)).toBeInTheDocument();
+    expect(screen.getByText(/已扫描项目按修改时间从新到旧；继续扫描可加载更多/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '继续扫描' }));
+    expect(await screen.findByText(newest.file_name)).toBeInTheDocument();
+    const newestRow = screen.getByText(newest.file_name).closest('tr')!;
+    const olderRow = screen.getByText(first.file_name).closest('tr')!;
+    expect(newestRow.compareDocumentPosition(olderRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
   it('reauthenticates before one import and never persists the recovery key', async () => {
     let resolveImport: (value: Response) => void = () => {};
     const fetcher = vi.fn(async (url: RequestInfo | URL, _init?: RequestInit) => String(url).endsWith('/scan') ? response({ items: [first], truncated: false }) : String(url).endsWith('/reauth') ? response({ ok: true }) : new Promise<Response>(resolve => { resolveImport = resolve; }));
