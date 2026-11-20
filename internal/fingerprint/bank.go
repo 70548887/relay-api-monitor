@@ -17,6 +17,7 @@ import (
 	"time"
 
 	lmfpd "github.com/Ikaleio/lm-detector/sdk/go"
+	"relaylab/internal/domain"
 )
 
 // ErrBankUnavailable wraps every failure to read or download the reference bank.
@@ -36,12 +37,7 @@ const (
 )
 
 // Model is one model of the reference bank.
-type Model struct {
-	ID          string `json:"id"`
-	DisplayName string `json:"display_name"`
-	Family      string `json:"family"`
-	FamilyName  string `json:"family_name"`
-}
+type Model = domain.FingerprintModel
 
 // Reference is one loaded build of the reference bank. It is immutable and safe for concurrent use.
 type Reference struct {
@@ -68,15 +64,7 @@ func (r *Reference) Model(id string) (Model, bool) {
 }
 
 // Status describes the reference bank for the administration page.
-type Status struct {
-	Ready bool `json:"ready"`
-	// Source is online or local.
-	Source    string     `json:"source"`
-	BuiltAt   string     `json:"built_at"`
-	Models    int        `json:"models"`
-	UpdatedAt *time.Time `json:"updated_at"`
-	Error     string     `json:"error"`
-}
+type Status = domain.FingerprintBank
 
 // Bank loads the reference bank and keeps the current build in memory. The online bank is cached in one file of the
 // bank directory, which the server and worker processes share: a build written by one process is picked up by the
