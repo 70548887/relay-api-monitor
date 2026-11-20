@@ -27,6 +27,16 @@ const (
 	FingerprintNotModelLike   = "not_model_like"
 )
 
+// Fingerprint modes say which reference model a detection compares a channel model with.
+const (
+	// FingerprintModeAuto derives the reference model from the upstream model ID. An empty mode means the same.
+	FingerprintModeAuto = "auto"
+	// FingerprintModeManual uses the reference model an administrator picked.
+	FingerprintModeManual = "manual"
+	// FingerprintModeUnlisted compares with no reference model, because the bank does not list the model.
+	FingerprintModeUnlisted = "unlisted"
+)
+
 // FingerprintModel is one model of the reference bank.
 type FingerprintModel struct {
 	ID          string `json:"id"`
@@ -113,4 +123,20 @@ type FingerprintAnalysis struct {
 	Confidence  *float64            `json:"confidence"`
 	Answers     []FingerprintAnswer `json:"answers"`
 	BankBuiltAt string              `json:"bank_built_at"`
+}
+
+// FingerprintResult is one stored detection round of a channel model.
+type FingerprintResult struct {
+	ID      string `json:"id"`
+	JobID   string `json:"job_id"`
+	ModelID string `json:"model_id"`
+	// Questions is how many questions the round asked.
+	Questions int                 `json:"questions"`
+	Analysis  FingerprintAnalysis `json:"analysis"`
+	// ReturnedModel is the model name the upstream reported in its responses.
+	ReturnedModel string `json:"returned_model"`
+	// Usage is the token usage of the whole round.
+	Usage      Usage     `json:"usage"`
+	DurationMS int64     `json:"duration_ms"`
+	CreatedAt  time.Time `json:"created_at"`
 }

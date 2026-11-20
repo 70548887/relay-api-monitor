@@ -90,6 +90,10 @@ export interface Model {
   timeout_seconds: number;
   sort: number;
   created_at: string;
+  fingerprint_mode?: string;
+  fingerprint_model?: string;
+  fingerprint_questions?: number;
+  fingerprint_scheduled?: boolean;
 }
 
 export interface Usage {

@@ -70,7 +70,7 @@ test('isolated backup keys, encrypted snapshot, authenticated download and resto
   await restore.getByRole('button', { name: '开始预检', exact: true }).click();
   await reauthenticate(page);
   await expect(restore.getByText('预检通过，当前数据尚未更改', { exact: true })).toBeVisible({ timeout: 20000 });
-  await expect(restore.getByText('Schema 4', { exact: true })).toBeVisible();
+  await expect(restore.getByText('Schema 5', { exact: true })).toBeVisible();
   await expect(restore.locator('input')).toHaveCount(0);
   const current = await page.request.get('/api/v1/admin/backups/status');
   const status = await current.json();

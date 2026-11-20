@@ -365,7 +365,7 @@ func (m *Manager) create(ctx context.Context, requestID string, slot *time.Time)
 	}
 	now := time.Now().UTC()
 	id := domain.NewID()
-	r := Run{ID: id, RequestID: requestID, State: "queued", Trigger: "manual", CreatedAt: now, StartedAt: now, HeartbeatAt: now, Version: m.opts.BuildVersion, DatabaseSchema: 4, RecipientID: p.RecipientID, FileName: fmt.Sprintf("relaylab_%s_%s.zip.age", now.Format("20060102T150405Z"), id), ScheduledFor: slot, LocalState: "pending"}
+	r := Run{ID: id, RequestID: requestID, State: "queued", Trigger: "manual", CreatedAt: now, StartedAt: now, HeartbeatAt: now, Version: m.opts.BuildVersion, DatabaseSchema: 5, RecipientID: p.RecipientID, FileName: fmt.Sprintf("relaylab_%s_%s.zip.age", now.Format("20060102T150405Z"), id), ScheduledFor: slot, LocalState: "pending"}
 	r.PolicySnapshot = &p
 	if slot != nil {
 		r.Trigger = "scheduled"
@@ -448,7 +448,7 @@ func (m *Manager) execute(r Run, p Schedule, retry bool) {
 			fail("result_save_failed", "备份状态保存失败，未继续执行")
 			return
 		}
-		opts := backup.Options{Recipient: p.Recipient, Version: m.opts.BuildVersion, Commit: m.opts.Commit, Schema: 4, BackupID: r.ID, StagingDir: filepath.Join(m.opts.BackupDir, ".staging"), OnPhase: func(state string) error { r.State = state; return m.save(ctx, r) }, OnReady: func(member backup.Member) error {
+		opts := backup.Options{Recipient: p.Recipient, Version: m.opts.BuildVersion, Commit: m.opts.Commit, Schema: 5, BackupID: r.ID, StagingDir: filepath.Join(m.opts.BackupDir, ".staging"), OnPhase: func(state string) error { r.State = state; return m.save(ctx, r) }, OnReady: func(member backup.Member) error {
 			r.SHA256, r.SizeBytes = member.SHA256, member.Size
 			// The file is not yet visible at its final name. Preserve pending until
 			// publication and the independent post-publication read both succeed.

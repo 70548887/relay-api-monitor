@@ -43,7 +43,7 @@ class PackagingTests(unittest.TestCase):
         self.assertEqual(manifest['launcher_protocol'], 2)
         self.assertEqual(manifest['usage_guard'], 1)
         self.assertEqual(manifest['min_database_schema'], 1)
-        self.assertEqual(manifest['database_schema'], 4)
+        self.assertEqual(manifest['database_schema'], 5)
         for goos, arch in release.TARGETS:
             stem = f'relaylab-{goos}-{arch}-9.9.9'
             path = self.output / (stem + ('.zip' if goos == 'windows' else '.tar.gz'))
@@ -82,11 +82,11 @@ class PackagingTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'compatibility contract'):
                     release.validate_release(self.output, '9.9.9')
 
-    def test_schema_four_contract_rejects_old_or_future_schema(self):
+    def test_schema_five_contract_rejects_old_or_future_schema(self):
         self.package()
         path = self.output / 'manifest.json'
         original = json.loads(path.read_text())
-        for schema in (1, 3, 5, 0):
+        for schema in (1, 4, 6, 0):
             with self.subTest(schema=schema):
                 manifest = dict(original, database_schema=schema)
                 path.write_text(json.dumps(manifest))

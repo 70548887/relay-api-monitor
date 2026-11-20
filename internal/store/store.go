@@ -23,7 +23,7 @@ var ErrConflict = errors.New("store: conflicting state or stale lease")
 
 var ErrConfigurationChanged = fmt.Errorf("%w: job configuration changed", ErrConflict)
 
-const schemaVersion = 4
+const schemaVersion = 5
 
 const timeFormat = "2006-01-02T15:04:05.000000000Z"
 const WorkerLeaseDuration = 45 * time.Second
@@ -48,6 +48,9 @@ var privateTestsMigration string
 
 //go:embed migrations/004_backups.sql
 var backupsMigration string
+
+//go:embed migrations/005_fingerprint.sql
+var fingerprintMigration string
 
 func Open(path string) (*Store, error) {
 	if path == "" {
@@ -195,6 +198,9 @@ func (s *Store) Migrate(ctx context.Context) error {
 		if _, err := tx.ExecContext(ctx, backupsMigration); err != nil {
 			return err
 		}
+		if _, err := tx.ExecContext(ctx, fingerprintMigration); err != nil {
+			return err
+		}
 		settings, e := data(domain.DefaultSettings())
 		if e != nil {
 			return e
@@ -214,7 +220,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 		if err := validateSchema(ctx, tx); err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, "PRAGMA user_version=4")
+		_, err := tx.ExecContext(ctx, "PRAGMA user_version=5")
 		return err
 	})
 }
@@ -244,6 +250,7 @@ func validateSchema(ctx context.Context, q queryer) error {
 		"id,request_id,state,scheduled_for,created_at,data FROM backup_runs",
 		"run_id,location,storage_id,state,path,sha256,size_bytes FROM backup_copies",
 		"target_date,run_id,permanent,created_at FROM backup_archive_slots",
+		"id,job_id,model_id,created_at,data FROM fingerprint_results",
 	})
 }
 

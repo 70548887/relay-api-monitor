@@ -12,7 +12,7 @@
 
 稳定 Release 固定包含 11 个附件：Windows amd64、Linux amd64、Linux arm64 各自的服务端与启动器，共 6 个裸可执行文件；Windows 完整 ZIP、两个 Linux 完整 tar.gz；`manifest.json` 和 `SHA256SUMS`。完整包包含 `bin/relaylab(.exe)`、`bin/relaylab-launcher(.exe)`、启动停止及备份脚本、VERSION、示例 YAML、README、升级/发布文档、部署示例和第三方声明。Linux 通过 `scripts/start.sh` 前台启动，长期运行使用包内 systemd 示例。Linux 完整包还包含可直接利用 `bin/` 的运行时 Dockerfile、Compose 和容器配置；源码仓库的根 Dockerfile 使用多阶段源码构建。两套配方不混用，完整包不要求缺失的 Go/React 源码。Windows 包附部署文档，运行 Docker 应使用 Linux 对应架构包。
 
-Manifest 必须包含 `version`、`commit`、`build_time`、`launcher_protocol: 2`、`usage_guard: 1`、`database_schema: 4`、`min_database_schema: 1`，以及 9 个程序/压缩包的 `name/os/arch/size/sha256`。首次启动支持 schema 1／2／3 自动迁移为 4；不允许将已迁移的数据交给仅支持 schema 3 或更早版本的旧程序。SHA256SUMS 覆盖这 9 个文件及 Manifest，路径只使用文件名；下载后在同一目录执行 `sha256sum -c SHA256SUMS`。校验 SHA-256 可以发现损坏，不替代 Release 来源认证。
+Manifest 必须包含 `version`、`commit`、`build_time`、`launcher_protocol: 2`、`usage_guard: 1`、`database_schema: 5`、`min_database_schema: 1`，以及 9 个程序/压缩包的 `name/os/arch/size/sha256`。首次启动支持 schema 1／2／3／4 自动迁移为 5；不允许将已迁移的数据交给仅支持 schema 4 或更早版本的旧程序。SHA256SUMS 覆盖这 9 个文件及 Manifest，路径只使用文件名；下载后在同一目录执行 `sha256sum -c SHA256SUMS`。校验 SHA-256 可以发现损坏，不替代 Release 来源认证。
 
 `usage_guard: 1` 表示服务端与启动器共同使用数据库全生命周期占用锁及子进程登记。协议保持 2；新增字段也会使旧版严格 Manifest 解析器拒绝安装，防止只更新应用后继续使用旧启动器。v1.2.2 及更早版本迁移到本版必须先部署一次包含两份程序的完整安装包。
 

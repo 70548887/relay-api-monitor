@@ -89,7 +89,7 @@ func runUpdateChecks(ctx context.Context, manager automaticUpdater, interval tim
 }
 
 func buildMetadata() runtimecontrol.Build {
-	return runtimecontrol.Build{Version: version, Commit: commit, BuildTime: buildTime, OS: runtime.GOOS, Arch: runtime.GOARCH, LauncherProtocol: runtimecontrol.Protocol, DatabaseSchema: 4, MinDatabaseSchema: 1, UsageGuard: 1}
+	return runtimecontrol.Build{Version: version, Commit: commit, BuildTime: buildTime, OS: runtime.GOOS, Arch: runtime.GOARCH, LauncherProtocol: runtimecontrol.Protocol, DatabaseSchema: 5, MinDatabaseSchema: 1, UsageGuard: 1}
 }
 
 func run(args []string) error {

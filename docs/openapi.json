@@ -2676,6 +2676,27 @@
           "display_name": {
             "type": "string"
           },
+          "fingerprint_mode": {
+            "description": "指纹匹对的期望模型：auto 按上游模型 ID 自动匹配（省略时同此），manual 使用 fingerprint_model，unlisted 表示参考库未收录",
+            "enum": [
+              "auto",
+              "manual",
+              "unlisted"
+            ],
+            "type": "string"
+          },
+          "fingerprint_model": {
+            "type": "string"
+          },
+          "fingerprint_questions": {
+            "description": "每轮检测的题数，省略时为 3",
+            "maximum": 3,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "fingerprint_scheduled": {
+            "type": "boolean"
+          },
           "generate_path": {
             "type": "string"
           },

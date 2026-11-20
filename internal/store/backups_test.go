@@ -39,7 +39,7 @@ func TestBackupStorageEncryptionBindingAndSchema(t *testing.T) {
 	}
 	var schema int
 	s.DB.QueryRow("PRAGMA user_version").Scan(&schema)
-	if schema != 4 {
+	if schema != 5 {
 		t.Fatal(schema)
 	}
 }

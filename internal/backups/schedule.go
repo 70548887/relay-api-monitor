@@ -113,7 +113,7 @@ func (m *Manager) tick(now time.Time) {
 		return
 	}
 	n := time.Now().UTC()
-	r := Run{ID: domain.NewID(), RequestID: "scheduled:" + slot.UTC().Format(time.RFC3339), State: "skipped", Trigger: "scheduled", ScheduledFor: &slot, CreatedAt: n, StartedAt: n, FinishedAt: &n, HeartbeatAt: n, Version: m.opts.BuildVersion, DatabaseSchema: 4, ErrorCode: "scheduled_skipped", Message: "本周期未执行：已有操作、维护或配置尚未就绪"}
+	r := Run{ID: domain.NewID(), RequestID: "scheduled:" + slot.UTC().Format(time.RFC3339), State: "skipped", Trigger: "scheduled", ScheduledFor: &slot, CreatedAt: n, StartedAt: n, FinishedAt: &n, HeartbeatAt: n, Version: m.opts.BuildVersion, DatabaseSchema: 5, ErrorCode: "scheduled_skipped", Message: "本周期未执行：已有操作、维护或配置尚未就绪"}
 	m.opts.Store.CreateBackupRun(context.Background(), r)
 }
 func archiveDates(start time.Time, p Schedule) []string {
