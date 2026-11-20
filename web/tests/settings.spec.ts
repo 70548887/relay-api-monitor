@@ -100,6 +100,34 @@ test('keeps drafts, reveals hidden validation errors, saves every category, and 
   expect(fixture.runtimeErrors).toEqual([]);
 });
 
+test('edits the fingerprint category, refuses a relative bank directory, and saves the five values', async ({ page }) => {
+  const fixture = await mockSettingsAPI(page);
+  await page.goto('/admin/settings');
+  await page.getByRole('tab', { name: '指纹匹对', exact: true }).click();
+  await expect(page.getByLabel('定时检测间隔', { exact: true })).toHaveValue('86400');
+  await expect(page.getByText('每 24 小时检测一次', { exact: true })).toBeVisible();
+  await page.getByLabel('指纹检测并发', { exact: true }).fill('3');
+  await page.getByLabel('定时检测间隔', { exact: true }).fill('21600');
+  await expect(page.getByText('每 6 小时检测一次', { exact: true })).toBeVisible();
+  await page.getByLabel('手动粘贴比对', { exact: true }).fill('20');
+  await page.getByLabel('通过 API 检测', { exact: true }).fill('12');
+  await page.getByLabel('参考库本地目录', { exact: true }).fill('fingerprint-bank');
+  await page.getByRole('tab', { name: '任务调度', exact: true }).click();
+  await page.getByRole('button', { name: '保存设置', exact: true }).click();
+  await expect(page.getByRole('tab', { name: '指纹匹对', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByLabel('参考库本地目录', { exact: true })).toBeFocused();
+  await expect(page.getByText(/请填写绝对路径/)).toBeVisible();
+  expect(fixture.writes).toHaveLength(0);
+  await page.getByLabel('参考库本地目录', { exact: true }).fill('/data/fingerprint-bank');
+  await expect(page.locator('.settings-save-status')).toContainText('5 项更改');
+  await page.getByRole('button', { name: '保存设置', exact: true }).click();
+  await expect(page.getByText('系统设置已保存', { exact: true })).toBeVisible();
+  expect(fixture.writes).toEqual([{ path: '/admin/settings', body: { ...defaults, fingerprint_concurrency: 3, fingerprint_interval_seconds: 21600, fingerprint_manual_per_minute: 20, fingerprint_api_per_hour: 12, fingerprint_bank_dir: '/data/fingerprint-bank' } }]);
+  await expect(page.locator('.settings-save-status')).toContainText('暂无未保存的更改');
+  await expect(page.getByLabel('参考库本地目录', { exact: true })).toHaveValue('/data/fingerprint-bank');
+  expect(fixture.runtimeErrors).toEqual([]);
+});
+
 test('changes a password separately and returns to the settings login', async ({ page }) => {
   const fixture = await mockSettingsAPI(page);
   await page.goto('/admin/settings');
@@ -137,7 +165,7 @@ test('fits desktop and narrow layouts and supports keyboard category navigation'
   await expect(firstTab).toHaveAttribute('aria-selected', 'true');
   for (const width of [1920, 1024, 736, 375, 320]) {
     await page.setViewportSize({ width, height: 960 });
-    for (const name of ['任务调度', '请求策略', '数据与历史', '访客额度', '账号安全']) {
+    for (const name of ['任务调度', '请求策略', '数据与历史', '访客额度', '指纹匹对', '账号安全']) {
       await page.getByRole('tab', { name, exact: true }).click();
       const dimensions = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
       expect(dimensions.scroll, `${width}px / ${name}: horizontal overflow`).toBeLessThanOrEqual(dimensions.client + 1);
