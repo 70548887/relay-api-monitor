@@ -19,6 +19,7 @@ export function PublicLayout() {
         <nav className="top-nav" aria-label="主导航">
           <NavLink to="/" end>中转 API 监控</NavLink>
           <NavLink to="/intelligence">智商测试</NavLink>
+          <NavLink to="/fingerprint">指纹匹对</NavLink>
           <NavLink to="/test">在线测试</NavLink>
         </nav>
         <div className="public-account-nav member-nav" aria-label="用户账号">{session ? <NavLink to="/account">我的账号</NavLink> : <><NavLink to="/login">登录</NavLink><NavLink to="/register" className="public-register-link">注册</NavLink></>}</div>

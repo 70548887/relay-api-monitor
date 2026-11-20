@@ -8,6 +8,7 @@ const Connections = lazy(() => import('./pages/Connections'));
 const TestRecords = lazy(() => import('./pages/TestRecords'));
 const Monitor = lazy(() => import('./pages/Monitor'));
 const Gallery = lazy(() => import('./pages/Gallery'));
+const Fingerprint = lazy(() => import('./pages/Fingerprint'));
 const OnlineTest = lazy(() => import('./pages/OnlineTest'));
 const AdminLayout = lazy(() => import('./layouts/AdminAuth').then(module => ({ default: module.AdminLayout })));
 const AdminLoginPage = lazy(() => import('./layouts/AdminAuth').then(module => ({ default: module.AdminLoginPage })));
@@ -46,6 +47,7 @@ export function AppRoutes() {
     <Route element={<PublicLayout/>}>
       <Route index element={<Monitor/>}/>
       <Route path="intelligence" element={<Gallery/>}/>
+      <Route path="fingerprint" element={<Fingerprint/>}/>
       <Route path="test" element={<RequireMember><OnlineTest/></RequireMember>}/>
       <Route path="login" element={<UserLoginPage/>}/>
       <Route path="register" element={<UserRegisterPage/>}/>

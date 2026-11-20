@@ -14,6 +14,15 @@ export type Schedule = Domain.Schedule;
 export type IntelligencePlanStatus=Domain.IntelligencePlanStatus;
 export type IntelligenceGroupStatus=Domain.IntelligenceGroupStatus;
 export type IntelligenceStatusResponse=Domain.IntelligenceStatusResponse;
+export type FingerprintModel = Domain.FingerprintModel;
+export type FingerprintOverview = Domain.FingerprintOverview;
+export type FingerprintChallenge = Domain.FingerprintChallenge;
+export type FingerprintChallengeSet = Domain.FingerprintChallengeSet;
+export type FingerprintAnalyzeRequest = Domain.FingerprintAnalyzeRequest;
+export type FingerprintVerdict = 'match'|'family'|'mismatch'|'unlisted'|'undetermined';
+export type FingerprintLevel = 'full'|'reference'|'test';
+/** level is empty and reason is set when the verdict is undetermined. */
+export type FingerprintAnalysis = Omit<Domain.FingerprintAnalysis,'verdict'|'level'|'reason'> & {verdict:FingerprintVerdict;level:FingerprintLevel|'';reason:''|'no_valid_answers'|'not_model_like'};
 
 /** Public/admin lists omit source and raw payloads; detail endpoints add them. */
 export interface Artifact extends Omit<Domain.Artifact,'code'|'raw_response'> {
