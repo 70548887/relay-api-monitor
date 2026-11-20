@@ -31,6 +31,7 @@ type Server struct {
 	Store            *store.Store
 	Vault            *security.Vault
 	Client           *upstream.Client
+	Fingerprint      FingerprintBank
 	mu               sync.Mutex
 	rates            map[string]*rateBucket
 	active           map[string]int
@@ -218,6 +219,9 @@ func (s *Server) Handler() http.Handler {
 	a.GET("/public/intelligence", s.intelligence)
 	a.GET("/public/artifacts/:id", s.publicArtifact)
 	a.GET("/public/artifacts/:id/source", s.source)
+	a.GET("/public/fingerprint", s.fingerprintOverview)
+	a.GET("/public/fingerprint/challenges", s.fingerprintChallenges)
+	a.POST("/public/fingerprint/analyze", s.fingerprintAnalyze)
 	memberTest := a.Group("/test")
 	memberTest.Use(s.requireMemberAuth)
 	memberTest.POST("/models", s.testModels)

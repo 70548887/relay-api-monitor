@@ -537,6 +537,9 @@ func (s *Server) saveSettings(c *gin.Context) {
 		fail(c, 400, "invalid_settings", "设置超出允许范围")
 		return
 	}
+	if !acceptFingerprintSettings(c, &b) {
+		return
+	}
 	ctx := c.Request.Context()
 	if e := s.Store.SaveSettingsAndReconcile(ctx, b); e != nil {
 		dbError(c, e)

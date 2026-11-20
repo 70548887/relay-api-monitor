@@ -10,7 +10,7 @@ import type { Settings } from '../types';
 import '../settings.css';
 
 type SettingsTab = 'schedule' | 'requests' | 'data' | 'visitors' | 'security';
-type NumericSetting = Exclude<keyof Settings, 'artifact_history_scope'>;
+type NumericSetting = Exclude<keyof Settings, 'artifact_history_scope' | 'fingerprint_bank_dir'>;
 type SettingField = { name: NumericSetting; label: string; unit: string; help: string; min: number; max: number };
 type SettingSection = { title: string; description: string; fields?: SettingField[]; history?: boolean };
 type SettingPanel = { key: SettingsTab; label: string; icon: ReactNode; description: string; note: string; sections: SettingSection[] };

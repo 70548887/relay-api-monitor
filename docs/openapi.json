@@ -1574,6 +1574,301 @@
         },
         "type": "object"
       },
+      "FingerprintAnalysis": {
+        "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/FingerprintAnswer"
+            },
+            "type": "array"
+          },
+          "bank_built_at": {
+            "type": "string"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/FingerprintCandidate"
+            },
+            "type": "array"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expected": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FingerprintModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expected_rank": {
+            "type": "integer"
+          },
+          "level": {
+            "enum": [
+              "full",
+              "reference",
+              "test"
+            ],
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "",
+              "no_valid_answers",
+              "not_model_like"
+            ],
+            "type": "string"
+          },
+          "valid_answers": {
+            "type": "integer"
+          },
+          "verdict": {
+            "enum": [
+              "match",
+              "family",
+              "mismatch",
+              "unlisted",
+              "undetermined"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict",
+          "level",
+          "reason",
+          "valid_answers",
+          "expected",
+          "expected_rank",
+          "candidates",
+          "confidence",
+          "answers",
+          "bank_built_at"
+        ],
+        "type": "object"
+      },
+      "FingerprintAnalyzeRequest": {
+        "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/FingerprintAnswerInput"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "type": "array"
+          },
+          "expected_model": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "answers",
+          "expected_model"
+        ],
+        "type": "object"
+      },
+      "FingerprintAnswer": {
+        "properties": {
+          "minimum": {
+            "type": "integer"
+          },
+          "numbers": {
+            "type": "integer"
+          },
+          "valid": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "numbers",
+          "minimum",
+          "valid"
+        ],
+        "type": "object"
+      },
+      "FingerprintAnswerInput": {
+        "properties": {
+          "expected_count": {
+            "maximum": 332,
+            "minimum": 292,
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "expected_count"
+        ],
+        "type": "object"
+      },
+      "FingerprintBank": {
+        "properties": {
+          "built_at": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "models": {
+            "type": "integer"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "source": {
+            "enum": [
+              "online",
+              "local"
+            ],
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "ready",
+          "source",
+          "built_at",
+          "models",
+          "updated_at",
+          "error"
+        ],
+        "type": "object"
+      },
+      "FingerprintCandidate": {
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "family": {
+            "type": "string"
+          },
+          "family_name": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "probability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "score": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "model",
+          "display_name",
+          "family",
+          "family_name",
+          "score",
+          "probability"
+        ],
+        "type": "object"
+      },
+      "FingerprintChallenge": {
+        "properties": {
+          "expected_count": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "prompt",
+          "expected_count"
+        ],
+        "type": "object"
+      },
+      "FingerprintChallengeSet": {
+        "properties": {
+          "challenges": {
+            "items": {
+              "$ref": "#/components/schemas/FingerprintChallenge"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "challenges"
+        ],
+        "type": "object"
+      },
+      "FingerprintModel": {
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "family": {
+            "type": "string"
+          },
+          "family_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "family",
+          "family_name"
+        ],
+        "type": "object"
+      },
+      "FingerprintOverview": {
+        "properties": {
+          "bank": {
+            "$ref": "#/components/schemas/FingerprintBank"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/FingerprintModel"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "bank",
+          "models"
+        ],
+        "type": "object"
+      },
       "GenerateRequest": {
         "properties": {
           "anthropic_version": {
@@ -3149,6 +3444,21 @@
           "discovery_timeout_seconds": {
             "type": "integer"
           },
+          "fingerprint_api_per_hour": {
+            "type": "integer"
+          },
+          "fingerprint_bank_dir": {
+            "type": "string"
+          },
+          "fingerprint_concurrency": {
+            "type": "integer"
+          },
+          "fingerprint_interval_seconds": {
+            "type": "integer"
+          },
+          "fingerprint_manual_per_minute": {
+            "type": "integer"
+          },
           "online_test_retention_days": {
             "default": 30,
             "maximum": 365,
@@ -3199,7 +3509,12 @@
           "visitor_concurrency",
           "visitor_ip_concurrency",
           "visitor_models_per_minute",
-          "visitor_generations_per_minute"
+          "visitor_generations_per_minute",
+          "fingerprint_concurrency",
+          "fingerprint_interval_seconds",
+          "fingerprint_manual_per_minute",
+          "fingerprint_api_per_hour",
+          "fingerprint_bank_dir"
         ],
         "type": "object"
       },
@@ -9274,6 +9589,175 @@
           }
         },
         "summary": "以附件下载源码"
+      }
+    },
+    "/public/fingerprint": {
+      "get": {
+        "operationId": "public_fingerprint_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FingerprintOverview"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "summary": "指纹匹对：参考库状态与可选的期望模型"
+      }
+    },
+    "/public/fingerprint/analyze": {
+      "post": {
+        "operationId": "public_fingerprint_analyze_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FingerprintAnalyzeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FingerprintAnalysis"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "请求过于频繁，Retry-After 给出重试秒数"
+          },
+          "502": {
+            "description": "上游失败"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "参考库暂不可用"
+          }
+        },
+        "summary": "指纹匹对：为粘贴的 1 到 3 个回答评分，不保存；按 IP 限频"
+      }
+    },
+    "/public/fingerprint/challenges": {
+      "get": {
+        "operationId": "public_fingerprint_challenges_get",
+        "parameters": [
+          {
+            "description": "题数：3 题最准确，2 题可参考，1 题仅作测试",
+            "in": "query",
+            "name": "count",
+            "schema": {
+              "default": 3,
+              "maximum": 3,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FingerprintChallengeSet"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "summary": "指纹匹对：取一轮题目，每次随机生成"
       }
     },
     "/public/intelligence": {

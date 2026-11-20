@@ -561,7 +561,7 @@ func normalizedSettings(v domain.Settings) domain.Settings {
 	if v.ArtifactHistoryScope != "model" {
 		v.ArtifactHistoryScope = "group"
 	}
-	return v
+	return domain.NormalizeFingerprintSettings(v)
 }
 func (s *Store) SaveSettings(ctx context.Context, v domain.Settings) error {
 	v = normalizedSettings(v)

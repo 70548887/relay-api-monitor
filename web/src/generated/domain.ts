@@ -206,6 +206,11 @@ export interface Settings {
   visitor_ip_concurrency: number;
   visitor_models_per_minute: number;
   visitor_generations_per_minute: number;
+  fingerprint_concurrency: number;
+  fingerprint_interval_seconds: number;
+  fingerprint_manual_per_minute: number;
+  fingerprint_api_per_hour: number;
+  fingerprint_bank_dir: string;
 }
 
 export interface Schedule {
@@ -430,5 +435,74 @@ export interface BackupRun {
   expires_at?: string | null;
   error_code?: string;
   message?: string;
+}
+
+export interface FingerprintModel {
+  id: string;
+  display_name: string;
+  family: string;
+  family_name: string;
+}
+
+export interface FingerprintBank {
+  ready: boolean;
+  source: string;
+  built_at: string;
+  models: number;
+  updated_at: string | null;
+  error: string;
+}
+
+export interface FingerprintOverview {
+  bank: FingerprintBank;
+  models: Array<FingerprintModel>;
+}
+
+export interface FingerprintChallenge {
+  id: string;
+  prompt: string;
+  expected_count: number;
+}
+
+export interface FingerprintChallengeSet {
+  challenges: Array<FingerprintChallenge>;
+}
+
+export interface FingerprintAnswerInput {
+  text: string;
+  expected_count: number;
+}
+
+export interface FingerprintAnalyzeRequest {
+  answers: Array<FingerprintAnswerInput>;
+  expected_model: string;
+}
+
+export interface FingerprintCandidate {
+  model: string;
+  display_name: string;
+  family: string;
+  family_name: string;
+  score: number;
+  probability: number | null;
+}
+
+export interface FingerprintAnswer {
+  numbers: number;
+  minimum: number;
+  valid: boolean;
+}
+
+export interface FingerprintAnalysis {
+  verdict: string;
+  level: string;
+  reason: string;
+  valid_answers: number;
+  expected: FingerprintModel | null;
+  expected_rank: number;
+  candidates: Array<FingerprintCandidate>;
+  confidence: number | null;
+  answers: Array<FingerprintAnswer>;
+  bank_built_at: string;
 }
 
