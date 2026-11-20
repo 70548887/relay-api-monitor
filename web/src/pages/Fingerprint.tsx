@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import { Button, Empty, Segmented } from 'antd';
+import { Segmented } from 'antd';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { PageHeading } from '../components/Common';
 import { FingerprintManual } from '../components/FingerprintManual';
-import { bankDate } from '../fingerprint';
+import { FingerprintResults } from '../components/FingerprintResults';
+import { bankDate, SUMMARY_ROUNDS } from '../fingerprint';
 import type { FingerprintOverview } from '../types';
 import '../monitor.css';
 import '../fingerprint.css';
@@ -33,10 +34,10 @@ export default function Fingerprint() {
     </div>
     <div className="fp-tabs">
       <Segmented<Tab> value={tab} onChange={show} options={[{ label: '平台检测结果', value: 'results' }, { label: '自助检测', value: 'self' }]}/>
-      <small>自助检测的结果只给你自己看，不会出现在平台检测结果里</small>
+      <small>{tab === 'self' ? '自助检测的结果只给你自己看，不会出现在平台检测结果里' : `结论取每个模型最近 ${SUMMARY_ROUNDS} 轮的多数结果 · 检测由后台发起`}</small>
     </div>
     {tab === 'self'
       ? <FingerprintManual models={overview.data?.models || []} ready={!!bank?.ready}/>
-      : <div className="panel empty-panel"><Empty description="还没有平台检测结果"><Button type="primary" onClick={() => show('self')}>去自助检测</Button></Empty></div>}
+      : <FingerprintResults onSelf={() => show('self')}/>}
   </div>;
 }

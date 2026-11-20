@@ -21,6 +21,22 @@ function claimText(analysis: FingerprintAnalysis) {
   return analysis.expected_rank > 0 ? `声明的是 ${expected.display_name}，它排在第 ${analysis.expected_rank} 位` : `声明的是 ${expected.display_name}`;
 }
 
+/** The colour a result takes: that of its verdict, or plain when no declared model was compared. */
+export const toneOf = (analysis: FingerprintAnalysis) => analysis.expected ? analysis.verdict : 'plain';
+
+/** The closest reference models of a round, best first. */
+export function FingerprintCandidates({ analysis }: { analysis: FingerprintAnalysis }) {
+  const tone = toneOf(analysis);
+  return <ol className="fp-candidates">{analysis.candidates.map((item, index) => <li className={`fp-candidate${index === 0 ? ` top ${tone}` : ''}${item.probability == null ? ' unscored' : ''}`} key={item.model}>
+    <span className="rank">{index + 1}</span>
+    <span className="name"><strong>{item.display_name}{item.model === analysis.expected?.id && <em>声明的模型</em>}</strong><small>{item.family_name}</small></span>
+    {item.probability != null && <>
+      <span className="track" aria-hidden="true"><i style={{ width: `${Math.max(item.probability * 100, 1.5)}%` }}/></span>
+      <span className="pct">{percent(item.probability)}</span>
+    </>}
+  </li>)}</ol>;
+}
+
 /** The outcome of one round. submitted is the number of answers that were sent for scoring. */
 export function FingerprintResult({ analysis, submitted, footnote }: { analysis: FingerprintAnalysis; submitted: number; footnote: string }) {
   const closest = analysis.candidates[0];
@@ -39,7 +55,7 @@ export function FingerprintResult({ analysis, submitted, footnote }: { analysis:
   }
   const level = levelMeta[analysis.level];
   const expected = analysis.expected;
-  const tone = expected ? analysis.verdict : 'plain';
+  const tone = toneOf(analysis);
   return <section className="fp-result" aria-label="比对结果">
     <div className="fp-result-head">
       <div>
@@ -57,14 +73,7 @@ export function FingerprintResult({ analysis, submitted, footnote }: { analysis:
     <div className="fp-result-body">
       <div>
         <h4>候选排名（前 {analysis.candidates.length}）</h4>
-        <ol className="fp-candidates">{analysis.candidates.map((item, index) => <li className={`fp-candidate${index === 0 ? ` top ${tone}` : ''}${item.probability == null ? ' unscored' : ''}`} key={item.model}>
-          <span className="rank">{index + 1}</span>
-          <span className="name"><strong>{item.display_name}{item.model === expected?.id && <em>声明的模型</em>}</strong><small>{item.family_name}</small></span>
-          {item.probability != null && <>
-            <span className="track" aria-hidden="true"><i style={{ width: `${Math.max(item.probability * 100, 1.5)}%` }}/></span>
-            <span className="pct">{percent(item.probability)}</span>
-          </>}
-        </li>)}</ol>
+        <FingerprintCandidates analysis={analysis}/>
       </div>
       <div>
         <h4>检测信息</h4>

@@ -80,9 +80,9 @@ async function choose(label: string, option: string) {
 describe('admin fingerprint page', () => {
   it('lists every model with its expected model and its latest detection', async () => {
     overview.models = [
-      row({ latest: round(), job: job() }),
+      row({ latest: round(), summary: { verdict: 'match', agree: 2, verdicts: ['match', 'mismatch', 'match'], round_id: 'r1' }, job: job() }),
       row({ id: 'm2', display_name: 'Claude 运行中', upstream_id: 'claude-x', settings: { mode: 'unlisted', model: '', questions: 2, scheduled: false }, expected: '', job: job({ id: 'j2', model_id: 'm2', state: 'running' }) }),
-      row({ id: 'm3', display_name: '失败的模型', upstream_id: 'mystery', expected: '', latest: weakRound, job: job({ id: 'j3', model_id: 'm3', state: 'failed', error_code: 'authentication_error', error_message: '三道题都没有拿到回答' }) }),
+      row({ id: 'm3', display_name: '失败的模型', upstream_id: 'mystery', expected: '', latest: weakRound, summary: { verdict: 'mismatch', agree: 1, verdicts: ['mismatch'], round_id: 'r0' }, job: job({ id: 'j3', model_id: 'm3', state: 'failed', error_code: 'authentication_error', error_message: '三道题都没有拿到回答' }) }),
       row({ id: 'm4', display_name: '已下线的模型', runnable: false, settings: { mode: 'manual', model: 'retired-model', questions: 3, scheduled: false }, expected: '' }),
     ];
     show();
@@ -98,6 +98,7 @@ describe('admin fingerprint page', () => {
     expect(matched.getByText('最接近 gpt-5.5')).toBeInTheDocument();
     expect(matched.getByText('完整 · 93.0%')).toBeInTheDocument();
     expect(matched.getByText(`${time('2026-11-20T04:00:00Z')} · 有效回答 3 / 3`)).toBeInTheDocument();
+    expect(matched.getByText('多轮结论：一致（最近 3 轮中 2 轮）')).toBeInTheDocument();
     expect(matched.queryByText('已完成')).not.toBeInTheDocument();
     expect(detectButton(matched)).toBeEnabled();
 
@@ -116,6 +117,8 @@ describe('admin fingerprint page', () => {
     expect(failed.getByText('最接近 claude-sonnet-4.6')).toBeInTheDocument();
     expect(failed.getByText('测试')).toBeInTheDocument();
     expect(failed.getByText(`上一轮 · ${time('2026-11-19T04:00:00Z')} · 有效回答 1 / 3`)).toBeInTheDocument();
+    expect(failed.getByText('多轮结论：不一致（最近 1 轮中 1 轮）')).toBeInTheDocument();
+    expect(busy.queryByText(/多轮结论/)).not.toBeInTheDocument();
     expect(detectButton(failed)).toBeEnabled();
 
     const retired = await line('已下线的模型');
