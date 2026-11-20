@@ -5,7 +5,7 @@ import { Alert, App, Button, Divider, Form, Input, InputNumber, Modal, Popconfir
 import { DeleteOutlined, EditOutlined, FileTextOutlined, PlayCircleOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { api, post, put } from '../api';
 import type { Artifact, Channel, Job, Model, Overview, Platform, PromptTemplate, Settings } from '../types';
-import { duration, nameOf, time } from '../lib';
+import { duration, jobKindLabel, nameOf, time } from '../lib';
 import { PageHeading, QueryState, StateTag } from '../components/Common';
 import { Preview } from '../components/Preview';
 import { ReasoningFields, changeReasoningProtocol } from '../components/ReasoningFields';
@@ -46,11 +46,11 @@ export function ModelsPage(){
 function JobTable({jobs,controls=false}:{jobs:Job[];controls?:boolean}){
  const action=useAction();const status=useIntelligenceStatus();const models=useQuery({queryKey:['admin-models'],queryFn:()=>api<Model[]>('/admin/models')});const channels=useQuery({queryKey:['admin-channels'],queryFn:()=>api<Channel[]>('/admin/channels')});
  return <Table rowKey="id" dataSource={jobs} scroll={{x:1250}} size="middle" pagination={{pageSize:10}} columns={[
- {title:'任务 / 来源',render:(_:unknown,j:Job)=><div><Tag>{j.kind==='probe'?'健康检测':'作品生成'}</Tag><Tag>{j.schedule_id?'定时':'手动'}</Tag><code className="short-id">{j.id.slice(0,8)}</code><div>{j.requested_model||nameOf(models.data?.find(m=>m.id===j.model_id)||{})}</div><div className="muted">{j.channel_name||channels.data?.find(c=>c.id===j.channel_id)?.name||j.channel_id} · {j.template_id||'健康检测'} · 独立请求</div></div>},
+ {title:'任务 / 来源',render:(_:unknown,j:Job)=><div><Tag>{jobKindLabel[j.kind]||j.kind}</Tag><Tag>{j.schedule_id?'定时':'手动'}</Tag><code className="short-id">{j.id.slice(0,8)}</code><div>{j.requested_model||nameOf(models.data?.find(m=>m.id===j.model_id)||{})}</div><div className="muted">{j.channel_name||channels.data?.find(c=>c.id===j.channel_id)?.name||j.channel_id} · {j.template_id||jobKindLabel[j.kind]||j.kind} · 独立请求</div></div>},
  {title:'状态',dataIndex:'state',render:(state:string,j:Job)=><Space wrap><StateTag state={state}/>{j.cancel_requested&&<Tag>取消请求中</Tag>}</Space>},
  {title:'创建时间',dataIndex:'created_at',render:time},
  {title:'执行时间',render:(_:unknown,j:Job)=><div><div>{j.started_at?time(j.started_at):'尚未执行'}</div>{j.finished_at&&<span className="muted">结束 {time(j.finished_at)}</span>}{j.duration_ms>0&&<div className="muted">首正文 {duration(j.first_text_ms)} · 总耗时 {duration(j.duration_ms)}</div>}</div>},
- {title:'预计计划',width:310,render:(_:unknown,j:Job)=>j.kind==='artifact'?<ScheduleStatus group={status.data?.groups?.find(g=>g.channel_id===j.channel_id)} template={j.template_id} model={j.model_id}/>:<span className="muted">按模型健康检测计划</span>},
+ {title:'预计计划',width:310,render:(_:unknown,j:Job)=>j.kind==='artifact'?<ScheduleStatus group={status.data?.groups?.find(g=>g.channel_id===j.channel_id)} template={j.template_id} model={j.model_id}/>:<span className="muted">{j.kind==='fingerprint'?'手动触发':'按模型健康检测计划'}</span>},
  {title:'结果 / 操作',render:(_:unknown,j:Job)=><Space direction="vertical">{j.error_message&&<span className="error-text">{j.error_message}<small className="muted" style={{display:'block'}}>{testErrorHint(j.error_code)}</small></span>}{!!j.visibility_reasons?.length&&<span className="schedule-warning">前台不可见：{j.visibility_reasons.join('、')} · <a href={'/admin/models?model='+encodeURIComponent(j.model_id)}>模型公开设置</a></span>}{j.received_bytes>0&&<span className="muted">接收 {j.received_bytes.toLocaleString()} B · 正文 {j.text_bytes.toLocaleString()} B</span>}{controls&&['queued','claimed','dispatching','running'].includes(j.state)&&<Popconfirm title="取消该任务？" onConfirm={()=>action.mutateAsync(()=>post(`/admin/jobs/${j.id}/cancel`))}><Button size="small" danger disabled={j.cancel_requested}>取消任务</Button></Popconfirm>}</Space>}
  ]}/>;
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Alert, Button } from 'antd';
-import { ApiOutlined, AppstoreOutlined, ArrowLeftOutlined, CloudDownloadOutlined, DashboardOutlined, DatabaseOutlined, FileTextOutlined, LogoutOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
+import { ApiOutlined, AppstoreOutlined, ArrowLeftOutlined, CloudDownloadOutlined, DashboardOutlined, DatabaseOutlined, FileTextOutlined, LogoutOutlined, ScanOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { post, setSession } from '../api';
 import type { Session } from '../types';
@@ -11,6 +11,7 @@ const destinations = [
   { to: '/admin/platforms', label: '平台与分组', icon: <ApiOutlined aria-hidden="true"/> },
   { to: '/admin/models', label: '模型配置', icon: <AppstoreOutlined aria-hidden="true"/> },
   { to: '/admin/jobs', label: '任务与作品', icon: <FileTextOutlined aria-hidden="true"/> },
+  { to: '/admin/fingerprint', label: '指纹匹对', icon: <ScanOutlined aria-hidden="true"/> },
   { to: '/admin/updates', label: '在线升级', icon: <CloudDownloadOutlined aria-hidden="true"/> },
   { to: '/admin/backups', label: '备份与恢复', icon: <DatabaseOutlined aria-hidden="true"/> },
   { to: '/admin/user-connections', label: '用户连接', icon: <ApiOutlined aria-hidden="true"/> },

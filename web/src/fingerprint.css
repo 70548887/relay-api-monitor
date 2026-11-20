@@ -71,6 +71,18 @@
 .fp-facts dt{flex-shrink:0;color:var(--muted)}
 .fp-facts dd{margin:0;color:#22343e;text-align:right;overflow-wrap:anywhere}
 
+.fp-admin-bank{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px;padding:18px 24px}
+.fp-admin-bank strong{display:block;color:#22343e;font-size:15px}
+.fp-admin-bank.unavailable strong{color:#b7791f}
+.fp-admin-bank .muted{overflow-wrap:anywhere}
+.fp-admin-expected{display:grid;gap:2px}
+.fp-admin-round{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12.5px}
+.fp-admin-round small{color:var(--muted)}
+.fp-admin-latest{display:grid;gap:4px}
+.fp-admin-latest .error-text{font-size:12px;overflow-wrap:anywhere}
+.fp-admin-detail{display:grid;gap:12px}
+.fp-admin-detail ul{margin:0;padding-left:18px}
+
 @media(max-width:1000px){
  .fp-self{grid-template-columns:1fr}
  .fp-result-body{grid-template-columns:1fr;gap:22px}
@@ -92,4 +104,5 @@
  .fp-result-foot{padding:12px 16px}
  .fp-candidate{grid-template-columns:14px minmax(0,1fr) 50px}
  .fp-candidate .track{display:none}
+ .fp-admin-bank{flex-direction:column;align-items:flex-start}
 }

@@ -39,6 +39,34 @@ it('browses every retained group work across bounded pages',async()=>{
  client.clear();
 },40000);
 
+it('labels every kind of job in the job list, fingerprint detection included',async()=>{
+ const client=new QueryClient({defaultOptions:{queries:{staleTime:Infinity,retry:false}}});
+ client.setQueryData(['admin-platforms'],[{id:'p',name:'Platform',public:true}]);
+ client.setQueryData(['admin-channels'],[{id:'c',platform_id:'p',name:'Group',public:true,enabled:true,archived:false}]);
+ client.setQueryData(['admin-models'],[{id:'m',channel_id:'c',upstream_id:'fixture',public:true}]);
+ client.setQueryData(['admin-templates'],[{id:'cn_html',name:'中文动画'}]);
+ client.setQueryData(['admin-intelligence-status'],{groups:[],worker_online:true});
+ const job=(id:string,kind:string,template_id='')=>({id,kind,template_id,model_id:'m',channel_id:'c',schedule_id:'',state:'succeeded',created_at:'2026-11-20T04:00:00Z',error_code:'',error_message:'',received_bytes:0,text_bytes:0,duration_ms:0});
+ vi.stubGlobal('fetch',vi.fn(async(url:RequestInfo|URL)=>{
+  const path=String(url);
+  if(path.startsWith('/api/v1/admin/jobs?'))return new Response(JSON.stringify([job('fingerprint-job','fingerprint'),job('probe-job','probe'),job('artifact-job','artifact','cn_html')]));
+  if(path==='/api/v1/admin/artifacts')return new Response('[]');
+  throw new Error(`unexpected request ${path}`);
+ }));
+ render(<QueryClientProvider client={client}><App><MemoryRouter initialEntries={['/admin/jobs']}><JobsPage/></MemoryRouter></App></QueryClientProvider>);
+ const row=(id:string)=>within(screen.getByText(id.slice(0,8)).closest('tr')!);
+ await screen.findByText('fingerpr');
+ expect(row('fingerprint-job').getByText('指纹检测',{selector:'.ant-tag'})).toBeInTheDocument();
+ expect(row('fingerprint-job').getByText('Group · 指纹检测 · 独立请求')).toBeInTheDocument();
+ expect(row('fingerprint-job').getByText('手动触发')).toBeInTheDocument();
+ expect(row('probe-job').getByText('健康检测',{selector:'.ant-tag'})).toBeInTheDocument();
+ expect(row('probe-job').getByText('Group · 健康检测 · 独立请求')).toBeInTheDocument();
+ expect(row('probe-job').getByText('按模型健康检测计划')).toBeInTheDocument();
+ expect(row('artifact-job').getByText('作品生成',{selector:'.ant-tag'})).toBeInTheDocument();
+ expect(row('artifact-job').getByText('Group · cn_html · 独立请求')).toBeInTheDocument();
+ client.clear();
+},40000);
+
 describe('model configuration form',()=>{
  it('uses the backend limits on the settings page instead of offering rejected values',async()=>{
   const client=new QueryClient({defaultOptions:{queries:{staleTime:Infinity,retry:false}}});
