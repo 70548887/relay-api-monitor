@@ -53,6 +53,8 @@ type Server struct {
 type rateBucket struct {
 	Start time.Time
 	Count int
+	// Window is how long the bucket counts from Start.
+	Window time.Duration
 }
 
 func New(st *store.Store, v *security.Vault) *Server {
@@ -233,6 +235,7 @@ func (s *Server) Handler() http.Handler {
 	memberTest.Use(s.requireMemberAuth)
 	memberTest.POST("/models", s.testModels)
 	memberTest.POST("/generate", s.testGenerate)
+	memberTest.POST("/fingerprint", s.fingerprintCheck)
 	r.GET("/healthz", func(c *gin.Context) {
 		if e := s.Store.DB.PingContext(c.Request.Context()); e != nil {
 			fail(c, 503, "database_unavailable", "数据库不可用")
@@ -310,29 +313,37 @@ func (s *Server) auditEvent(ctx context.Context, action, id, detail string) {
 	_ = s.Store.AddAudit(ctx, domain.AuditEvent{ID: domain.NewID(), Action: action, EntityID: id, Detail: detail, CreatedAt: time.Now().UTC()})
 }
 func (s *Server) allowedRate(key string, limit int) bool {
+	allowed, _ := s.allowedWithin(key, limit, time.Minute)
+	return allowed
+}
+
+// allowedWithin admits at most limit calls under key in one window. A window starts with the first call admitted
+// after the previous one ended. A refusal also tells how long the caller has to wait for the next window.
+func (s *Server) allowedWithin(key string, limit int, window time.Duration) (bool, time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now()
 	if len(s.rates) > 10000 {
 		for k, b := range s.rates {
-			if now.Sub(b.Start) > time.Minute {
+			if now.Sub(b.Start) > b.Window {
 				delete(s.rates, k)
 			}
 		}
 		if len(s.rates) > 10000 {
-			return false
+			// The table is full of live windows. Most of them last a minute, so room appears within one.
+			return false, min(window, time.Minute)
 		}
 	}
 	b := s.rates[key]
-	if b == nil || now.Sub(b.Start) >= time.Minute {
-		s.rates[key] = &rateBucket{now, 1}
-		return true
+	if b == nil || now.Sub(b.Start) >= b.Window {
+		s.rates[key] = &rateBucket{Start: now, Count: 1, Window: window}
+		return true, 0
 	}
 	if b.Count >= limit {
-		return false
+		return false, b.Window - now.Sub(b.Start)
 	}
 	b.Count++
-	return true
+	return true, 0
 }
 func localRequest(c *gin.Context) bool {
 	host, _, e := net.SplitHostPort(c.Request.RemoteAddr)

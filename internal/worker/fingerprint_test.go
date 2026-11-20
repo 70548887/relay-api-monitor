@@ -196,11 +196,16 @@ func TestFingerprintJobAsksItsQuestionsInTurnAndStoresTheRound(t *testing.T) {
 func TestFingerprintRoundIsScoredOnTheRepliesThatArrived(t *testing.T) {
 	var requests requestLog
 	w, st, ctx, m, bank := fingerprintFixture(t, func(rw http.ResponseWriter, r *http.Request) {
-		if requests.add(t, r) == 2 {
+		switch requests.add(t, r) {
+		case 2:
 			http.Error(rw, "blocked", http.StatusForbidden)
-			return
+		case 3:
+			// The reply stops at the output limit.
+			rw.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(rw).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": numberList(50)}, "finish_reason": "length"}}, "usage": map[string]int{"prompt_tokens": 3, "completion_tokens": 5, "total_tokens": 8}})
+		default:
+			chatResponse(rw, numberList(200))
 		}
-		chatResponse(rw, numberList(200))
 	})
 	j := enqueue(t, st, ctx, m, "fingerprint", "")
 	workFingerprint(t, w, ctx)
@@ -208,19 +213,20 @@ func TestFingerprintRoundIsScoredOnTheRepliesThatArrived(t *testing.T) {
 	if got := len(requests.all()); got != 3 {
 		t.Fatalf("%d requests, want the third question asked after the second failed", got)
 	}
-	if len(bank.rounds) != 1 || len(bank.rounds[0]) != 3 || bank.rounds[0][0].Text != numberList(200) || bank.rounds[0][1].Text != "" || bank.rounds[0][2].Text != numberList(200) {
-		t.Fatalf("the bank scored %+v, want the first and third reply and an empty second one", bank.rounds)
+	if len(bank.rounds) != 1 || len(bank.rounds[0]) != 3 || bank.rounds[0][0].Text != numberList(200) || bank.rounds[0][1].Text != "" || bank.rounds[0][2].Text != numberList(50) {
+		t.Fatalf("the bank scored %+v, want the first reply, an empty second one and the part of the third that arrived", bank.rounds)
 	}
 	rounds := storedRounds(t, st, ctx, m)
-	if len(rounds) != 1 || rounds[0].Questions != 3 || len(rounds[0].Errors) != 1 ||
-		rounds[0].Errors[0] != (domain.FingerprintRequestError{Question: 2, Code: "authentication_error", Message: "Upstream returned HTTP 403"}) {
-		t.Fatalf("stored rounds %+v, want one round that reports the failed second question", rounds)
+	if len(rounds) != 1 || rounds[0].Questions != 3 || len(rounds[0].Errors) != 2 ||
+		rounds[0].Errors[0] != (domain.FingerprintRequestError{Question: 2, Code: "authentication_error", Message: "Upstream returned HTTP 403"}) ||
+		rounds[0].Errors[1] != (domain.FingerprintRequestError{Question: 3, Code: "truncated", Message: "上游输出达到本次 8192 Tokens 上限后被截断；指纹检测沿用该模型的“创作最大 Tokens”，可调大后重试"}) {
+		t.Fatalf("stored rounds %+v, want one round that reports the refused second question and the cut third one", rounds)
 	}
 	if usage := rounds[0].Usage; usage.TotalTokens == nil || *usage.TotalTokens != 16 {
 		t.Fatalf("usage %+v, want the two answered requests added up", usage)
 	}
 	if saved := savedJob(t, st, ctx, j.ID); saved.State != "succeeded" || saved.ErrorCode != "" {
-		t.Fatalf("job %+v, want it to succeed on two replies", saved)
+		t.Fatalf("job %+v, want it to succeed on the replies that arrived", saved)
 	}
 }
 

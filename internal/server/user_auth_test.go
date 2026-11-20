@@ -159,7 +159,7 @@ func TestMemberAuthenticationSharedAdmissionAndRateLimitsBeforeBodyRead(t *testi
 			if strings.HasSuffix(path, "register") {
 				prefix, limit = "member-register:", 3
 			}
-			s.rates[prefix+"127.0.0.1"] = &rateBucket{Start: time.Now(), Count: limit}
+			s.rates[prefix+"127.0.0.1"] = &rateBucket{Start: time.Now(), Count: limit, Window: time.Minute}
 			body = &countingBody{Reader: strings.NewReader(`{}`)}
 			r = httptest.NewRequest(http.MethodPost, path, body)
 			r.RemoteAddr = "127.0.0.1:12345"
