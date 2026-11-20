@@ -26,7 +26,8 @@ export type FingerprintAnalysis = Omit<Domain.FingerprintAnalysis,'verdict'|'lev
 /** One stored detection round of a channel model. */
 export type FingerprintRound = Omit<Domain.FingerprintResult,'analysis'> & {analysis:FingerprintAnalysis};
 export type FingerprintModelSettings = Omit<Domain.FingerprintModelSettings,'mode'> & {mode:'auto'|'manual'|'unlisted'};
-export type AdminFingerprintModel = Omit<Domain.AdminFingerprintModel,'settings'|'latest'|'job'> & {settings:FingerprintModelSettings;latest:FingerprintRound|null;job:Job|null};
+export type FingerprintSummary = Omit<Domain.FingerprintSummary,'verdict'|'verdicts'> & {verdict:FingerprintVerdict;verdicts:FingerprintVerdict[]};
+export type AdminFingerprintModel = Omit<Domain.AdminFingerprintModel,'settings'|'latest'|'summary'|'job'> & {settings:FingerprintModelSettings;latest:FingerprintRound|null;summary:FingerprintSummary|null;job:Job|null};
 export type AdminFingerprintOverview = Omit<Domain.AdminFingerprintOverview,'models'> & {models:AdminFingerprintModel[]};
 export type FingerprintBankRefresh = Domain.FingerprintBankRefresh;
 

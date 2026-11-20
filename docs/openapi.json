@@ -144,6 +144,16 @@
           "settings": {
             "$ref": "#/components/schemas/FingerprintModelSettings"
           },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FingerprintSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "upstream_id": {
             "type": "string"
           }
@@ -160,6 +170,7 @@
           "settings",
           "expected",
           "latest",
+          "summary",
           "job",
           "next_run_at"
         ],
@@ -2055,6 +2066,93 @@
         ],
         "type": "object"
       },
+      "FingerprintPublicModel": {
+        "properties": {
+          "channel_id": {
+            "type": "string"
+          },
+          "channel_name": {
+            "type": "string"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "platform_id": {
+            "type": "string"
+          },
+          "platform_name": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "round": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FingerprintResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FingerprintSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "upstream_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "upstream_id",
+          "display_name",
+          "protocol",
+          "channel_id",
+          "channel_name",
+          "platform_id",
+          "platform_name",
+          "summary",
+          "round",
+          "checked_at"
+        ],
+        "type": "object"
+      },
+      "FingerprintPublicResults": {
+        "properties": {
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/FingerprintPublicModel"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "models"
+        ],
+        "type": "object"
+      },
       "FingerprintRequestError": {
         "properties": {
           "code": {
@@ -2122,6 +2220,39 @@
           "usage",
           "duration_ms",
           "created_at"
+        ],
+        "type": "object"
+      },
+      "FingerprintSummary": {
+        "properties": {
+          "agree": {
+            "type": "integer"
+          },
+          "round_id": {
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "match",
+              "family",
+              "mismatch",
+              "unlisted",
+              "undetermined"
+            ],
+            "type": "string"
+          },
+          "verdicts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "verdict",
+          "agree",
+          "verdicts",
+          "round_id"
         ],
         "type": "object"
       },
@@ -6995,7 +7126,7 @@
             "cookieAuth": []
           }
         ],
-        "summary": "指纹匹对：参考库状态、参考模型，以及每个未归档模型的检测设置、最近一轮结果与最近一次检测任务"
+        "summary": "指纹匹对：参考库状态、参考模型，以及每个未归档模型的检测设置、最近一轮结果、访客看到的结论与最近一次检测任务"
       }
     },
     "/admin/fingerprint/bank/refresh": {
@@ -10300,6 +10431,105 @@
           }
         },
         "summary": "指纹匹对：取一轮题目，每次随机生成"
+      }
+    },
+    "/public/fingerprint/models/{id}/results": {
+      "get": {
+        "operationId": "public_fingerprint_models_id_results_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FingerprintResult"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "summary": "指纹匹对：一个公开模型保存的检测轮次，新的在前；失败的请求只给出代码，不给出上游的报错原文"
+      }
+    },
+    "/public/fingerprint/results": {
+      "get": {
+        "operationId": "public_fingerprint_results_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FingerprintPublicResults"
+                }
+              }
+            },
+            "description": "成功"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败"
+          },
+          "409": {
+            "description": "状态冲突"
+          },
+          "429": {
+            "description": "超过限流"
+          },
+          "502": {
+            "description": "上游失败"
+          }
+        },
+        "summary": "指纹匹对：每个公开模型的结论，取最近 3 轮中多数轮次的结论；尚未检测的模型 summary 为 null"
       }
     },
     "/public/intelligence": {
