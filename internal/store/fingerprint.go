@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 
 	"relaylab/internal/domain"
 )
@@ -36,4 +37,27 @@ func (s *Store) ListLatestFingerprintResults(ctx context.Context, perModel int) 
 		perModel = 1
 	}
 	return list[domain.FingerprintResult](ctx, s.DB, "SELECT data FROM (SELECT data,model_id,created_at,id,row_number() OVER(PARTITION BY model_id ORDER BY created_at DESC,id DESC) AS n FROM fingerprint_results) WHERE n<=? ORDER BY model_id,created_at DESC,id DESC", perModel)
+}
+
+// SaveFingerprintModelSettings changes the fingerprint settings of a model, leaving its other fields as stored, and
+// reconciles its schedules.
+func (s *Store) SaveFingerprintModelSettings(ctx context.Context, modelID string, v domain.FingerprintModelSettings) error {
+	return s.transaction(ctx, func(tx *sql.Tx) error {
+		m, e := load[domain.Model](ctx, tx, "SELECT data FROM models WHERE id=?", modelID)
+		if e != nil {
+			return e
+		}
+		m.FingerprintMode, m.FingerprintModel, m.FingerprintQuestions, m.FingerprintScheduled = v.Mode, v.Model, v.Questions, v.Scheduled
+		if e = saveModel(ctx, tx, *m); e != nil {
+			return e
+		}
+		return reconcileSchedules(ctx, tx, *m)
+	})
+}
+
+// ListLatestFingerprintJobs returns the newest fingerprint job of every model that has one. Unlike a stored round,
+// the job may still be running, or may have failed without a round.
+func (s *Store) ListLatestFingerprintJobs(ctx context.Context) ([]domain.Job, error) {
+	// The inner lookup runs once per model on an index over kind and model, so the probe jobs are never scanned.
+	return jobs(ctx, s.DB, "WHERE id IN (SELECT (SELECT j.id FROM jobs j WHERE j.model_id=models.id AND j.kind='fingerprint' ORDER BY j.created_at DESC,j.id DESC LIMIT 1) FROM models)")
 }

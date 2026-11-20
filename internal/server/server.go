@@ -32,6 +32,7 @@ type Server struct {
 	Vault            *security.Vault
 	Client           *upstream.Client
 	Fingerprint      FingerprintBank
+	bankRefreshing   atomic.Bool
 	mu               sync.Mutex
 	rates            map[string]*rateBucket
 	active           map[string]int
@@ -199,6 +200,10 @@ func (s *Server) Handler() http.Handler {
 	admin.POST("/jobs", s.enqueue)
 	admin.POST("/jobs/:id/cancel", s.cancelJob)
 	admin.GET("/jobs/:id", s.job)
+	admin.GET("/fingerprint", s.adminFingerprint)
+	admin.PUT("/fingerprint/models/:id", s.saveFingerprintModel)
+	admin.GET("/fingerprint/models/:id/results", s.adminFingerprintResults)
+	admin.POST("/fingerprint/bank/refresh", s.refreshFingerprintBank)
 	admin.GET("/artifacts", s.adminArtifacts)
 	admin.GET("/artifacts/:id", s.adminArtifact)
 	admin.PATCH("/artifacts/:id", s.hideArtifact)

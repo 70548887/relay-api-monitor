@@ -152,3 +152,51 @@ type FingerprintRequestError struct {
 	Code     string `json:"code"`
 	Message  string `json:"message"`
 }
+
+// FingerprintModelSettings is how the detection of one channel model is set up.
+type FingerprintModelSettings struct {
+	// Mode is auto, manual or unlisted. See the FingerprintMode constants.
+	Mode string `json:"mode"`
+	// Model is the ID of the reference model picked for the manual mode, and empty in the other modes.
+	Model string `json:"model"`
+	// Questions is how many questions one round asks, 1 to 3.
+	Questions int `json:"questions"`
+	// Scheduled turns scheduled detection on.
+	Scheduled bool `json:"scheduled"`
+}
+
+// AdminFingerprintModel is one channel model on the admin fingerprint page.
+type AdminFingerprintModel struct {
+	ID           string `json:"id"`
+	UpstreamID   string `json:"upstream_id"`
+	DisplayName  string `json:"display_name"`
+	ChannelID    string `json:"channel_id"`
+	ChannelName  string `json:"channel_name"`
+	PlatformID   string `json:"platform_id"`
+	PlatformName string `json:"platform_name"`
+	// Runnable is false when a detection cannot be started: the model is missing upstream or its channel is disabled.
+	Runnable bool                     `json:"runnable"`
+	Settings FingerprintModelSettings `json:"settings"`
+	// Expected is the ID of the reference model the next round compares with. It is empty when the settings select
+	// none, or while the bank is not ready.
+	Expected string `json:"expected"`
+	// Latest is the newest stored round.
+	Latest *FingerprintResult `json:"latest"`
+	// Job is the newest detection job. It may still be running, or may have failed without storing a round.
+	Job *Job `json:"job"`
+}
+
+// AdminFingerprintOverview is the data of the admin fingerprint page.
+type AdminFingerprintOverview struct {
+	Bank FingerprintBank `json:"bank"`
+	// References are the models of the reference bank.
+	References []FingerprintModel      `json:"references"`
+	Models     []AdminFingerprintModel `json:"models"`
+}
+
+// FingerprintBankRefresh is the outcome of downloading the online reference bank again.
+type FingerprintBankRefresh struct {
+	Bank FingerprintBank `json:"bank"`
+	// Changed reports whether the downloaded build differs from the one used before.
+	Changed bool `json:"changed"`
+}

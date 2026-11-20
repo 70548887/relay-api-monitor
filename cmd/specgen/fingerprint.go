@@ -17,6 +17,12 @@ func addFingerprintContract(schemas, paths object, add func(string, string, stri
 	props("Model")["fingerprint_mode"].(object)["description"] = "指纹匹对的期望模型：auto 按上游模型 ID 自动匹配（省略时同此），manual 使用 fingerprint_model，unlisted 表示参考库未收录"
 	questions := props("Model")["fingerprint_questions"].(object)
 	questions["minimum"], questions["maximum"], questions["description"] = 1, fingerprint.MaxChallenges, "每轮检测的题数，省略时为 3"
+	enum("FingerprintModelSettings", "mode", "auto", "manual", "unlisted")
+	props("FingerprintModelSettings")["mode"].(object)["description"] = "期望模型：auto 按上游模型 ID 自动匹配（省略时同此），manual 使用 model，unlisted 表示参考库未收录"
+	props("FingerprintModelSettings")["model"].(object)["description"] = "manual 时必填，须为参考库中的模型 ID；其他方式下不保存"
+	asked := props("FingerprintModelSettings")["questions"].(object)
+	asked["minimum"], asked["maximum"], asked["description"] = 1, fingerprint.MaxChallenges, "每轮检测的题数：3 题最准确，2 题可参考，1 题仅作测试；省略时为 3"
+	schemas["FingerprintModelSettingsWrite"] = writeSchema(schemas["FingerprintModelSettings"].(object), []string{})
 
 	add("/public/fingerprint", "get", "指纹匹对：参考库状态与可选的期望模型", "", "FingerprintOverview", false, false)
 	add("/public/fingerprint/challenges", "get", "指纹匹对：取一轮题目，每次随机生成", "", "FingerprintChallengeSet", false, false)
@@ -25,4 +31,12 @@ func addFingerprintContract(schemas, paths object, add func(string, string, stri
 	responses := paths["/public/fingerprint/analyze"].(object)["post"].(object)["responses"].(object)
 	responses["429"] = object{"description": "请求过于频繁，Retry-After 给出重试秒数", "content": object{"application/json": object{"schema": ref("Error")}}}
 	responses["503"] = object{"description": "参考库暂不可用", "content": object{"application/json": object{"schema": ref("Error")}}}
+
+	unavailable := object{"description": "参考库暂不可用", "content": object{"application/json": object{"schema": ref("Error")}}}
+	add("/admin/fingerprint", "get", "指纹匹对：参考库状态、参考模型，以及每个未归档模型的检测设置、最近一轮结果与最近一次检测任务", "", "AdminFingerprintOverview", true, false)
+	add("/admin/fingerprint/models/{id}", "put", "指纹匹对：保存一个模型的期望模型、每轮题数与定时开关，不改动模型的其他配置", "FingerprintModelSettingsWrite", "FingerprintModelSettings", true, false)
+	paths["/admin/fingerprint/models/{id}"].(object)["put"].(object)["responses"].(object)["503"] = unavailable
+	add("/admin/fingerprint/models/{id}/results", "get", "指纹匹对：一个模型保存的检测轮次，新的在前，每个模型最多保留 30 轮", "", "FingerprintResult", true, true)
+	add("/admin/fingerprint/bank/refresh", "post", "指纹匹对：重新下载在线参考库；失败时原有参考库不变，设置了本地参考库目录时不可用，已有更新在进行时返回 409", "", "FingerprintBankRefresh", true, false)
+	paths["/admin/fingerprint/bank/refresh"].(object)["post"].(object)["responses"].(object)["503"] = unavailable
 }

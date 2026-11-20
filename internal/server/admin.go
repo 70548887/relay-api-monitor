@@ -614,9 +614,13 @@ func (s *Server) enqueue(c *gin.Context) {
 		fail(c, 400, "disabled", "模型缺失，或模型、分组及平台已停用或归档")
 		return
 	}
-	if b.Kind != "probe" && b.Kind != "artifact" {
+	if b.Kind != "probe" && b.Kind != "artifact" && b.Kind != "fingerprint" {
 		fail(c, 400, "invalid_kind", "任务类型不正确")
 		return
+	}
+	if b.Kind == "fingerprint" {
+		// A detection round sends its questions bare, so that the answers compare with the reference bank.
+		b.ReasoningEffort, b.ThinkingMode, b.ThinkingBudget = "", "", 0
 	}
 	if b.Kind == "artifact" {
 		if b.TemplateID == "" {
@@ -657,8 +661,11 @@ func (s *Server) enqueue(c *gin.Context) {
 // a rejected manual run is not mistaken for a stale page or a broken group.
 func (s *Server) busyJobMessage(ctx context.Context, modelID, kind string) string {
 	label := "创作"
-	if kind == "probe" {
+	switch kind {
+	case "probe":
 		label = "健康检测"
+	case "fingerprint":
+		label = "指纹检测"
 	}
 	advice := "同一模型的同类任务同时只运行 1 个，请等待其结束，或在“任务与作品”中取消后再提交。"
 	active, err := s.Store.ListActiveJobs(ctx)

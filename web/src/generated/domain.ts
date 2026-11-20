@@ -510,3 +510,55 @@ export interface FingerprintAnalysis {
   bank_built_at: string;
 }
 
+export interface FingerprintRequestError {
+  question: number;
+  code: string;
+  message: string;
+}
+
+export interface FingerprintResult {
+  id: string;
+  job_id: string;
+  model_id: string;
+  questions: number;
+  analysis: FingerprintAnalysis;
+  errors: Array<FingerprintRequestError>;
+  returned_model: string;
+  usage: Usage;
+  duration_ms: number;
+  created_at: string;
+}
+
+export interface FingerprintModelSettings {
+  mode: string;
+  model: string;
+  questions: number;
+  scheduled: boolean;
+}
+
+export interface AdminFingerprintModel {
+  id: string;
+  upstream_id: string;
+  display_name: string;
+  channel_id: string;
+  channel_name: string;
+  platform_id: string;
+  platform_name: string;
+  runnable: boolean;
+  settings: FingerprintModelSettings;
+  expected: string;
+  latest: FingerprintResult | null;
+  job: Job | null;
+}
+
+export interface AdminFingerprintOverview {
+  bank: FingerprintBank;
+  references: Array<FingerprintModel>;
+  models: Array<AdminFingerprintModel>;
+}
+
+export interface FingerprintBankRefresh {
+  bank: FingerprintBank;
+  changed: boolean;
+}
+

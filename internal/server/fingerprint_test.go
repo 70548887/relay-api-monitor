@@ -21,11 +21,43 @@ type fakeFingerprintBank struct {
 	models   []domain.FingerprintModel
 	analysis domain.FingerprintAnalysis
 	err      error
+	// expect answers Expected. Without it no channel model has a reference model.
+	expect func(domain.Model) string
+	// A successful Refresh replaces status with refreshed and reports changed.
+	refreshed  domain.FingerprintBank
+	changed    bool
+	refreshErr error
+	// entered and release, when set, make Refresh report that it started and then wait.
+	entered, release chan struct{}
 
-	sources  []string
-	answers  []fingerprint.Answer
-	expected string
-	judged   int
+	sources   []string
+	answers   []fingerprint.Answer
+	expected  string
+	judged    int
+	asked     []domain.Model
+	refreshes int
+}
+
+func (b *fakeFingerprintBank) Expected(_ context.Context, source string, m domain.Model) (string, error) {
+	b.sources = append(b.sources, source)
+	b.asked = append(b.asked, m)
+	if b.expect == nil {
+		return "", nil
+	}
+	return b.expect(m), nil
+}
+
+func (b *fakeFingerprintBank) Refresh(context.Context) (*fingerprint.Reference, bool, error) {
+	b.refreshes++
+	if b.entered != nil {
+		b.entered <- struct{}{}
+		<-b.release
+	}
+	if b.refreshErr != nil {
+		return nil, false, b.refreshErr
+	}
+	b.status = b.refreshed
+	return nil, b.changed, nil
 }
 
 func (b *fakeFingerprintBank) Catalog(_ context.Context, source string) (domain.FingerprintBank, []domain.FingerprintModel) {
