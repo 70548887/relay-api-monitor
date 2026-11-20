@@ -321,6 +321,26 @@ type Usage struct {
 	CacheCreationInputTokens *int64 `json:"cache_creation_input_tokens,omitempty"`
 }
 
+// Add adds the token counts that one response reported to a running total. A count that no response reported stays
+// unknown.
+func (u *Usage) Add(usage Usage) {
+	add := func(sum **int64, value *int64) {
+		if value == nil {
+			return
+		}
+		next := *value
+		if *sum != nil {
+			next += **sum
+		}
+		*sum = &next
+	}
+	add(&u.InputTokens, usage.InputTokens)
+	add(&u.OutputTokens, usage.OutputTokens)
+	add(&u.TotalTokens, usage.TotalTokens)
+	add(&u.CachedInputTokens, usage.CachedInputTokens)
+	add(&u.CacheCreationInputTokens, usage.CacheCreationInputTokens)
+}
+
 type ProbeResult struct {
 	ID            string    `json:"id"`
 	JobID         string    `json:"job_id"`

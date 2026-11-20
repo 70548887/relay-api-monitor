@@ -1964,6 +1964,95 @@
         ],
         "type": "object"
       },
+      "FingerprintCheck": {
+        "properties": {
+          "analysis": {
+            "$ref": "#/components/schemas/FingerprintAnalysis"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "duration_ms": {
+            "type": "integer"
+          },
+          "errors": {
+            "description": "请求失败的题，按题号排列；message 是连接给出的原因，不含密钥。全部成功时为空数组",
+            "items": {
+              "$ref": "#/components/schemas/FingerprintRequestError"
+            },
+            "type": "array"
+          },
+          "question_ms": {
+            "description": "每道题的请求用时（毫秒），顺序同题号",
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "questions": {
+            "type": "integer"
+          },
+          "returned_model": {
+            "description": "连接在回答里报告的模型名，取第一道报告了模型名的题；都没有报告时为空",
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/Usage",
+            "description": "本轮各题用量之和；连接没有报告的项为 null"
+          }
+        },
+        "required": [
+          "questions",
+          "analysis",
+          "errors",
+          "question_ms",
+          "returned_model",
+          "usage",
+          "duration_ms",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "FingerprintCheckRequest": {
+        "properties": {
+          "connection_id": {
+            "type": "string"
+          },
+          "connection_revision": {
+            "type": "integer"
+          },
+          "expected_model": {
+            "description": "manual 时必填，须为参考库中的模型 ID；其他方式下忽略",
+            "type": "string"
+          },
+          "mode": {
+            "description": "期望模型：auto 按 model 自动匹配（省略时同此），manual 使用 expected_model，unlisted 表示参考库未收录",
+            "enum": [
+              "auto",
+              "manual",
+              "unlisted"
+            ],
+            "type": "string"
+          },
+          "model": {
+            "description": "要检测的模型，即发给连接的模型 ID",
+            "type": "string"
+          },
+          "questions": {
+            "description": "本轮的题数：3 题最准确，2 题可参考，1 题仅作测试；省略时为 3",
+            "maximum": 3,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "connection_id",
+          "connection_revision",
+          "model"
+        ],
+        "type": "object"
+      },
       "FingerprintModel": {
         "properties": {
           "display_name": {
@@ -10850,6 +10939,98 @@
           }
         },
         "summary": "查询是否已初始化"
+      }
+    },
+    "/test/fingerprint": {
+      "post": {
+        "operationId": "test_fingerprint_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FingerprintCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FingerprintCheck"
+                }
+              }
+            },
+            "description": "本轮结果。某一题的请求失败不算接口失败：errors 列出失败的题，analysis 按收到的回答给出"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无效请求"
+          },
+          "401": {
+            "description": "需要登录"
+          },
+          "403": {
+            "description": "来源或 CSRF 验证失败，或连接已停用"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "连接不存在"
+          },
+          "409": {
+            "description": "连接在选定后改动过，connection_revision 已过期"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "请求过于频繁，或本小时的检测次数已用完（校验未通过而被拒绝的请求不计次；开始检测后即使连接没有答上来也计次）；Retry-After 给出重试秒数"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "参考库暂不可用"
+          }
+        },
+        "security": [
+          {
+            "memberCookieAuth": []
+          }
+        ],
+        "summary": "指纹匹对：会员用自己保存的连接检测一个模型，一轮 1 到 3 题同时发出，按收到的回答评分；结果只返回这一次，不保存也不公开"
       }
     },
     "/test/generate": {

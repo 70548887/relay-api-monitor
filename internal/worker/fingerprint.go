@@ -18,9 +18,6 @@ const fingerprintQuestionTimeout = 3 * time.Minute
 
 const fingerprintBankUnavailable = "指纹参考库不可用，请在后台「指纹匹对」更新参考库后重试"
 
-// errReplyExceeds stops the request of a question whose reply already holds more numbers than asked.
-var errReplyExceeds = errors.New("worker: the reply holds more numbers than asked")
-
 // FingerprintBank is the part of the reference bank that detection rounds use. *fingerprint.Bank implements it.
 type FingerprintBank interface {
 	// Expected returns the bank ID of the reference model a channel model is compared with, or "" when the bank
@@ -82,21 +79,7 @@ func (w *Worker) runFingerprint(ctx, requestCtx context.Context, j *domain.Job, 
 	answers := make([]fingerprint.Answer, len(round.challenges))
 	answered := false
 	for i, challenge := range round.challenges {
-		var reply strings.Builder
-		request.Prompt = challenge.Prompt
-		response, err := w.client.Generate(requestCtx, request, func(event upstream.Event) error {
-			if err := progress(event); err != nil {
-				return err
-			}
-			if event.Type != "text" {
-				return nil
-			}
-			reply.WriteString(event.Text)
-			if fingerprint.Exceeds(reply.String(), challenge.ExpectedCount) {
-				return errReplyExceeds
-			}
-			return nil
-		})
+		response, answer, err := fingerprint.Ask(requestCtx, w.client, request, challenge, progress)
 		j.ReceivedBytes += response.ReceivedBytes
 		j.TextBytes += response.TextBytes
 		if i == 0 {
@@ -111,7 +94,7 @@ func (w *Worker) runFingerprint(ctx, requestCtx context.Context, j *domain.Job, 
 		if response.ReturnedModel != "" {
 			j.ReturnedModel = response.ReturnedModel
 		}
-		addUsage(&j.Usage, response.Usage)
+		j.Usage.Add(response.Usage)
 		j.DurationMS = time.Since(started).Milliseconds()
 		if lost.Load() {
 			return ErrLeaseLost
@@ -119,18 +102,14 @@ func (w *Worker) runFingerprint(ctx, requestCtx context.Context, j *domain.Job, 
 		if ctx.Err() != nil {
 			return canceled()
 		}
-		answers[i] = fingerprint.NewAnswer(response.Text, challenge.ExpectedCount)
+		answers[i] = answer
 		answered = answered || strings.TrimSpace(response.Text) != ""
-		switch {
-		case errors.Is(err, errReplyExceeds):
-		case err != nil:
+		if err != nil {
 			code, message := errorDetails(err)
 			if code == "truncated" {
 				message = truncatedMessage(j.Kind, request.MaxTokens)
 			}
 			failures = append(failures, domain.FingerprintRequestError{Question: i + 1, Code: code, Message: message})
-		case !response.Complete:
-			failures = append(failures, domain.FingerprintRequestError{Question: i + 1, Code: "incomplete_response", Message: "上游响应未完整结束"})
 		}
 	}
 	if j.ProgressChars > 0 {
@@ -162,24 +141,4 @@ func (w *Worker) runFingerprint(ctx, requestCtx context.Context, j *domain.Job, 
 
 func (w *Worker) completeFingerprint(j domain.Job, round *domain.FingerprintResult) error {
 	return w.finish(j, func(ctx context.Context) error { return w.st.FinishFingerprintJob(ctx, j, round) })
-}
-
-// addUsage adds the token counts that one response reported to a running total. A count that no response reported
-// stays unknown.
-func addUsage(total *domain.Usage, usage domain.Usage) {
-	add := func(sum **int64, value *int64) {
-		if value == nil {
-			return
-		}
-		next := *value
-		if *sum != nil {
-			next += **sum
-		}
-		*sum = &next
-	}
-	add(&total.InputTokens, usage.InputTokens)
-	add(&total.OutputTokens, usage.OutputTokens)
-	add(&total.TotalTokens, usage.TotalTokens)
-	add(&total.CachedInputTokens, usage.CachedInputTokens)
-	add(&total.CacheCreationInputTokens, usage.CacheCreationInputTokens)
 }

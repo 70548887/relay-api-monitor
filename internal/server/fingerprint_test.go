@@ -23,6 +23,8 @@ type fakeFingerprintBank struct {
 	err      error
 	// expect answers Expected. Without it no channel model has a reference model.
 	expect func(domain.Model) string
+	// expectErr, when set, makes Expected fail.
+	expectErr error
 	// A successful Refresh replaces status with refreshed and reports changed.
 	refreshed  domain.FingerprintBank
 	changed    bool
@@ -41,6 +43,9 @@ type fakeFingerprintBank struct {
 func (b *fakeFingerprintBank) Expected(_ context.Context, source string, m domain.Model) (string, error) {
 	b.sources = append(b.sources, source)
 	b.asked = append(b.asked, m)
+	if b.expectErr != nil {
+		return "", b.expectErr
+	}
 	if b.expect == nil {
 		return "", nil
 	}

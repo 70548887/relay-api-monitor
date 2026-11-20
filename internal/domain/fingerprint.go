@@ -153,6 +153,41 @@ type FingerprintRequestError struct {
 	Message  string `json:"message"`
 }
 
+// FingerprintCheckRequest asks to run one round against a connection the member saved.
+type FingerprintCheckRequest struct {
+	ConnectionID string `json:"connection_id"`
+	// ConnectionRevision is the revision of the connection the member saw, so that a round never runs against a
+	// configuration that changed since.
+	ConnectionRevision int `json:"connection_revision"`
+	// Model is the model name sent to the connection.
+	Model string `json:"model"`
+	// Mode is auto, manual or unlisted, as in FingerprintModelSettings. Empty means auto, which derives the
+	// reference model from Model.
+	Mode string `json:"mode"`
+	// ExpectedModel is the ID of the reference model picked for the manual mode.
+	ExpectedModel string `json:"expected_model"`
+	// Questions is how many questions the round asks, 1 to 3. Zero means 3.
+	Questions int `json:"questions"`
+}
+
+// FingerprintCheck is the outcome of one round a member ran through their own connection. It is returned once and
+// not stored.
+type FingerprintCheck struct {
+	// Questions is how many questions the round asked. They are asked at the same time.
+	Questions int                 `json:"questions"`
+	Analysis  FingerprintAnalysis `json:"analysis"`
+	// Errors lists the questions whose request failed, with the reason the connection gave.
+	Errors []FingerprintRequestError `json:"errors"`
+	// QuestionMS is how long the request of each question took, in the order of the questions.
+	QuestionMS []int64 `json:"question_ms"`
+	// ReturnedModel is the model name the connection reported in its responses.
+	ReturnedModel string `json:"returned_model"`
+	// Usage adds up the token usage the connection reported.
+	Usage      Usage     `json:"usage"`
+	DurationMS int64     `json:"duration_ms"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
 // FingerprintSummary is the conclusion drawn from the newest stored rounds of a model, at most three of them. It is
 // the conclusion visitors see.
 type FingerprintSummary struct {

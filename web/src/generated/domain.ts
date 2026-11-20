@@ -590,3 +590,23 @@ export interface FingerprintBankRefresh {
   changed: boolean;
 }
 
+export interface FingerprintCheckRequest {
+  connection_id: string;
+  connection_revision: number;
+  model: string;
+  mode: string;
+  expected_model: string;
+  questions: number;
+}
+
+export interface FingerprintCheck {
+  questions: number;
+  analysis: FingerprintAnalysis;
+  errors: Array<FingerprintRequestError>;
+  question_ms: Array<number>;
+  returned_model: string;
+  usage: Usage;
+  duration_ms: number;
+  created_at: string;
+}
+
