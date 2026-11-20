@@ -17,7 +17,10 @@ import (
 // bank directory, or empty for the online bank.
 type FingerprintBank interface {
 	Catalog(ctx context.Context, source string) (domain.FingerprintBank, []domain.FingerprintModel)
+	Expected(ctx context.Context, source string, m domain.Model) (string, error)
 	Judge(ctx context.Context, source string, answers []fingerprint.Answer, expected string) (domain.FingerprintAnalysis, error)
+	// Refresh downloads the online bank again. The handlers use only whether the build changed.
+	Refresh(ctx context.Context) (*fingerprint.Reference, bool, error)
 }
 
 const (

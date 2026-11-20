@@ -69,6 +69,8 @@ FinishJob(ctx, job domain.Job, probe *domain.ProbeResult, artifact *domain.Artif
 FinishFingerprintJob(ctx, job domain.Job, round *domain.FingerprintResult) error
 ListFingerprintResults(ctx, modelID string) ([]domain.FingerprintResult, error) // newest first
 ListLatestFingerprintResults(ctx, perModel int) ([]domain.FingerprintResult, error) // every model; rounds of one model adjacent, newest first
+ListLatestFingerprintJobs(ctx) ([]domain.Job, error) // newest fingerprint job of every model that has one
+SaveFingerprintModelSettings(ctx, modelID string, v domain.FingerprintModelSettings) error // only the four fingerprint fields; reconciles schedules
 RequestCancel(ctx, id string) error
 CancelJobsForChannel(ctx, channelID string) error
 CancelJobsForModel(ctx, modelID string) error
