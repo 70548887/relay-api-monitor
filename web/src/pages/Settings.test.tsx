@@ -25,6 +25,11 @@ const initialSettings: Settings = {
   visitor_ip_concurrency: 2,
   visitor_models_per_minute: 5,
   visitor_generations_per_minute: 10,
+  fingerprint_concurrency: 1,
+  fingerprint_interval_seconds: 86400,
+  fingerprint_manual_per_minute: 10,
+  fingerprint_api_per_hour: 6,
+  fingerprint_bank_dir: '',
 };
 
 const clients: QueryClient[] = [];

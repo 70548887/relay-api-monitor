@@ -273,20 +273,37 @@ func replaceFile(from, to string) error {
 
 // Status reports the bank without downloading it: an online bank that was never downloaded is simply not ready.
 func (b *Bank) Status(ctx context.Context, source string) Status {
+	if _, _, ok := statFiles(b.files(source)); !ok && source == "" {
+		return Status{Source: "online"}
+	}
+	status, _ := b.Catalog(ctx, source)
+	return status
+}
+
+// Catalog reports the bank together with its models. Unlike Status it downloads the online bank on first use; the
+// models are nil while the bank is not ready.
+func (b *Bank) Catalog(ctx context.Context, source string) (Status, []Model) {
 	status := Status{Source: "online"}
 	if source != "" {
 		status.Source = "local"
-	} else if _, _, ok := statFiles(b.files(source)); !ok {
-		return status
 	}
 	ref, err := b.Reference(ctx, source)
 	if err != nil {
 		status.Error = err.Error()
-		return status
+		return status, nil
 	}
 	updatedAt := ref.UpdatedAt.UTC()
 	status.Ready, status.BuiltAt, status.Models, status.UpdatedAt = true, ref.BuiltAt, len(ref.models), &updatedAt
-	return status
+	return status, ref.Models()
+}
+
+// Judge scores one round of answers against the current build of the bank. See Reference.Judge.
+func (b *Bank) Judge(ctx context.Context, source string, answers []Answer, expected string) (domain.FingerprintAnalysis, error) {
+	ref, err := b.Reference(ctx, source)
+	if err != nil {
+		return domain.FingerprintAnalysis{}, err
+	}
+	return ref.Judge(answers, expected)
 }
 
 // bankHeader holds the fields read from bundle.json or unified_bank.json.

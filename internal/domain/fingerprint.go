@@ -47,6 +47,37 @@ type FingerprintBank struct {
 	Error     string     `json:"error"`
 }
 
+// FingerprintOverview is the data of the public fingerprint page.
+type FingerprintOverview struct {
+	Bank   FingerprintBank    `json:"bank"`
+	Models []FingerprintModel `json:"models"`
+}
+
+// FingerprintChallenge is one question of a round. A model answers it with ExpectedCount numbers.
+type FingerprintChallenge struct {
+	ID            string `json:"id"`
+	Prompt        string `json:"prompt"`
+	ExpectedCount int    `json:"expected_count"`
+}
+
+// FingerprintChallengeSet is one round of questions.
+type FingerprintChallengeSet struct {
+	Challenges []FingerprintChallenge `json:"challenges"`
+}
+
+// FingerprintAnswerInput is one pasted answer with the number count its question asked for.
+type FingerprintAnswerInput struct {
+	Text          string `json:"text"`
+	ExpectedCount int    `json:"expected_count"`
+}
+
+// FingerprintAnalyzeRequest asks to score one round of pasted answers. ExpectedModel is the ID of the reference
+// model the answers are claimed to come from, or empty when the bank does not list that model.
+type FingerprintAnalyzeRequest struct {
+	Answers       []FingerprintAnswerInput `json:"answers"`
+	ExpectedModel string                   `json:"expected_model"`
+}
+
 // FingerprintCandidate is one reference model in a ranking. Probability is set only for a full verdict.
 type FingerprintCandidate struct {
 	Model       string   `json:"model"`

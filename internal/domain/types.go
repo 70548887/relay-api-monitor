@@ -214,10 +214,35 @@ type Settings struct {
 	VisitorIPConcurrency        int    `json:"visitor_ip_concurrency"`
 	VisitorModelsPerMinute      int    `json:"visitor_models_per_minute"`
 	VisitorGenerationsPerMinute int    `json:"visitor_generations_per_minute"`
+	FingerprintConcurrency      int    `json:"fingerprint_concurrency"`
+	FingerprintIntervalSeconds  int    `json:"fingerprint_interval_seconds"`
+	FingerprintManualPerMinute  int    `json:"fingerprint_manual_per_minute"`
+	FingerprintAPIPerHour       int    `json:"fingerprint_api_per_hour"`
+	// FingerprintBankDir is a local directory holding the fingerprint reference bank. Empty selects the online bank.
+	FingerprintBankDir string `json:"fingerprint_bank_dir"`
 }
 
 func DefaultSettings() Settings {
-	return Settings{OnlineTestRetentionDays: 30, ProbeConcurrency: 4, ArtifactConcurrency: 2, ChannelConcurrency: 2, ProbeIntervalSeconds: 300, ArtifactIntervalSeconds: 1800, ProbeTimeoutSeconds: 60, ArtifactTimeoutSeconds: 600, ArtifactHistoryScope: "group", DiscoveryTimeoutSeconds: 20, SlowThresholdMS: 10000, RetentionDays: 30, VisitorConcurrency: 8, VisitorIPConcurrency: 2, VisitorModelsPerMinute: 5, VisitorGenerationsPerMinute: 10}
+	return Settings{OnlineTestRetentionDays: 30, ProbeConcurrency: 4, ArtifactConcurrency: 2, ChannelConcurrency: 2, ProbeIntervalSeconds: 300, ArtifactIntervalSeconds: 1800, ProbeTimeoutSeconds: 60, ArtifactTimeoutSeconds: 600, ArtifactHistoryScope: "group", DiscoveryTimeoutSeconds: 20, SlowThresholdMS: 10000, RetentionDays: 30, VisitorConcurrency: 8, VisitorIPConcurrency: 2, VisitorModelsPerMinute: 5, VisitorGenerationsPerMinute: 10, FingerprintConcurrency: 1, FingerprintIntervalSeconds: 86400, FingerprintManualPerMinute: 10, FingerprintAPIPerHour: 6}
+}
+
+// NormalizeFingerprintSettings gives the fingerprint settings their defaults when they are missing or out of range,
+// as they are in settings saved before the fingerprint feature existed.
+func NormalizeFingerprintSettings(v Settings) Settings {
+	defaults := DefaultSettings()
+	if v.FingerprintConcurrency < 1 || v.FingerprintConcurrency > 8 {
+		v.FingerprintConcurrency = defaults.FingerprintConcurrency
+	}
+	if v.FingerprintIntervalSeconds < 3600 || v.FingerprintIntervalSeconds > 2592000 {
+		v.FingerprintIntervalSeconds = defaults.FingerprintIntervalSeconds
+	}
+	if v.FingerprintManualPerMinute < 1 || v.FingerprintManualPerMinute > 120 {
+		v.FingerprintManualPerMinute = defaults.FingerprintManualPerMinute
+	}
+	if v.FingerprintAPIPerHour < 1 || v.FingerprintAPIPerHour > 60 {
+		v.FingerprintAPIPerHour = defaults.FingerprintAPIPerHour
+	}
+	return v
 }
 
 type Schedule struct {
