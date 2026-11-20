@@ -604,6 +604,7 @@ export interface FingerprintCheck {
   analysis: FingerprintAnalysis;
   errors: Array<FingerprintRequestError>;
   question_ms: Array<number>;
+  expected_counts: Array<number>;
   returned_model: string;
   usage: Usage;
   duration_ms: number;

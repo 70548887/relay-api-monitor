@@ -1,4 +1,4 @@
-import type { FingerprintLevel, FingerprintVerdict } from './types';
+import type { FingerprintLevel, FingerprintModel, FingerprintVerdict } from './types';
 
 export const verdictMeta: Record<FingerprintVerdict, { label: string; color?: string }> = {
   match: { label: '一致', color: 'success' },
@@ -27,6 +27,17 @@ export const SUMMARY_ROUNDS = 3;
 export const bankDate = (builtAt: string) => builtAt.slice(0, 10);
 
 export const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
+
+/** The reference models as the option groups of a select, one group per family. value turns a model ID into the value of its option. */
+export function modelGroups(models: FingerprintModel[], value: (id: string) => string = id => id) {
+  const families = new Map<string, { label: string; options: { value: string; label: string }[] }>();
+  for (const model of models) {
+    const family = families.get(model.family) || { label: model.family_name || model.family, options: [] };
+    family.options.push({ value: value(model.id), label: model.display_name });
+    families.set(model.family, family);
+  }
+  return [...families.values()];
+}
 
 /** How long before now, given in milliseconds, a time was: 不到 1 分钟前, 5 分钟前, 3 小时前, 2 天前. */
 export function agoText(value: string, now: number) {

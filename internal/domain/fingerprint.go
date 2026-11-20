@@ -180,6 +180,8 @@ type FingerprintCheck struct {
 	Errors []FingerprintRequestError `json:"errors"`
 	// QuestionMS is how long the request of each question took, in the order of the questions.
 	QuestionMS []int64 `json:"question_ms"`
+	// ExpectedCounts is how many numbers each question asked for, in the order of the questions.
+	ExpectedCounts []int `json:"expected_counts"`
 	// ReturnedModel is the model name the connection reported in its responses.
 	ReturnedModel string `json:"returned_model"`
 	// Usage adds up the token usage the connection reported.

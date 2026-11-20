@@ -30,5 +30,5 @@ export const userPost=<T,>(path:string,body?:unknown)=>userApi<T>(path,{method:'
 // a different guard and never accepts this member login as authorization.
 export function safeUserNext(value:string|null):string{
  if(!value||!value.startsWith('/')||value.startsWith('//')||/[\\\u0000-\u001f]/.test(value))return '/account';
- try{const url=new URL(value,'https://relaylab.invalid');if(url.origin!=='https://relaylab.invalid'||(!['/','/test','/intelligence','/account','/account/connections','/account/tests'].includes(url.pathname)&&!/^\/account\/tests\/[a-f0-9]{32}$/.test(url.pathname)))return '/account';return url.pathname+url.search+url.hash}catch{return '/account'}
+ try{const url=new URL(value,'https://relaylab.invalid');if(url.origin!=='https://relaylab.invalid'||(!['/','/test','/intelligence','/fingerprint','/account','/account/connections','/account/tests'].includes(url.pathname)&&!/^\/account\/tests\/[a-f0-9]{32}$/.test(url.pathname)))return '/account';return url.pathname+url.search+url.hash}catch{return '/account'}
 }

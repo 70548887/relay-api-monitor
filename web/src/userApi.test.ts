@@ -32,6 +32,7 @@ describe('ordinary user API session isolation',()=>{
  it('only permits member return destinations',()=>{
   expect(safeUserNext('/test?mode=svg#preview')).toBe('/test?mode=svg#preview');
   expect(safeUserNext('/account/connections')).toBe('/account/connections');
+  expect(safeUserNext('/fingerprint?tab=self&mode=api')).toBe('/fingerprint?tab=self&mode=api');
   expect(safeUserNext('/account/tests/'+ 'a'.repeat(32))).toBe('/account/tests/'+ 'a'.repeat(32));
   for(const value of ['//evil.test','/admin','/admin/settings','https://evil.test','/\\evil.test','/%2f%2fevil.test','/login?next=/test'])expect(safeUserNext(value)).toBe('/account');
  });
