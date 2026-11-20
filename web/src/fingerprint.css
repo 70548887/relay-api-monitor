@@ -76,6 +76,7 @@
 .fp-admin-bank.unavailable strong{color:#b7791f}
 .fp-admin-bank .muted{overflow-wrap:anywhere}
 .fp-admin-expected{display:grid;gap:2px}
+.fp-admin-schedule{display:grid;justify-items:start;gap:4px}
 .fp-admin-round{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12.5px}
 .fp-admin-round small{color:var(--muted)}
 .fp-admin-latest{display:grid;gap:4px}

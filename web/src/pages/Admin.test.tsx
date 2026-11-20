@@ -46,10 +46,10 @@ it('labels every kind of job in the job list, fingerprint detection included',as
  client.setQueryData(['admin-models'],[{id:'m',channel_id:'c',upstream_id:'fixture',public:true}]);
  client.setQueryData(['admin-templates'],[{id:'cn_html',name:'中文动画'}]);
  client.setQueryData(['admin-intelligence-status'],{groups:[],worker_online:true});
- const job=(id:string,kind:string,template_id='')=>({id,kind,template_id,model_id:'m',channel_id:'c',schedule_id:'',state:'succeeded',created_at:'2026-11-20T04:00:00Z',error_code:'',error_message:'',received_bytes:0,text_bytes:0,duration_ms:0});
+ const job=(id:string,kind:string,template_id='',schedule_id='')=>({id,kind,template_id,model_id:'m',channel_id:'c',schedule_id,state:'succeeded',created_at:'2026-11-20T04:00:00Z',error_code:'',error_message:'',received_bytes:0,text_bytes:0,duration_ms:0});
  vi.stubGlobal('fetch',vi.fn(async(url:RequestInfo|URL)=>{
   const path=String(url);
-  if(path.startsWith('/api/v1/admin/jobs?'))return new Response(JSON.stringify([job('fingerprint-job','fingerprint'),job('probe-job','probe'),job('artifact-job','artifact','cn_html')]));
+  if(path.startsWith('/api/v1/admin/jobs?'))return new Response(JSON.stringify([job('fingerprint-job','fingerprint'),job('timed-fingerprint','fingerprint','','schedule-1'),job('probe-job','probe'),job('artifact-job','artifact','cn_html')]));
   if(path==='/api/v1/admin/artifacts')return new Response('[]');
   throw new Error(`unexpected request ${path}`);
  }));
@@ -59,6 +59,9 @@ it('labels every kind of job in the job list, fingerprint detection included',as
  expect(row('fingerprint-job').getByText('指纹检测',{selector:'.ant-tag'})).toBeInTheDocument();
  expect(row('fingerprint-job').getByText('Group · 指纹检测 · 独立请求')).toBeInTheDocument();
  expect(row('fingerprint-job').getByText('手动触发')).toBeInTheDocument();
+ expect(row('timed-fingerprint').getByText('定时',{selector:'.ant-tag'})).toBeInTheDocument();
+ expect(row('timed-fingerprint').getByText('按模型指纹定时检测')).toBeInTheDocument();
+ expect(row('timed-fingerprint').queryByText('手动触发')).not.toBeInTheDocument();
  expect(row('probe-job').getByText('健康检测',{selector:'.ant-tag'})).toBeInTheDocument();
  expect(row('probe-job').getByText('Group · 健康检测 · 独立请求')).toBeInTheDocument();
  expect(row('probe-job').getByText('按模型健康检测计划')).toBeInTheDocument();

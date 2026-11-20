@@ -21,3 +21,7 @@ export const ROUND_SIZE = 3;
 export const bankDate = (builtAt: string) => builtAt.slice(0, 10);
 
 export const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
+
+/** The time between scheduled detections in the largest unit that divides it: 24 小时, 2 天, 90 分钟. */
+export const intervalText = (seconds: number) => seconds > 86400 && seconds % 86400 === 0 ? `${seconds / 86400} 天`
+  : seconds % 3600 === 0 ? `${seconds / 3600} 小时` : `${Math.round(seconds / 60)} 分钟`;

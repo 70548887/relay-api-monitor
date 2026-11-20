@@ -58,6 +58,11 @@ func (s *Server) adminFingerprint(c *gin.Context) {
 		dbError(c, err)
 		return
 	}
+	schedules, err := s.Store.ListSchedules(ctx)
+	if err != nil {
+		dbError(c, err)
+		return
+	}
 	platformByID := map[string]domain.Platform{}
 	for _, p := range platforms {
 		platformByID[p.ID] = p
@@ -74,8 +79,14 @@ func (s *Server) adminFingerprint(c *gin.Context) {
 	for i := range jobs {
 		job[jobs[i].ModelID] = &jobs[i]
 	}
+	nextRun := map[string]*time.Time{}
+	for i := range schedules {
+		if plan := &schedules[i]; plan.Kind == "fingerprint" && plan.Enabled {
+			nextRun[plan.ModelID] = &plan.NextRunAt
+		}
+	}
 
-	out := domain.AdminFingerprintOverview{Bank: domain.FingerprintBank{Source: "online"}, References: []domain.FingerprintModel{}, Models: []domain.AdminFingerprintModel{}}
+	out := domain.AdminFingerprintOverview{Bank: domain.FingerprintBank{Source: "online"}, IntervalSeconds: settings.FingerprintIntervalSeconds, References: []domain.FingerprintModel{}, Models: []domain.AdminFingerprintModel{}}
 	bankCtx, cancel := context.WithTimeout(ctx, fingerprintPageWait)
 	defer cancel()
 	if s.Fingerprint != nil {
@@ -93,7 +104,7 @@ func (s *Server) adminFingerprint(c *gin.Context) {
 		}
 		row := domain.AdminFingerprintModel{
 			ID: m.ID, UpstreamID: m.UpstreamID, DisplayName: m.DisplayName, ChannelID: ch.ID, ChannelName: ch.Name, PlatformID: p.ID, PlatformName: p.Name,
-			Runnable: !m.Missing && ch.Enabled, Settings: fingerprintModelSettings(m), Latest: latest[m.ID], Job: job[m.ID],
+			Runnable: !m.Missing && ch.Enabled, Settings: fingerprintModelSettings(m), Latest: latest[m.ID], Job: job[m.ID], NextRunAt: nextRun[m.ID],
 		}
 		if out.Bank.Ready {
 			if expected, err := s.Fingerprint.Expected(bankCtx, settings.FingerprintBankDir, m); err == nil {

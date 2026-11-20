@@ -1,18 +1,29 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, App, Button, Input, Modal, Select, Space, Table, Tag } from 'antd';
+import { Alert, App, Button, Input, Modal, Select, Space, Switch, Table, Tag } from 'antd';
 import { PlayCircleOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons';
 import { api, post, put } from '../api';
 import { PageHeading, QueryState, StateTag } from '../components/Common';
 import { FingerprintResult, VerdictTag } from '../components/FingerprintResult';
-import { bankDate, levelMeta, percent, ROUND_SIZE } from '../fingerprint';
-import { duration, nameOf, time } from '../lib';
+import { bankDate, intervalText, levelMeta, percent, ROUND_SIZE } from '../fingerprint';
+import { duration, nameOf, shortTime, time } from '../lib';
 import type { AdminFingerprintModel, AdminFingerprintOverview, FingerprintBankRefresh, FingerprintModelSettings, FingerprintRound } from '../types';
 import '../fingerprint.css';
 
 const overviewKey = ['admin-fingerprint'];
 const runningStates = ['queued', 'claimed', 'dispatching', 'running'];
 const running = (row: AdminFingerprintModel) => !!row.job && runningStates.includes(row.job.state);
+
+/**
+ * How long until the page loads again by itself: shortly while a detection runs or the bank is still being
+ * downloaded, and otherwise when the next scheduled detection is due. False keeps the page as it is.
+ */
+function refreshIn(data?: AdminFingerprintOverview) {
+  if (!data?.bank.ready || data.models.some(running)) return 5000;
+  const due = Math.min(...data.models.filter(row => row.next_run_at).map(row => Date.parse(row.next_run_at!)));
+  // A timer cannot wait longer than about 24 days, which the longest interval exceeds; an hour is long enough.
+  return Number.isFinite(due) ? Math.min(Math.max(due - Date.now() + 2000, 5000), 3600_000) : false;
+}
 
 /** The expected-model select holds the mode and, for a hand-picked reference model, its ID. */
 const picked = 'model:';
@@ -84,8 +95,7 @@ export function FingerprintAdminPage() {
   const overview = useQuery({
     queryKey: overviewKey,
     queryFn: ({ signal }) => api<AdminFingerprintOverview>('/admin/fingerprint', { signal }),
-    // Follow running detections, and the first download of the bank, without a manual refresh.
-    refetchInterval: query => query.state.data?.bank.ready && !query.state.data.models.some(running) ? false : 5000,
+    refetchInterval: query => refreshIn(query.state.data),
   });
   // Returned from onSettled, so a mutation stays pending until the table shows its outcome.
   const reload = () => client.invalidateQueries({ queryKey: overviewKey });
@@ -158,22 +168,22 @@ export function FingerprintAdminPage() {
       <div className="panel">
         <div className="section-toolbar">
           <Input allowClear aria-label="搜索模型" placeholder="搜索模型、平台或分组" style={{ maxWidth: 280 }} value={search} onChange={event => setSearch(event.target.value)}/>
-          <span className="muted">3 个有效回答给出完整结论和置信度，2 个只供参考，1 个仅作测试。期望模型和题数改动后立即保存。</span>
+          <span className="muted">3 个有效回答给出完整结论和置信度，2 个只供参考，1 个仅作测试。改动立即保存；打开定时的模型每 {intervalText(data.interval_seconds)}自动检测一次。</span>
         </div>
         <Table<AdminFingerprintModel> rowKey="id" size="middle" dataSource={rows} scroll={{ x: 1100 }}
           pagination={{ pageSize: 20, hideOnSinglePage: true }} locale={{ emptyText: data.models.length ? '没有匹配的模型' : '还没有模型，请先在“模型配置”里添加' }}
           columns={[
             {
-              title: '模型', width: 230, render: (_: unknown, row) => <div>
+              title: '模型', width: 210, render: (_: unknown, row) => <div>
                 <Space size={6}><strong>{nameOf(row)}</strong>{!row.runnable && <Tag>不可检测</Tag>}</Space>
                 <div className="muted">{row.platform_name} / {row.channel_name}</div>
               </div>,
             },
             {
-              title: '期望模型', width: 250, render: (_: unknown, row) => {
+              title: '期望模型', width: 240, render: (_: unknown, row) => {
                 const settings = settingsOf(row), note = saving(row) ? '' : expectedNote(row);
                 return <div className="fp-admin-expected">
-                  <Select showSearch optionFilterProp="label" aria-label={`${nameOf(row)} 的期望模型`} style={{ width: 220 }}
+                  <Select showSearch optionFilterProp="label" aria-label={`${nameOf(row)} 的期望模型`} style={{ width: 208 }}
                     value={choiceOf(settings)} options={expectedOptions(settings)} disabled={save.isPending} loading={saving(row)}
                     onChange={choice => save.mutate({ id: row.id, settings: { ...row.settings, ...fromChoice(choice) } })}/>
                   {note && <small className="muted">{note}</small>}
@@ -185,6 +195,16 @@ export function FingerprintAdminPage() {
                 value={settingsOf(row).questions} options={questionOptions} disabled={save.isPending}
                 onChange={questions => save.mutate({ id: row.id, settings: { ...row.settings, questions } })}/>,
             },
+            { title: '定时', width: 140, render: (_: unknown, row) => {
+                const on = settingsOf(row).scheduled;
+                return <div className="fp-admin-schedule">
+                  <Switch size="small" aria-label={`${nameOf(row)} 的定时检测`} checked={on} disabled={save.isPending}
+                    onChange={scheduled => save.mutate({ id: row.id, settings: { ...row.settings, scheduled } })}/>
+                  {on && !saving(row) && (row.next_run_at
+                    ? <small className="muted" title={time(row.next_run_at)}>{`下次 ${shortTime(row.next_run_at)}`}</small>
+                    : <small className="muted">不可检测，已暂停</small>)}
+                </div>;
+              } },
             { title: '最近检测', render: (_: unknown, row) => <Latest row={row}/> },
             {
               title: '操作', width: 160, render: (_: unknown, row) => {
