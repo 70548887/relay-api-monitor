@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App } from 'antd';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -59,6 +59,18 @@ function selectTab(name: string) {
   fireEvent.click(screen.getByRole('tab', { name }));
 }
 
+const fingerprintLabels = ['指纹检测并发', '定时检测间隔', '手动粘贴比对', '通过 API 检测', '参考库本地目录'];
+
+async function openFingerprint() {
+  await waitFor(() => expect(screen.getByLabelText('健康检测并发')).toHaveValue('4'));
+  selectTab('指纹匹对');
+  return screen.getByRole('tabpanel', { name: '指纹匹对' });
+}
+
+function written(fetcher: { mock: { calls: [RequestInfo | URL, RequestInit?][] } }) {
+  return fetcher.mock.calls.filter(([, init]) => init?.method === 'PUT').map(([, init]) => JSON.parse(String(init?.body)));
+}
+
 beforeEach(() => {
   const getStyle = window.getComputedStyle.bind(window);
   vi.spyOn(window, 'getComputedStyle').mockImplementation(element => getStyle(element));
@@ -77,11 +89,10 @@ afterEach(() => {
 });
 
 describe('system settings', () => {
-  it('opens with five setting categories and keeps password controls in account security', async () => {
+  it('opens with six setting categories and keeps password controls in account security', async () => {
     const { fetcher } = show();
     expect(screen.getByRole('heading', { level: 1, name: '系统设置' })).toBeInTheDocument();
-    expect(screen.getAllByRole('tab')).toHaveLength(5);
-    for (const name of ['任务调度', '请求策略', '数据与历史', '访客额度', '账号安全']) expect(screen.getByRole('tab', { name })).toBeInTheDocument();
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['任务调度', '请求策略', '数据与历史', '访客额度', '指纹匹对', '账号安全']);
     await waitFor(() => expect(screen.getByLabelText('健康检测并发')).toHaveValue('4'));
     expect(screen.getByRole('tab', { name: '任务调度' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('button', { name: '撤销更改' })).toBeDisabled();
@@ -90,6 +101,10 @@ describe('system settings', () => {
     expect(screen.getByLabelText('当前密码')).toBeVisible();
     expect(screen.getByRole('button', { name: '更新密码' })).toBeVisible();
     expect(screen.queryByRole('button', { name: '保存设置' })).not.toBeInTheDocument();
+    const security = screen.getByRole('tabpanel', { name: '账号安全' });
+    expect(within(security).getByRole('heading', { level: 2, name: '账号安全' })).toBeVisible();
+    expect(within(security).getByText('06 / 06')).toBeInTheDocument();
+    expect(within(security).getByText('密码更新后，请使用新密码重新登录。')).toBeVisible();
     expect(fetcher).not.toHaveBeenCalled();
   });
 
@@ -179,6 +194,170 @@ describe('system settings', () => {
     await waitFor(() => expect(screen.getByRole('tab', { name: '请求策略' })).toHaveAttribute('aria-selected', 'true'));
     expect(screen.getByLabelText('检测超时')).toHaveAttribute('aria-invalid', 'true');
     expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('lists the fingerprint settings in their own category', async () => {
+    const { fetcher } = show();
+    expect(screen.getByLabelText('指纹检测并发')).not.toBeVisible();
+    const panel = await openFingerprint();
+    expect(screen.getByRole('tab', { name: '指纹匹对' })).toHaveAttribute('aria-selected', 'true');
+    expect(within(panel).getByRole('heading', { level: 2, name: '指纹匹对' })).toBeVisible();
+    expect(within(panel).getByText('05 / 06')).toBeInTheDocument();
+    for (const name of ['平台检测', '自助检测', '参考库']) expect(within(panel).getByRole('heading', { level: 3, name })).toBeVisible();
+    expect(fingerprintLabels.map(label => (within(panel).getByLabelText(label) as HTMLInputElement).value)).toEqual(['1', '86400', '10', '6', '']);
+    for (const unit of ['个', '秒', '次 / 分钟', '轮 / 小时']) expect(within(panel).getByText(unit)).toBeVisible();
+    expect(within(panel).getByText('每 24 小时检测一次')).toBeVisible();
+    expect(within(panel).getByText('每个 IP 每分钟比对的上限')).toBeVisible();
+    expect(within(panel).getByText('每个会员每小时检测的上限')).toBeVisible();
+    expect(within(panel).getByPlaceholderText('留空使用在线参考库')).toBe(within(panel).getByLabelText('参考库本地目录'));
+    expect(within(panel).getByText(/unified_bank\.json 和 shared_detector\.bin/)).toBeVisible();
+    expect(within(panel).getByText(/定时检测默认关闭.*从保存时起按新间隔重新计时/)).toBeVisible();
+    expect(screen.getByRole('button', { name: '保存设置' })).toBeVisible();
+    expect(screen.queryByLabelText('当前密码')).not.toBeVisible();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('saves the fingerprint settings and refreshes the pages that show them', async () => {
+    const { client, fetcher } = show();
+    client.setQueryData(['admin-fingerprint'], { interval_seconds: 86400 });
+    client.setQueryData(['fingerprint-overview'], { models: [] });
+    await openFingerprint();
+    fireEvent.change(screen.getByLabelText('指纹检测并发'), { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText('定时检测间隔'), { target: { value: '21600' } });
+    expect(screen.getByText('每 6 小时检测一次')).toBeVisible();
+    fireEvent.change(screen.getByLabelText('定时检测间隔'), { target: { value: '5400' } });
+    expect(screen.getByText('每 90 分钟检测一次')).toBeVisible();
+    fireEvent.change(screen.getByLabelText('手动粘贴比对'), { target: { value: '20' } });
+    fireEvent.change(screen.getByLabelText('通过 API 检测'), { target: { value: '12' } });
+    fireEvent.change(screen.getByLabelText('参考库本地目录'), { target: { value: 'D:\\fingerprint-bank' } });
+    expect(screen.getByText('有 5 项更改尚未保存')).toBeInTheDocument();
+    expect(client.getQueryState(['admin-fingerprint'])?.isInvalidated).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }));
+    await waitFor(() => expect(written(fetcher)).toHaveLength(1));
+    expect(fetcher.mock.calls.find(([, init]) => init?.method === 'PUT')?.[0]).toBe('/api/v1/admin/settings');
+    expect(written(fetcher)[0]).toEqual({ ...initialSettings, fingerprint_concurrency: 3, fingerprint_interval_seconds: 5400, fingerprint_manual_per_minute: 20, fingerprint_api_per_hour: 12, fingerprint_bank_dir: 'D:\\fingerprint-bank' });
+    await waitFor(() => expect(screen.getByRole('button', { name: '撤销更改' })).toBeDisabled());
+    expect(client.getQueryState(['admin-fingerprint'])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(['fingerprint-overview'])?.isInvalidated).toBe(true);
+    expect(screen.getByRole('tab', { name: '指纹匹对' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByLabelText('参考库本地目录')).toHaveValue('D:\\fingerprint-bank');
+  });
+
+  it('shows the bank directory the way the server stored it', async () => {
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => new Response(
+      JSON.stringify(init?.method === 'PUT' ? { ...JSON.parse(String(init.body)), fingerprint_bank_dir: '/data/bank' } : { ...initialSettings, fingerprint_bank_dir: '/old/bank' }),
+      { headers: { 'Content-Type': 'application/json' } },
+    ));
+    const { client } = show(fetcher, { cached: false });
+    await waitFor(() => expect(screen.getByLabelText('参考库本地目录')).toHaveValue('/old/bank'));
+    selectTab('指纹匹对');
+    fireEvent.change(screen.getByLabelText('参考库本地目录'), { target: { value: '  /data/bank  ' } });
+    expect(screen.getByText('有 1 项更改尚未保存')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }));
+    await waitFor(() => expect(screen.getByLabelText('参考库本地目录')).toHaveValue('/data/bank'));
+    expect(screen.getByText('暂无未保存的更改')).toBeInTheDocument();
+    expect(client.getQueryData<Settings>(['admin-settings'])?.fingerprint_bank_dir).toBe('/data/bank');
+    fireEvent.change(screen.getByLabelText('参考库本地目录'), { target: { value: '' } });
+    expect(screen.getByText('有 1 项更改尚未保存')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }));
+    await waitFor(() => expect(written(fetcher)).toHaveLength(2));
+    expect(written(fetcher)[1].fingerprint_bank_dir).toBe('');
+  });
+
+  it('keeps fingerprint numbers inside their limits', async () => {
+    show();
+    await openFingerprint();
+    for (const [label, low, min, high, max, fraction, whole] of [
+      ['指纹检测并发', '0', '1', '9', '8', '2.6', '3'],
+      ['定时检测间隔', '3599', '3600', '2592001', '2592000', '7200.6', '7201'],
+      ['手动粘贴比对', '0', '1', '121', '120', '2.6', '3'],
+      ['通过 API 检测', '0', '1', '61', '60', '2.6', '3'],
+    ]) {
+      const input = screen.getByLabelText(label);
+      fireEvent.change(input, { target: { value: low } });
+      fireEvent.blur(input);
+      expect(input, `${label} lower limit`).toHaveValue(min);
+      fireEvent.change(input, { target: { value: high } });
+      fireEvent.blur(input);
+      expect(input, `${label} upper limit`).toHaveValue(max);
+      fireEvent.change(input, { target: { value: fraction } });
+      fireEvent.blur(input);
+      expect(input, `${label} whole numbers`).toHaveValue(whole);
+    }
+  });
+
+  it('returns to the fingerprint category when one of its fields cannot be saved', async () => {
+    const { fetcher } = show();
+    await openFingerprint();
+    fireEvent.change(screen.getByLabelText('定时检测间隔'), { target: { value: '' } });
+    await waitFor(() => expect(screen.getByLabelText('定时检测间隔')).toHaveAttribute('aria-invalid', 'true'));
+    expect(screen.getByText('请输入有效的执行间隔')).toBeVisible();
+    selectTab('任务调度');
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }));
+    await waitFor(() => expect(screen.getByRole('tab', { name: '指纹匹对' })).toHaveAttribute('aria-selected', 'true'));
+    expect(await screen.findByText('请输入定时检测间隔')).toBeVisible();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('returns to the fingerprint category when the bank directory is refused', async () => {
+    const { fetcher } = show();
+    await openFingerprint();
+    fireEvent.change(screen.getByLabelText('参考库本地目录'), { target: { value: 'bank' } });
+    await waitFor(() => expect(screen.getByLabelText('参考库本地目录')).toHaveAttribute('aria-invalid', 'true'));
+    selectTab('访客额度');
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }));
+    await waitFor(() => expect(screen.getByRole('tab', { name: '指纹匹对' })).toHaveAttribute('aria-selected', 'true'));
+    expect(screen.getByLabelText('参考库本地目录')).toHaveAttribute('aria-invalid', 'true');
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('accepts only an absolute bank directory', async () => {
+    const { fetcher } = show();
+    await openFingerprint();
+    const input = screen.getByLabelText('参考库本地目录');
+    // Validation clears the error mark as soon as it starts, so an accepted value is one the form has marked as passed.
+    const passes = (value: string) => waitFor(() => expect(input.closest('.ant-form-item'), `accepts ${value}`).toHaveClass('ant-form-item-has-success'));
+    for (const [refused, accepted] of [
+      ['bank', '/data/bank'], ['./bank', 'D:\\bank'], ['D:bank', 'd:/bank'], ['~/bank', '\\\\nas\\share\\bank'], ['..\\bank', '  /data/bank  '], ['\\bank', '   '],
+    ]) {
+      fireEvent.change(input, { target: { value: refused } });
+      await waitFor(() => expect(input, `refuses ${refused}`).toHaveAttribute('aria-invalid', 'true'));
+      expect(await screen.findByText('请填写绝对路径，例如 /data/fingerprint-bank 或 D:\\fingerprint-bank')).toBeInTheDocument();
+      fireEvent.change(input, { target: { value: accepted } });
+      await passes(accepted);
+    }
+    fireEvent.change(input, { target: { value: `/${'库'.repeat(342)}` } });
+    await waitFor(() => expect(input).toHaveAttribute('aria-invalid', 'true'));
+    expect(await screen.findByText('路径最多为 1024 字节')).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: `/${'库'.repeat(341)}` } });
+    await passes('a path of exactly 1024 bytes');
+    fireEvent.change(input, { target: { value: 'bank' } });
+    await waitFor(() => expect(input).toHaveAttribute('aria-invalid', 'true'));
+    fireEvent.click(screen.getByRole('button', { name: '撤销更改' }));
+    // Resetting the form mounts a fresh field, so look it up again.
+    expect(screen.getByLabelText('参考库本地目录')).toHaveValue('');
+    expect(screen.getByLabelText('参考库本地目录')).not.toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('暂无未保存的更改')).toBeInTheDocument();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('locks the fingerprint fields while a save is in flight', async () => {
+    let finishSave!: (response: Response) => void;
+    const pendingSave = new Promise<Response>(resolve => { finishSave = resolve; });
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => init?.method === 'PUT' ? pendingSave
+      : new Response(JSON.stringify(initialSettings), { headers: { 'Content-Type': 'application/json' } }));
+    show(fetcher);
+    await openFingerprint();
+    for (const label of fingerprintLabels) expect(screen.getByLabelText(label)).toBeEnabled();
+    fireEvent.change(screen.getByLabelText('指纹检测并发'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }));
+    await waitFor(() => expect(written(fetcher)).toHaveLength(1));
+    for (const label of fingerprintLabels) expect(screen.getByLabelText(label), label).toBeDisabled();
+    await act(async () => {
+      finishSave(new Response(JSON.stringify({ ...initialSettings, fingerprint_concurrency: 2 }), { headers: { 'Content-Type': 'application/json' } }));
+    });
+    await waitFor(() => { for (const label of fingerprintLabels) expect(screen.getByLabelText(label), label).toBeEnabled(); });
+    expect(screen.getByLabelText('指纹检测并发')).toHaveValue('2');
   });
 
   it('does not overwrite a local draft when cached settings refresh in the background', async () => {

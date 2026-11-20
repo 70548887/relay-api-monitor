@@ -2,17 +2,17 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, App, Button, Form, Input, InputNumber, Radio } from 'antd';
-import { BranchesOutlined, CheckCircleOutlined, CheckOutlined, ClockCircleOutlined, ControlOutlined, DatabaseOutlined, InfoCircleOutlined, KeyOutlined, SafetyCertificateOutlined, TeamOutlined } from '@ant-design/icons';
+import { BranchesOutlined, CheckCircleOutlined, CheckOutlined, ClockCircleOutlined, ControlOutlined, DatabaseOutlined, InfoCircleOutlined, KeyOutlined, SafetyCertificateOutlined, ScanOutlined, TeamOutlined } from '@ant-design/icons';
 import { api, captureSessionGuard, post, put, setSession } from '../api';
 import { adminLoginPath } from '../adminRoutes';
 import { PageHeading, QueryState } from '../components/Common';
 import type { Settings } from '../types';
 import '../settings.css';
 
-type SettingsTab = 'schedule' | 'requests' | 'data' | 'visitors' | 'security';
+type SettingsTab = 'schedule' | 'requests' | 'data' | 'visitors' | 'fingerprint' | 'security';
 type NumericSetting = Exclude<keyof Settings, 'artifact_history_scope' | 'fingerprint_bank_dir'>;
 type SettingField = { name: NumericSetting; label: string; unit: string; help: string; min: number; max: number };
-type SettingSection = { title: string; description: string; fields?: SettingField[]; history?: boolean };
+type SettingSection = { title: string; description: string; fields?: SettingField[]; history?: boolean; bank?: boolean };
 type SettingPanel = { key: SettingsTab; label: string; icon: ReactNode; description: string; note: string; sections: SettingSection[] };
 type PasswordValues = { old_password: string; new_password: string; confirm: string };
 
@@ -76,11 +76,38 @@ const panels: SettingPanel[] = [
     ],
   },
   {
+    key: 'fingerprint', label: '指纹匹对', icon: <ScanOutlined aria-hidden="true"/>,
+    description: '管理指纹检测的并发与定时间隔、自助检测的额度，以及参考库的来源。',
+    note: '定时检测默认关闭，在后台「指纹匹对」里按模型打开。修改间隔后，已打开定时的模型从保存时起按新间隔重新计时。',
+    sections: [
+      { title: '平台检测', description: '后台发起与定时的检测', fields: [
+        { name: 'fingerprint_concurrency', label: '指纹检测并发', unit: '个', help: '全局同时执行的指纹检测任务', min: 1, max: 8 },
+        { name: 'fingerprint_interval_seconds', label: '定时检测间隔', unit: '秒', help: '', min: 3600, max: 2592000 },
+      ] },
+      { title: '自助检测', description: '限制访客与会员的用量', fields: [
+        { name: 'fingerprint_manual_per_minute', label: '手动粘贴比对', unit: '次 / 分钟', help: '每个 IP 每分钟比对的上限', min: 1, max: 120 },
+        { name: 'fingerprint_api_per_hour', label: '通过 API 检测', unit: '轮 / 小时', help: '每个会员每小时检测的上限', min: 1, max: 60 },
+      ] },
+      { title: '参考库', description: '指纹数据的来源', bank: true },
+    ],
+  },
+  {
     key: 'security', label: '账号安全', icon: <SafetyCertificateOutlined aria-hidden="true"/>,
     description: '修改当前管理员账号的登录密码。',
     note: '密码更新后，请使用新密码重新登录。', sections: [],
   },
 ];
+const securityIndex = panels.length - 1;
+const intervalActions: Partial<Record<NumericSetting, string>> = { probe_interval_seconds: '检测', artifact_interval_seconds: '生成', fingerprint_interval_seconds: '检测' };
+// The server decides what is absolute on its own system; this only refuses a path that is absolute on none.
+const absolutePath = /^(\/|[A-Za-z]:[\\/]|\\\\)/;
+
+function checkBankDir(_: unknown, value?: string) {
+  const dir = (value || '').trim();
+  if (dir && !absolutePath.test(dir)) return Promise.reject(new Error('请填写绝对路径，例如 /data/fingerprint-bank 或 D:\\fingerprint-bank'));
+  if (new TextEncoder().encode(dir).length > 1024) return Promise.reject(new Error('路径最多为 1024 字节'));
+  return Promise.resolve();
+}
 
 function normalizeSettings(settings: Settings): Settings {
   return { ...settings, artifact_history_scope: settings.artifact_history_scope || 'group' };
@@ -97,7 +124,7 @@ function intervalHelp(value: number | undefined, action: string) {
 }
 
 function PanelHeading({ panel, index }: { panel: SettingPanel; index: number }) {
-  return <div className="settings-panel-heading"><div><h2>{panel.label}</h2><p>{panel.description}</p></div><span className="settings-panel-index" aria-hidden="true">0{index + 1} / 05</span></div>;
+  return <div className="settings-panel-heading"><div><h2>{panel.label}</h2><p>{panel.description}</p></div><span className="settings-panel-index" aria-hidden="true">0{index + 1} / 0{panels.length}</span></div>;
 }
 
 function PanelNote({ children }: { children: ReactNode }) {
@@ -184,6 +211,8 @@ export function SettingsPage() {
       }
       client.setQueryData(['admin-settings'], next);
       void client.invalidateQueries({ queryKey: ['admin-intelligence-status'] });
+      void client.invalidateQueries({ queryKey: ['admin-fingerprint'] });
+      void client.invalidateQueries({ queryKey: ['fingerprint-overview'] });
       if (mounted.current) void message.success('系统设置已保存');
     },
   });
@@ -220,13 +249,14 @@ export function SettingsPage() {
 
   function revealInvalidField({ errorFields }: { errorFields: { name: (string | number)[] }[] }) {
     const first = errorFields[0]?.name[0];
-    const panel = panels.find(item => item.sections.some(section => section.fields?.some(field => field.name === first) || section.history && first === 'artifact_history_scope'));
+    const panel = panels.find(item => item.sections.some(section => section.fields?.some(field => field.name === first) || section.history && first === 'artifact_history_scope' || section.bank && first === 'fingerprint_bank_dir'));
     if (panel) selectTab(panel.key);
     if (first !== undefined) window.requestAnimationFrame(() => form.getFieldInstance(first)?.focus?.());
   }
 
   function renderField(field: SettingField) {
-    const help = field.name === 'probe_interval_seconds' ? intervalHelp(draft.probe_interval_seconds, '检测') : field.name === 'artifact_interval_seconds' ? intervalHelp(draft.artifact_interval_seconds, '生成') : field.help;
+    const action = intervalActions[field.name];
+    const help = action ? intervalHelp(draft[field.name], action) : field.help;
     return <Form.Item key={field.name} name={field.name} label={field.label} extra={help} rules={[
       { required: true, message: `请输入${field.label}` },
       { type: 'integer', min: field.min, max: field.max, message: `请输入 ${field.min.toLocaleString('zh-CN')}–${field.max.toLocaleString('zh-CN')} 之间的整数` },
@@ -252,6 +282,10 @@ export function SettingsPage() {
                 <Radio value="model"><span className="settings-history-label">每个模型最近 8 次</span><span className="settings-history-help">按模型聚合，分别保留各模型的创作结果。</span></Radio>
               </Radio.Group>
             </Form.Item>}
+            {section.bank && <Form.Item name="fingerprint_bank_dir" label="参考库本地目录" rules={[{ validator: checkBankDir }]}
+              extra="留空使用在线参考库（lm-detector）。填写服务器上的绝对路径后，改用该目录里的 unified_bank.json 和 shared_detector.bin；保存后在后台「指纹匹对」页查看参考库是否可用。">
+              <Input allowClear autoComplete="off" spellCheck={false} placeholder="留空使用在线参考库" disabled={writePending}/>
+            </Form.Item>}
           </div>)}
           <PanelNote>{panel.note}</PanelNote>
         </section>)}
@@ -261,7 +295,7 @@ export function SettingsPage() {
     </QueryState>
     </div>
       <section className="settings-panel" id="settings-panel-security" role="tabpanel" aria-labelledby="settings-tab-security" hidden={activeTab !== 'security'}>
-        <PanelHeading panel={panels[4]} index={4}/>
+        <PanelHeading panel={panels[securityIndex]} index={securityIndex}/>
         <div className="settings-group settings-security-group"><div className="settings-group-heading"><h3>修改密码</h3><p>使用至少 12 位字符，<br/>建议组合字母、数字与符号。</p></div>
           <Form<PasswordValues> form={password} name="admin-password" layout="vertical" className="settings-password-form" disabled={writePending} onFinish={values => { if (!writePending) changePassword.mutate(values); }} onValuesChange={() => { if (changePassword.isError) changePassword.reset(); }}>
             <Form.Item name="old_password" label="当前密码" rules={[{ required: true, message: '请输入当前密码' }]}><Input.Password autoComplete="current-password" placeholder="请输入当前密码"/></Form.Item>
@@ -271,7 +305,7 @@ export function SettingsPage() {
             <Button type="primary" htmlType="submit" icon={<KeyOutlined aria-hidden="true"/>} loading={changePassword.isPending}>更新密码</Button>
           </Form>
         </div>
-        <PanelNote>{panels[4].note}</PanelNote>
+        <PanelNote>{panels[securityIndex].note}</PanelNote>
       </section>
   </div>;
 }
