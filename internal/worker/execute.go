@@ -127,6 +127,22 @@ func (w *Worker) execute(parent context.Context, j domain.Job) error {
 	if j.Kind == "artifact" && m.TimeoutSeconds > 0 {
 		timeoutSeconds = m.TimeoutSeconds
 	}
+	// requests is how many requests the job sends one after another; the timeout applies to each of them.
+	requests := 1
+	var round *fingerprintRound
+	if j.Kind == "fingerprint" {
+		var code, message string
+		if round, code, message = w.planFingerprint(ctx, *m, settings); round == nil {
+			return failBeforeDispatch(code, message)
+		}
+		prompt, requests = round.prompt(), len(round.challenges)
+		timeoutSeconds = int(fingerprintQuestionTimeout / time.Second)
+		// The limit an administrator set for artwork is one this model is known to accept.
+		maxTokens = domain.DefaultArtifactMaxTokens(protocol)
+		if m.MaxTokens > 0 {
+			maxTokens = m.MaxTokens
+		}
+	}
 	effort, thinkingMode, thinkingBudget := "", "", 0
 	if j.Kind == "artifact" {
 		effort, thinkingMode, thinkingBudget = upstream.ResolveReasoning(*m, *c)
@@ -167,7 +183,7 @@ func (w *Worker) execute(parent context.Context, j domain.Job) error {
 		return failBeforeDispatch("configuration_changed", "渠道配置已变更，请重新创建任务")
 	}
 	started := time.Now().UTC()
-	deadline := started.Add(time.Duration(timeoutSeconds) * time.Second)
+	deadline := started.Add(time.Duration(timeoutSeconds*requests) * time.Second)
 	if err = w.st.MarkDispatching(ctx, j.ID, j.LeaseToken, deadline, string(encoded)); err != nil {
 		if errors.Is(err, store.ErrConfigurationChanged) {
 			return failBeforeDispatch("configuration_changed", "平台、渠道或计划配置已变更，请重新创建任务")
@@ -201,7 +217,8 @@ func (w *Worker) execute(parent context.Context, j domain.Job) error {
 	requestCtx, requestCancel := context.WithDeadline(ctx, deadline)
 	defer requestCancel()
 	var lastProgress time.Time
-	result, requestErr := w.client.Generate(requestCtx, upstream.Request{Config: configFor(*c, key, protocol, path), Model: m.UpstreamID, Prompt: prompt, MaxTokens: maxTokens, Timeout: time.Duration(timeoutSeconds) * time.Second, ReasoningEffort: effort, ThinkingMode: thinkingMode, ThinkingBudget: thinkingBudget}, func(event upstream.Event) error {
+	request := upstream.Request{Config: configFor(*c, key, protocol, path), Model: m.UpstreamID, Prompt: prompt, MaxTokens: maxTokens, Timeout: time.Duration(timeoutSeconds) * time.Second, ReasoningEffort: effort, ThinkingMode: thinkingMode, ThinkingBudget: thinkingBudget}
+	progress := func(event upstream.Event) error {
 		if event.Type == "text" {
 			j.ProgressChars += int64(utf8.RuneCountInString(event.Text))
 		}
@@ -233,7 +250,11 @@ func (w *Worker) execute(parent context.Context, j domain.Job) error {
 		j.ProgressAt = &n
 		lastProgress = n
 		return nil
-	})
+	}
+	if round != nil {
+		return w.runFingerprint(ctx, requestCtx, &j, lost, *round, request, progress)
+	}
+	result, requestErr := w.client.Generate(requestCtx, request, progress)
 	j.ReceivedBytes, j.TextBytes = result.ReceivedBytes, result.TextBytes
 	j.FirstTextMS, j.DurationMS, j.HTTPStatus, j.FinishReason, j.Usage = result.FirstTextMS, result.DurationMS, result.HTTPStatus, result.FinishReason, result.Usage
 	if chars := int64(utf8.RuneCountInString(result.Text)); chars > j.ProgressChars {
@@ -300,6 +321,9 @@ func truncatedMessage(kind string, maxTokens int) string {
 	if kind == "probe" {
 		return fmt.Sprintf("上游输出达到本次 %d Tokens 上限后被截断；模型可能默认开启思考并占用了输出额度", maxTokens)
 	}
+	if kind == "fingerprint" {
+		return fmt.Sprintf("上游输出达到本次 %d Tokens 上限后被截断；指纹检测沿用该模型的“创作最大 Tokens”，可调大后重试", maxTokens)
+	}
 	return fmt.Sprintf("上游输出达到本次 %d Tokens 上限后被截断，内容不完整；请调大该模型的“创作最大 Tokens”，或降低推理强度 / Thinking 后重试", maxTokens)
 }
 func errorDetails(err error) (string, string) {
@@ -313,9 +337,14 @@ func (w *Worker) complete(j domain.Job, probe *domain.ProbeResult, art *domain.A
 	if lost {
 		return ErrLeaseLost
 	}
+	return w.finish(j, func(ctx context.Context) error { return w.st.FinishJob(ctx, j, probe, art) })
+}
+
+// finish stores the outcome of a job. The job context may already be canceled, so the write gets its own.
+func (w *Worker) finish(j domain.Job, save func(context.Context) error) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := w.st.FinishJob(ctx, j, probe, art); err != nil {
+	if err := save(ctx); err != nil {
 		if errors.Is(err, store.ErrConflict) {
 			return fmt.Errorf("%w: finish %s: %v", ErrLeaseLost, j.ID, err)
 		}

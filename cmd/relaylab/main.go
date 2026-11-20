@@ -333,6 +333,7 @@ func run(args []string) error {
 			return clientErr
 		}
 		w := worker.New(st, vault, client)
+		w.SetFingerprintBank(fingerprint.NewBank(filepath.Join(cfg.DataDir, security.RecreatableCacheDir)))
 		w.SetMaintenanceFile(filepath.Join(cfg.DataDir, "maintenance.request"))
 		if os.Getenv("RELAYLAB_LAUNCHER_INSTANCE") != "" {
 			w.SetStartupLeaseWait(store.WorkerLeaseDuration + 5*time.Second)

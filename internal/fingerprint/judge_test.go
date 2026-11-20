@@ -47,6 +47,44 @@ func numbers(count int) string {
 
 var threeAnswers = []Answer{{numbers(300), 300}, {numbers(300), 300}, {numbers(40), 300}}
 
+func TestNewAnswerKeepsOnlyTheNumbersAsked(t *testing.T) {
+	reply := "Here you go:\n" + numbers(320) + "\nDone."
+	for _, asked := range []int{320, 332} {
+		if answer := NewAnswer(reply, asked); answer != (Answer{Text: reply, ExpectedCount: asked}) {
+			t.Fatalf("a reply with 320 numbers to a question for %d was changed: %+v", asked, answer)
+		}
+	}
+	if answer := NewAnswer(reply, 300); answer != (Answer{Text: numbers(300), ExpectedCount: 300}) {
+		t.Fatalf("a reply with 320 numbers to a question for 300 became %+v, want its first 300 numbers", answer)
+	}
+	if answer := NewAnswer("I cannot help with that.", 300); answer != (Answer{Text: "I cannot help with that.", ExpectedCount: 300}) {
+		t.Fatalf("a reply without numbers was changed: %+v", answer)
+	}
+}
+
+func TestExceedsWaitsForACompleteNumberBeyondTheCountAsked(t *testing.T) {
+	asked := numbers(300)
+	cases := []struct {
+		reply string
+		want  bool
+	}{
+		{"", false},
+		{asked, false},
+		{asked + ", ", false},
+		// The next part of the reply may turn 4 into 41.
+		{asked + ", 4", false},
+		{asked + ", 41", false},
+		{asked + ", 41,", true},
+		{asked + ", 41\n", true},
+		{numbers(310), true},
+	}
+	for _, c := range cases {
+		if got := Exceeds(c.reply, 300); got != c.want {
+			t.Errorf("Exceeds(300 numbers + %q, 300) = %v, want %v", strings.TrimPrefix(c.reply, asked), got, c.want)
+		}
+	}
+}
+
 func TestConcludeComparesTheClosestModelWithTheExpectedOne(t *testing.T) {
 	ref := publishedReference()
 	cases := []struct {

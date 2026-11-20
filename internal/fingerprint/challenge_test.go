@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"relaylab/internal/domain"
 )
 
 func TestNewChallengesReturnsDistinctQuestions(t *testing.T) {
@@ -26,6 +28,14 @@ func TestNewChallengesReturnsDistinctQuestions(t *testing.T) {
 	for _, count := range []int{-1, 0, MaxChallenges + 1} {
 		if challenges, err := NewChallenges(count); !errors.Is(err, ErrInvalidChallengeCount) || challenges != nil {
 			t.Fatalf("NewChallenges(%d) = %v, %v", count, challenges, err)
+		}
+	}
+}
+
+func TestQuestionsDefaultsToAFullRound(t *testing.T) {
+	for configured, want := range map[int]int{-1: 3, 0: 3, 1: 1, 2: 2, 3: 3, 4: 3} {
+		if got := Questions(domain.Model{FingerprintQuestions: configured}); got != want {
+			t.Errorf("a model configured with %d questions is asked %d, want %d", configured, got, want)
 		}
 	}
 }
