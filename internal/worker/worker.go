@@ -27,6 +27,7 @@ type Worker struct {
 	st                  *store.Store
 	vault               *security.Vault
 	client              *upstream.Client
+	bank                FingerprintBank
 	owner               string
 	running             atomic.Bool
 	mu                  sync.Mutex
@@ -193,7 +194,7 @@ func (w *Worker) tick(ctx context.Context, now time.Time) error {
 	if _, err = w.st.TickSchedules(ctx, now); err != nil {
 		return err
 	}
-	for _, kind := range []string{"probe", "artifact"} {
+	for _, kind := range []string{"probe", "artifact", "fingerprint"} {
 		if err = w.admit(ctx, kind, cfg); err != nil {
 			return err
 		}
@@ -225,8 +226,11 @@ func (w *Worker) admit(ctx context.Context, kind string, cfg domain.Settings) er
 			channelActive[a.channelID]++
 		}
 		limit := cfg.ProbeConcurrency
-		if kind == "artifact" {
+		switch kind {
+		case "artifact":
 			limit = cfg.ArtifactConcurrency
+		case "fingerprint":
+			limit = cfg.FingerprintConcurrency
 		}
 		if kindActive >= limit {
 			w.mu.Unlock()

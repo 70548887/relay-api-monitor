@@ -3,6 +3,8 @@ package fingerprint
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	lmfpd "github.com/Ikaleio/lm-detector/sdk/go"
 	"relaylab/internal/domain"
@@ -19,6 +21,26 @@ const candidateLimit = 5
 type Answer struct {
 	Text          string
 	ExpectedCount int
+}
+
+// NewAnswer makes the answer to judge from the reply to one question. Like lm-detector it keeps only as many
+// numbers as the question asked for when the reply holds more.
+func NewAnswer(reply string, expectedCount int) Answer {
+	if numbers := lmfpd.ParseNumbers(reply); expectedCount > 0 && len(numbers) > expectedCount {
+		parts := make([]string, expectedCount)
+		for i, number := range numbers[:expectedCount] {
+			parts[i] = strconv.Itoa(number)
+		}
+		reply = strings.Join(parts, ", ")
+	}
+	return Answer{Text: reply, ExpectedCount: expectedCount}
+}
+
+// Exceeds reports whether a reply that is still arriving already holds more numbers than its question asked for.
+// The rest of such a reply cannot change the answer, so its request can stop. Digits at the very end are not
+// counted, because the next part of the reply may continue the same number.
+func Exceeds(reply string, expectedCount int) bool {
+	return len(lmfpd.ParseNumbers(strings.TrimRight(reply, "0123456789"))) > expectedCount
 }
 
 // Judge scores one round of answers and compares the closest reference model with the expected one. expected is a

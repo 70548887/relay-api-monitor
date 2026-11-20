@@ -3,6 +3,8 @@ package fingerprint
 import (
 	"regexp"
 	"strings"
+
+	"relaylab/internal/domain"
 )
 
 // decorations are name parts that providers and relays append without naming another model.
@@ -81,4 +83,19 @@ func (r *Reference) Match(declared string) (Model, bool) {
 		return found[0], true
 	}
 	return Model{}, false
+}
+
+// Expected returns the bank ID of the reference model that a channel model is compared with: the model an
+// administrator picked for it, or else the model its upstream ID names. It is empty when an administrator marked the
+// model as unlisted or the bank lists no such model.
+func (r *Reference) Expected(m domain.Model) string {
+	var model Model
+	switch m.FingerprintMode {
+	case domain.FingerprintModeUnlisted:
+	case domain.FingerprintModeManual:
+		model, _ = r.Model(m.FingerprintModel)
+	default:
+		model, _ = r.Match(m.UpstreamID)
+	}
+	return model.ID
 }

@@ -133,10 +133,22 @@ type FingerprintResult struct {
 	// Questions is how many questions the round asked.
 	Questions int                 `json:"questions"`
 	Analysis  FingerprintAnalysis `json:"analysis"`
+	// Errors lists the questions whose request failed. The round is scored on the replies that arrived, which may
+	// include the part of a reply that came before its request failed.
+	Errors []FingerprintRequestError `json:"errors"`
 	// ReturnedModel is the model name the upstream reported in its responses.
 	ReturnedModel string `json:"returned_model"`
-	// Usage is the token usage of the whole round.
+	// Usage adds up the token usage the upstream reported. A request that failed or was stopped because its reply
+	// already held more numbers than asked reports none.
 	Usage      Usage     `json:"usage"`
 	DurationMS int64     `json:"duration_ms"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+// FingerprintRequestError is the failure of the request for one question of a round.
+type FingerprintRequestError struct {
+	// Question is the 1-based position of the question in the round.
+	Question int    `json:"question"`
+	Code     string `json:"code"`
+	Message  string `json:"message"`
 }

@@ -19,6 +19,15 @@ const MaxChallenges = 3
 // ErrInvalidChallengeCount means a round was asked to hold fewer than one or more than three questions.
 var ErrInvalidChallengeCount = errors.New("fingerprint: a round holds one to three questions")
 
+// Questions returns how many questions a round of a channel model asks: the count configured for the model, or a
+// full round when none is configured.
+func Questions(m domain.Model) int {
+	if m.FingerprintQuestions < 1 || m.FingerprintQuestions > MaxChallenges {
+		return MaxChallenges
+	}
+	return m.FingerprintQuestions
+}
+
 // NewChallenges returns the questions of one round. Each question is random and asks for a different number count.
 func NewChallenges(count int) ([]domain.FingerprintChallenge, error) {
 	if count < 1 || count > MaxChallenges {

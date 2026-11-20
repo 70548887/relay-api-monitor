@@ -297,6 +297,16 @@ func (b *Bank) Catalog(ctx context.Context, source string) (Status, []Model) {
 	return status, ref.Models()
 }
 
+// Expected resolves the reference model of a channel model in the current build of the bank. See
+// Reference.Expected.
+func (b *Bank) Expected(ctx context.Context, source string, m domain.Model) (string, error) {
+	ref, err := b.Reference(ctx, source)
+	if err != nil {
+		return "", err
+	}
+	return ref.Expected(m), nil
+}
+
 // Judge scores one round of answers against the current build of the bank. See Reference.Judge.
 func (b *Bank) Judge(ctx context.Context, source string, answers []Answer, expected string) (domain.FingerprintAnalysis, error) {
 	ref, err := b.Reference(ctx, source)

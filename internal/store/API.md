@@ -66,6 +66,9 @@ MarkDispatching(ctx, id, leaseToken string, deadline time.Time, snapshot string)
 RenewJob(ctx, id, leaseToken string, until time.Time) error
 UpdateJobProgress(ctx, id, leaseToken string, chars int64, returnedModel string) error
 FinishJob(ctx, job domain.Job, probe *domain.ProbeResult, artifact *domain.Artifact) error
+FinishFingerprintJob(ctx, job domain.Job, round *domain.FingerprintResult) error
+ListFingerprintResults(ctx, modelID string) ([]domain.FingerprintResult, error) // newest first
+ListLatestFingerprintResults(ctx, perModel int) ([]domain.FingerprintResult, error) // every model; rounds of one model adjacent, newest first
 RequestCancel(ctx, id string) error
 CancelJobsForChannel(ctx, channelID string) error
 CancelJobsForModel(ctx, modelID string) error
@@ -104,6 +107,8 @@ Backup(ctx, targetPath string) error
 The SQLite handle is available as `Store.DB`. Every write transaction begins immediately, preventing stale read snapshots when the server and worker use independent database handles. Schema version 1 is recorded in `PRAGMA user_version`; future versions are rejected before migration DDL. Compatible version-zero backups can be opened with `OpenExisting` without migration. JSON stores preserve complete domain records; secret channel keys and job lease tokens are separately persisted and restored because their JSON tags omit them.
 
 An empty model ID in `ListProbeResults` or `ListArtifacts` selects every model. Cleanup uses settings retention days (default 30) for probe results, terminal jobs and audit records. Successful artifact retention is the most recent eight per channel/template by default; `ArtifactHistoryScope=model` selects per-model/template retention. Missing scope in existing settings normalizes to `group` while existing timeouts remain unchanged. Retention is applied atomically with completion and during cleanup. Channel summary limits default to eight and cap at 100; empty channel/template filters select all groups/templates.
+
+Jobs have the kind `probe`, `artifact` or `fingerprint`. `FinishFingerprintJob` completes a fingerprint job and stores its detection round, if any, in the same transaction; the round of a canceled job is dropped, and a round for a job of another kind is rejected. Each model keeps its latest `FingerprintHistory` (30) rounds, trimmed on every insert; the retention-days cleanup does not delete them.
 
 The `WithSchedules`, `SavePlatform`, and `SaveSettingsAndReconcile` configuration methods atomically commit configuration together with all affected schedules. Disabling a schedule cancels its queued jobs and requests cancellation of claimed or dispatched jobs; re-enabling never revives those old jobs. `SyncModels` also reconciles the channel's schedules within its transaction and updates successful sync health without changing the channel configuration revision. Optional expected revisions reject stale discovery responses and errors in the same write transaction. Editing discovery URL, key or protocol clears old discovery health.
 

@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"relaylab/internal/domain"
 )
 
 // publishedModels are the model IDs of the reference bank built on 2026-11-19, by family.
@@ -120,5 +122,29 @@ func TestMatchRejectsAnAmbiguousName(t *testing.T) {
 	}
 	if model, ok := ref.Match("x-lite"); !ok || model.ID != "x-lite-preview" {
 		t.Fatalf("x-lite matched %q (%v)", model.ID, ok)
+	}
+}
+
+func TestExpectedFollowsTheModeOfTheChannelModel(t *testing.T) {
+	ref := publishedReference()
+	cases := []struct {
+		name  string
+		model domain.Model
+		want  string
+	}{
+		{"no mode matches the upstream ID", domain.Model{UpstreamID: "claude-sonnet-4-6"}, "claude-sonnet-4.6"},
+		{"auto matches the upstream ID", domain.Model{UpstreamID: "GPT-5.5", FingerprintMode: domain.FingerprintModeAuto}, "gpt-5.5"},
+		{"auto ignores an earlier pick", domain.Model{UpstreamID: "gpt-5.5", FingerprintModel: "glm-5.3"}, "gpt-5.5"},
+		{"auto without a listed model", domain.Model{UpstreamID: "llama-4"}, ""},
+		{"manual uses the pick", domain.Model{UpstreamID: "my-alias", FingerprintMode: domain.FingerprintModeManual, FingerprintModel: "glm-5.3"}, "glm-5.3"},
+		{"manual wins over the upstream ID", domain.Model{UpstreamID: "gpt-5.5", FingerprintMode: domain.FingerprintModeManual, FingerprintModel: "glm-5.3"}, "glm-5.3"},
+		{"manual pick that left the bank", domain.Model{UpstreamID: "gpt-5.5", FingerprintMode: domain.FingerprintModeManual, FingerprintModel: "gpt-3"}, ""},
+		{"manual without a pick", domain.Model{UpstreamID: "gpt-5.5", FingerprintMode: domain.FingerprintModeManual}, ""},
+		{"unlisted", domain.Model{UpstreamID: "gpt-5.5", FingerprintMode: domain.FingerprintModeUnlisted, FingerprintModel: "gpt-5.5"}, ""},
+	}
+	for _, c := range cases {
+		if got := ref.Expected(c.model); got != c.want {
+			t.Errorf("%s: expected model %q, want %q", c.name, got, c.want)
+		}
 	}
 }
