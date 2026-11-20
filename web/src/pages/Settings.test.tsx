@@ -101,11 +101,13 @@ describe('system settings', () => {
     fireEvent.change(screen.getByLabelText('检测超时'), { target: { value: '75' } });
     selectTab('任务调度');
     expect(screen.getByLabelText('健康检测并发')).toHaveValue('7');
+    expect(screen.getByText('有 2 项更改尚未保存')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '撤销更改' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: '撤销更改' }));
     expect(screen.getByLabelText('健康检测并发')).toHaveValue('4');
     selectTab('请求策略');
     expect(screen.getByLabelText('检测超时')).toHaveValue('60');
+    expect(screen.queryByText(/项更改尚未保存/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '撤销更改' })).toBeDisabled();
   });
 
