@@ -17,6 +17,7 @@ const OverviewPage = lazy(() => import('./pages/Admin').then(module => ({ defaul
 const PlatformsPage = lazy(() => import('./pages/Admin').then(module => ({ default: module.PlatformsPage })));
 const ModelsPage = lazy(() => import('./pages/Admin').then(module => ({ default: module.ModelsPage })));
 const JobsPage = lazy(() => import('./pages/Admin').then(module => ({ default: module.JobsPage })));
+const FingerprintAdminPage = lazy(() => import('./pages/FingerprintAdmin').then(module => ({ default: module.FingerprintAdminPage })));
 const SettingsPage = lazy(() => import('./pages/Settings').then(module => ({ default: module.SettingsPage })));
 const UpdatesPage = lazy(() => import('./pages/Updates').then(module => ({ default: module.UpdatesPage })));
 const BackupsPage = lazy(() => import('./pages/Backups').then(module => ({ default: module.BackupsPage })));
@@ -36,6 +37,7 @@ export function AppRoutes() {
       <Route path="platforms" element={<PlatformsPage/>}/>
       <Route path="models" element={<ModelsPage/>}/>
       <Route path="jobs" element={<JobsPage/>}/>
+      <Route path="fingerprint" element={<FingerprintAdminPage/>}/>
       <Route path="settings" element={<SettingsPage/>}/>
       <Route path="updates" element={<UpdatesPage/>}/>
       <Route path="backups" element={<BackupsPage/>}/>

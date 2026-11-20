@@ -23,6 +23,12 @@ export type FingerprintVerdict = 'match'|'family'|'mismatch'|'unlisted'|'undeter
 export type FingerprintLevel = 'full'|'reference'|'test';
 /** level is empty and reason is set when the verdict is undetermined. */
 export type FingerprintAnalysis = Omit<Domain.FingerprintAnalysis,'verdict'|'level'|'reason'> & {verdict:FingerprintVerdict;level:FingerprintLevel|'';reason:''|'no_valid_answers'|'not_model_like'};
+/** One stored detection round of a channel model. */
+export type FingerprintRound = Omit<Domain.FingerprintResult,'analysis'> & {analysis:FingerprintAnalysis};
+export type FingerprintModelSettings = Omit<Domain.FingerprintModelSettings,'mode'> & {mode:'auto'|'manual'|'unlisted'};
+export type AdminFingerprintModel = Omit<Domain.AdminFingerprintModel,'settings'|'latest'|'job'> & {settings:FingerprintModelSettings;latest:FingerprintRound|null;job:Job|null};
+export type AdminFingerprintOverview = Omit<Domain.AdminFingerprintOverview,'models'> & {models:AdminFingerprintModel[]};
+export type FingerprintBankRefresh = Domain.FingerprintBankRefresh;
 
 /** Public/admin lists omit source and raw payloads; detail endpoints add them. */
 export interface Artifact extends Omit<Domain.Artifact,'code'|'raw_response'> {
