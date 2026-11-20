@@ -240,7 +240,7 @@ export function SettingsPage() {
     <QueryState loading={query.isLoading} error={!query.data ? query.error : undefined}>
       {query.isError && query.data && <Alert className="settings-feedback" type="warning" showIcon message="设置刷新失败，当前修改已保留" description={query.error.message}/>}
       {serverUpdated && <Alert className="settings-feedback" type="info" showIcon message="服务器设置已更新，已保留你的修改" description="未编辑的字段已同步。撤销更改可恢复服务器最新设置。"/>}
-      <Form<Settings> form={form} name="admin-settings" layout="vertical" className="settings-config-form" hidden={activeTab === 'security'} onFinish={values => { if (!writePending) save.mutate({ ...saved, ...values }); }} onFinishFailed={revealInvalidField} onValuesChange={(_, values) => { setDraft(values); if (save.isError) save.reset(); }}>
+      <Form<Settings> form={form} name="admin-settings" layout="vertical" className="settings-config-form" hidden={activeTab === 'security'} onFinish={values => { if (!writePending) save.mutate({ ...saved, ...values }); }} onFinishFailed={revealInvalidField} onValuesChange={() => { setDraft(form.getFieldsValue(true)); if (save.isError) save.reset(); }}>
         {panels.filter(panel => panel.key !== 'security').map((panel, index) => <section className="settings-panel" key={panel.key} id={`settings-panel-${panel.key}`} role="tabpanel" aria-labelledby={`settings-tab-${panel.key}`} hidden={activeTab !== panel.key}>
           <PanelHeading panel={panel} index={index}/>
           {panel.sections.map(section => <div className="settings-group" key={section.title}>
