@@ -393,6 +393,8 @@ func (s *Server) saveModel(c *gin.Context) {
 		fail(c, 400, "invalid_reasoning", "思考预算仅适用于 enabled 模式")
 		return
 	}
+	// The fingerprint options are edited on the fingerprint page only: this endpoint keeps what is stored.
+	b.FingerprintMode, b.FingerprintModel, b.FingerprintQuestions, b.FingerprintScheduled = "", "", 0, false
 	if id := c.Param("id"); id != "" {
 		old, e := s.Store.GetModel(ctx, id)
 		if e != nil {
@@ -403,6 +405,7 @@ func (s *Server) saveModel(c *gin.Context) {
 			fail(c, 400, "immutable_model", "模型所属分组和上游 ID 不可修改，请新增模型")
 			return
 		}
+		b.FingerprintMode, b.FingerprintModel, b.FingerprintQuestions, b.FingerprintScheduled = old.FingerprintMode, old.FingerprintModel, old.FingerprintQuestions, old.FingerprintScheduled
 		controls := resolveModelControls(request, *ch, old)
 		b.Public, b.ProbeEnabled, b.ArtifactChinese, b.ArtifactEnglish, b.ArtifactOverrides = controls.Public, controls.ProbeEnabled, controls.ArtifactChinese, controls.ArtifactEnglish, controls.ArtifactOverrides
 		b.ID = old.ID

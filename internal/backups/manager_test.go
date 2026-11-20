@@ -92,7 +92,7 @@ func TestEncryptedBackupIdempotencyAndRestore(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer validated.Close()
-	if validated.Manifest.DatabaseSchema != 4 {
+	if validated.Manifest.DatabaseSchema != 5 {
 		t.Fatal(validated.Manifest)
 	}
 	snapshot, e := m.Snapshot(ctx)

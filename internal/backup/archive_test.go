@@ -84,7 +84,7 @@ func TestCreateRejectsBrokenDatabaseRelationships(t *testing.T) {
 		t.Fatal(e)
 	}
 	out := filepath.Join(t.TempDir(), "broken.zip.age")
-	e := CreateFromStore(context.Background(), f.store, f.dir, out, Options{Recipient: f.recipient, Schema: 4})
+	e := CreateFromStore(context.Background(), f.store, f.dir, out, Options{Recipient: f.recipient, Schema: 5})
 	if e == nil || !strings.Contains(e.Error(), "关联完整性") {
 		t.Fatal("broken relationships accepted", e)
 	}

@@ -70,7 +70,7 @@ func busy(ctx context.Context, q queryer, modelID, kind string, now time.Time) (
 	return n > 0, e
 }
 func enqueue(ctx context.Context, q queryer, v *domain.Job, now time.Time) error {
-	if v.Kind != "probe" && v.Kind != "artifact" {
+	if v.Kind != "probe" && v.Kind != "artifact" && v.Kind != "fingerprint" {
 		return fmt.Errorf("store: invalid job kind %q", v.Kind)
 	}
 	m, err := load[domain.Model](ctx, q, "SELECT data FROM models WHERE id=?", v.ModelID)
@@ -300,6 +300,16 @@ func (s *Store) UpdateJobProgress(ctx context.Context, id, token string, chars i
 	})
 }
 func (s *Store) FinishJob(ctx context.Context, v domain.Job, probe *domain.ProbeResult, artifact *domain.Artifact) error {
+	return s.finishJob(ctx, v, probe, artifact, nil)
+}
+
+// FinishFingerprintJob completes a fingerprint job and stores the detection round it produced, if any, in the same
+// transaction. The round of a canceled job is dropped.
+func (s *Store) FinishFingerprintJob(ctx context.Context, v domain.Job, round *domain.FingerprintResult) error {
+	return s.finishJob(ctx, v, nil, nil, round)
+}
+
+func (s *Store) finishJob(ctx context.Context, v domain.Job, probe *domain.ProbeResult, artifact *domain.Artifact, round *domain.FingerprintResult) error {
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		current, e := job(ctx, tx, v.ID)
 		if e != nil {
@@ -320,12 +330,11 @@ func (s *Store) FinishJob(ctx context.Context, v domain.Job, probe *domain.Probe
 		}
 		if current.CancelRequested {
 			v.State = "canceled"
-			probe = nil
-			artifact = nil
 		}
 		if v.State == "canceled" {
 			probe = nil
 			artifact = nil
+			round = nil
 		}
 		if probe != nil {
 			if v.Kind != "probe" || probe.ModelID != "" && probe.ModelID != current.ModelID || probe.JobID != "" && probe.JobID != v.ID {
@@ -361,6 +370,18 @@ func (s *Store) FinishJob(ctx context.Context, v domain.Job, probe *domain.Probe
 				return e
 			}
 			if e = trimArtifacts(ctx, tx, artifact.ModelID, artifact.TemplateID); e != nil {
+				return e
+			}
+		}
+		if round != nil {
+			if current.Kind != "fingerprint" || round.ModelID != "" && round.ModelID != current.ModelID || round.JobID != "" && round.JobID != current.ID {
+				return errors.New("store: fingerprint completion does not match job")
+			}
+			round.ID = nonemptyID(round.ID)
+			round.JobID = current.ID
+			round.ModelID = current.ModelID
+			round.CreatedAt = created(round.CreatedAt)
+			if e = insertFingerprintResult(ctx, tx, *round); e != nil {
 				return e
 			}
 		}

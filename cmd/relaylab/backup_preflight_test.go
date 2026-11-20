@@ -51,7 +51,7 @@ func TestVerifyBackupNeverReadsActiveConfigurationOrCreatesActiveData(t *testing
 		Valid    bool                `json:"valid"`
 		Manifest backupcore.Manifest `json:"manifest"`
 	}
-	if e = json.Unmarshal(out.Bytes(), &result); e != nil || !result.Valid || result.Manifest.DatabaseSchema != 4 {
+	if e = json.Unmarshal(out.Bytes(), &result); e != nil || !result.Valid || result.Manifest.DatabaseSchema != 5 {
 		t.Fatal(out.String(), e)
 	}
 	if strings.Contains(out.String(), identity) || strings.Contains(out.String(), "master.key\":\"") {

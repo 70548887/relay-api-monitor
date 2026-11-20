@@ -139,7 +139,7 @@ func TestBackupMultipartPreflightExceedsGeneralLimitAndIsIndependent(t *testing.
 		t.Fatal(e)
 	}
 	input := filepath.Join(t.TempDir(), "import.zip.age")
-	if e = backup.CreateFromStore(context.Background(), s.Store, dir, input, backup.Options{Recipient: recipient, Schema: 4}); e != nil {
+	if e = backup.CreateFromStore(context.Background(), s.Store, dir, input, backup.Options{Recipient: recipient, Schema: 5}); e != nil {
 		t.Fatal(e)
 	}
 	// An unknown, >2MiB multipart field must fail for schema reasons, not at the general body cap.

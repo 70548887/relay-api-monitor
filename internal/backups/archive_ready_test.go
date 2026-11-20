@@ -20,13 +20,13 @@ func publishBeforeFinalCommit(t *testing.T, m *Manager, policy Schedule, trusted
 	ctx := context.Background()
 	now := time.Now().UTC()
 	id := domain.NewID()
-	r := Run{ID: id, RequestID: id, State: "snapshotting", Trigger: "scheduled", CreatedAt: now, StartedAt: now, HeartbeatAt: now, Version: "1.5.0", DatabaseSchema: 4, RecipientID: policy.RecipientID, FileName: fmt.Sprintf("relaylab_%s_%s.zip.age", now.Format("20060102T150405Z"), id), LocalState: "pending", PolicySnapshot: &policy}
+	r := Run{ID: id, RequestID: id, State: "snapshotting", Trigger: "scheduled", CreatedAt: now, StartedAt: now, HeartbeatAt: now, Version: "1.5.0", DatabaseSchema: 5, RecipientID: policy.RecipientID, FileName: fmt.Sprintf("relaylab_%s_%s.zip.age", now.Format("20060102T150405Z"), id), LocalState: "pending", PolicySnapshot: &policy}
 	r.LocalPath = filepath.Join(m.opts.BackupDir, r.FileName)
 	if _, _, e := m.opts.Store.CreateBackupRun(ctx, r); e != nil {
 		t.Fatal(e)
 	}
 	ready := 0
-	opts := backup.Options{Recipient: policy.Recipient, Schema: 4, BackupID: r.ID, OnPhase: func(state string) error { r.State = state; return m.save(ctx, r) }}
+	opts := backup.Options{Recipient: policy.Recipient, Schema: 5, BackupID: r.ID, OnPhase: func(state string) error { r.State = state; return m.save(ctx, r) }}
 	if trusted {
 		opts.OnReady = func(member backup.Member) error {
 			ready++

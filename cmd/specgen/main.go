@@ -321,7 +321,7 @@ func write(path string, b []byte) error {
 }
 func ref(name string) object { return object{"$ref": "#/components/schemas/" + name} }
 func writeSchema(source object, required []string) object {
-	readonly := map[string]bool{"id": true, "created_at": true, "revision": true, "key_mask": true, "last_sync_at": true, "sync_error": true, "source": true, "missing": true, "verified_group": true, "group_verification_status": true, "group_verified_at": true, "group_verification_error": true, "group_verification_revision": true, "intelligence_schedule": true}
+	readonly := map[string]bool{"id": true, "created_at": true, "revision": true, "key_mask": true, "last_sync_at": true, "sync_error": true, "source": true, "missing": true, "verified_group": true, "group_verification_status": true, "group_verified_at": true, "group_verification_error": true, "group_verification_revision": true, "intelligence_schedule": true, "fingerprint_mode": true, "fingerprint_model": true, "fingerprint_questions": true, "fingerprint_scheduled": true}
 	properties := object{}
 	for name, value := range source["properties"].(object) {
 		if !readonly[name] {

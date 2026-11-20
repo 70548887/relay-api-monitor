@@ -87,7 +87,7 @@ func TestBackupSlowUploadSurvivesDefaultHTTPReadTimeout(t *testing.T) {
 		t.Fatal(e)
 	}
 	input := filepath.Join(t.TempDir(), "slow.zip.age")
-	if e = backup.CreateFromStore(ctx, s.Store, dataDir, input, backup.Options{Recipient: recipient, Schema: 4}); e != nil {
+	if e = backup.CreateFromStore(ctx, s.Store, dataDir, input, backup.Options{Recipient: recipient, Schema: 5}); e != nil {
 		t.Fatal(e)
 	}
 	archive, e := os.ReadFile(input)
@@ -169,7 +169,7 @@ func TestBackupSlowUploadSurvivesDefaultHTTPReadTimeout(t *testing.T) {
 		<-writeDone
 		t.Fatalf("slow upload status %d code %s", response.StatusCode, result.Error.Code)
 	}
-	if decodeErr != nil || result.ID == "" || result.Manifest.DatabaseSchema != 4 {
+	if decodeErr != nil || result.ID == "" || result.Manifest.DatabaseSchema != 5 {
 		t.Fatal("preflight response invalid", decodeErr)
 	}
 	if e = <-writeDone; e != nil {
@@ -209,5 +209,5 @@ func TestBackupSlowUploadSurvivesDefaultHTTPReadTimeout(t *testing.T) {
 	if response.StatusCode != 200 {
 		t.Fatal("preflight invalidated current session", response.StatusCode)
 	}
-	t.Log(fmt.Sprintf("PASS real HTTP upload %.2fs with ReadTimeout=30s: preflight Schema4 saved; business marker, master key and session unchanged", elapsed.Seconds()))
+	t.Log(fmt.Sprintf("PASS real HTTP upload %.2fs with ReadTimeout=30s: preflight Schema5 saved; business marker, master key and session unchanged", elapsed.Seconds()))
 }

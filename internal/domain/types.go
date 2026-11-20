@@ -187,6 +187,14 @@ type Model struct {
 	TimeoutSeconds          int                `json:"timeout_seconds"`
 	Sort                    int                `json:"sort"`
 	CreatedAt               time.Time          `json:"created_at"`
+	// FingerprintMode says which reference model a fingerprint detection compares the model with. Empty means auto.
+	FingerprintMode string `json:"fingerprint_mode,omitempty"`
+	// FingerprintModel is the ID of the reference model picked for the manual mode.
+	FingerprintModel string `json:"fingerprint_model,omitempty"`
+	// FingerprintQuestions is how many questions one detection round asks, 1 to 3. Zero means 3.
+	FingerprintQuestions int `json:"fingerprint_questions,omitempty"`
+	// FingerprintScheduled turns scheduled detection on for the model.
+	FingerprintScheduled bool `json:"fingerprint_scheduled,omitempty"`
 }
 
 type PromptTemplate struct {

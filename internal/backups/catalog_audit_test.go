@@ -29,7 +29,7 @@ func TestReconcilePublishedCatalogRestoresOriginalPermanentArchive(t *testing.T)
 	if _, _, e = m.opts.Store.CreateBackupRun(ctx, run); e != nil {
 		t.Fatal(e)
 	}
-	e = backup.CreateFromStore(ctx, m.opts.Store, m.opts.DataDir, run.LocalPath, backup.Options{Recipient: policy.Recipient, Schema: 4, BackupID: id, OnReady: func(member backup.Member) error {
+	e = backup.CreateFromStore(ctx, m.opts.Store, m.opts.DataDir, run.LocalPath, backup.Options{Recipient: policy.Recipient, Schema: 5, BackupID: id, OnReady: func(member backup.Member) error {
 		run.SHA256 = member.SHA256
 		run.SizeBytes = member.Size
 		return m.save(ctx, run)

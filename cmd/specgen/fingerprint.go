@@ -13,6 +13,10 @@ func addFingerprintContract(schemas, paths object, add func(string, string, stri
 	count["minimum"], count["maximum"] = fingerprint.MinExpectedCount, fingerprint.MaxExpectedCount
 	answers := props("FingerprintAnalyzeRequest")["answers"].(object)
 	answers["minItems"], answers["maxItems"] = 1, fingerprint.MaxChallenges
+	enum("Model", "fingerprint_mode", "auto", "manual", "unlisted")
+	props("Model")["fingerprint_mode"].(object)["description"] = "指纹匹对的期望模型：auto 按上游模型 ID 自动匹配（省略时同此），manual 使用 fingerprint_model，unlisted 表示参考库未收录"
+	questions := props("Model")["fingerprint_questions"].(object)
+	questions["minimum"], questions["maximum"], questions["description"] = 1, fingerprint.MaxChallenges, "每轮检测的题数，省略时为 3"
 
 	add("/public/fingerprint", "get", "指纹匹对：参考库状态与可选的期望模型", "", "FingerprintOverview", false, false)
 	add("/public/fingerprint/challenges", "get", "指纹匹对：取一轮题目，每次随机生成", "", "FingerprintChallengeSet", false, false)
