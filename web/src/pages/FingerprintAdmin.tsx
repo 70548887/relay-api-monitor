@@ -5,7 +5,7 @@ import { PlayCircleOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/ic
 import { api, post, put } from '../api';
 import { PageHeading, QueryState, StateTag } from '../components/Common';
 import { FingerprintResult, VerdictTag } from '../components/FingerprintResult';
-import { bankDate, intervalText, levelMeta, percent, ROUND_SIZE } from '../fingerprint';
+import { bankDate, intervalText, levelMeta, percent, ROUND_SIZE, SUMMARY_ROUNDS, verdictMeta } from '../fingerprint';
 import { duration, nameOf, shortTime, time } from '../lib';
 import type { AdminFingerprintModel, AdminFingerprintOverview, FingerprintBankRefresh, FingerprintModelSettings, FingerprintRound } from '../types';
 import '../fingerprint.css';
@@ -44,7 +44,7 @@ function RoundSummary({ round }: { round: FingerprintRound }) {
 }
 
 function Latest({ row }: { row: AdminFingerprintModel }) {
-  const { latest, job } = row;
+  const { latest, job, summary } = row;
   // The newest job has no round while it runs, and none at all when it failed or was cancelled.
   const open = job && job.id !== latest?.job_id ? job : null;
   if (!latest && !open) return <span className="muted">尚未检测</span>;
@@ -54,6 +54,7 @@ function Latest({ row }: { row: AdminFingerprintModel }) {
       <RoundSummary round={latest}/>
       <div className="muted">{open && '上一轮 · '}{time(latest.created_at)} · 有效回答 {latest.analysis.valid_answers} / {latest.questions}</div>
     </>}
+    {summary && <div className="muted">多轮结论：{verdictMeta[summary.verdict].label}（最近 {summary.verdicts.length} 轮中 {summary.agree} 轮）</div>}
   </div>;
 }
 
@@ -168,7 +169,7 @@ export function FingerprintAdminPage() {
       <div className="panel">
         <div className="section-toolbar">
           <Input allowClear aria-label="搜索模型" placeholder="搜索模型、平台或分组" style={{ maxWidth: 280 }} value={search} onChange={event => setSearch(event.target.value)}/>
-          <span className="muted">3 个有效回答给出完整结论和置信度，2 个只供参考，1 个仅作测试。改动立即保存；打开定时的模型每 {intervalText(data.interval_seconds)}自动检测一次。</span>
+          <span className="muted">3 个有效回答给出完整结论和置信度，2 个只供参考，1 个仅作测试。改动立即保存；打开定时的模型每 {intervalText(data.interval_seconds)}自动检测一次。公开的模型，访客看到的是多轮结论（最近 {SUMMARY_ROUNDS} 轮中多数轮次的结果）。</span>
         </div>
         <Table<AdminFingerprintModel> rowKey="id" size="middle" dataSource={rows} scroll={{ x: 1100 }}
           pagination={{ pageSize: 20, hideOnSinglePage: true }} locale={{ emptyText: data.models.length ? '没有匹配的模型' : '还没有模型，请先在“模型配置”里添加' }}

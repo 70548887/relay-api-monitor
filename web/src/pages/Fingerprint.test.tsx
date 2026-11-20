@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App } from 'antd';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { FingerprintAnalysis, FingerprintChallenge, FingerprintOverview } from '../types';
+import type { FingerprintAnalysis, FingerprintChallenge, FingerprintOverview, FingerprintPublicResults } from '../types';
 import Fingerprint from './Fingerprint';
 
 const gpt = { id: 'gpt-5.5', display_name: 'gpt-5.5', family: 'gpt', family_name: 'GPT' };
@@ -40,6 +40,7 @@ const undetermined: FingerprintAnalysis = {
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 let client: QueryClient;
 let overview: FingerprintOverview;
+let results: FingerprintPublicResults;
 let rounds: FingerprintChallenge[][];
 let analyze: (body: unknown) => Response;
 let submitted: unknown[];
@@ -50,12 +51,14 @@ beforeEach(() => {
   vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: false, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn() }));
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   overview = readyBank;
+  results = { models: [] };
   rounds = [firstRound, secondRound];
   analyze = () => json(fullMatch);
   submitted = [];
   vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
     const path = String(url), method = init?.method || 'GET';
     if (path === '/api/v1/public/fingerprint' && method === 'GET') return json(overview);
+    if (path === '/api/v1/public/fingerprint/results' && method === 'GET') return json(results);
     if (path === '/api/v1/public/fingerprint/challenges?count=3' && method === 'GET') return json({ challenges: rounds.shift() });
     if (path === '/api/v1/public/fingerprint/analyze' && method === 'POST') {
       const body = JSON.parse(String(init?.body));
@@ -80,14 +83,31 @@ describe('public fingerprint page', () => {
     show('/fingerprint');
     expect(await screen.findByText('参考库 2026-11-19 版')).toBeInTheDocument();
     expect(screen.getByText('收录 75 个模型 · 来自 lm-detector')).toBeInTheDocument();
-    expect(screen.getByText('还没有平台检测结果')).toBeInTheDocument();
+    expect(await screen.findByText('还没有平台检测结果')).toBeInTheDocument();
+    expect(screen.getByText('结论取每个模型最近 3 轮的多数结果 · 检测由后台发起')).toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalledWith('/api/v1/public/fingerprint/challenges?count=3', expect.anything());
 
     fireEvent.click(screen.getByRole('button', { name: '去自助检测' }));
     expect(await screen.findByText('请写出 301 个整数')).toBeInTheDocument();
+    expect(screen.getByText('自助检测的结果只给你自己看，不会出现在平台检测结果里')).toBeInTheDocument();
+    expect(screen.queryByText(/检测由后台发起/)).not.toBeInTheDocument();
     expect(card(2).getByText('要求 312 个整数')).toBeInTheDocument();
     expect(card(3).getByText('待粘贴')).toBeInTheDocument();
     expect(compareButton()).toBeDisabled();
+  });
+
+  it('lists the conclusions of the platform detections on the results tab', async () => {
+    results = { models: [{
+      id: 'm1', upstream_id: 'openai/gpt-5.5', display_name: 'GPT 5.5', protocol: 'chat', channel_id: 'c1', channel_name: '默认分组', platform_id: 'p1', platform_name: '示例平台',
+      summary: { verdict: 'match', agree: 1, verdicts: ['match'], round_id: 'r1' }, checked_at: '2026-11-20T04:00:00Z',
+      round: { id: 'r1', job_id: '', model_id: 'm1', questions: 3, analysis: fullMatch, errors: [], returned_model: 'gpt-5.5', usage: { input_tokens: 120, output_tokens: 2400, total_tokens: 2520 }, duration_ms: 41250, created_at: '2026-11-20T04:00:00Z' },
+    }] };
+    show('/fingerprint');
+    const list = within(await screen.findByRole('region', { name: '平台指纹结果' }));
+    expect(list.getByRole('region', { name: '分组 默认分组' })).toBeInTheDocument();
+    expect(list.getAllByText('GPT 5.5').length).toBeGreaterThan(0);
+    expect(screen.queryByText('还没有平台检测结果')).not.toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalledWith('/api/v1/public/fingerprint/challenges?count=3', expect.anything());
   });
 
   it('scores only the pasted answers and reports each of them', async () => {

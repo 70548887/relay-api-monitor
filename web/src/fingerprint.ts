@@ -14,13 +14,28 @@ export const levelMeta: Record<FingerprintLevel, { label: string; note: string }
   test: { label: '测试', note: '1 个回答有效，仅作测试' },
 };
 
+/** The wording of a verdict where space is short. */
+export const verdictShort = (verdict: FingerprintVerdict) => verdict === 'family' ? '同家族' : verdictMeta[verdict].label;
+
 /** A full round has three questions; fewer answers give a weaker result. */
 export const ROUND_SIZE = 3;
+
+/** The conclusion shown for a model is drawn from this many of its newest rounds. */
+export const SUMMARY_ROUNDS = 3;
 
 /** The bank reports its build time as an ISO timestamp; the page shows only the date. */
 export const bankDate = (builtAt: string) => builtAt.slice(0, 10);
 
 export const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
+
+/** How long before now, given in milliseconds, a time was: 不到 1 分钟前, 5 分钟前, 3 小时前, 2 天前. */
+export function agoText(value: string, now: number) {
+  const seconds = Math.floor((now - Date.parse(value)) / 1000);
+  if (seconds < 60) return '不到 1 分钟前';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} 小时前`;
+  return `${Math.floor(seconds / 86400)} 天前`;
+}
 
 /** The time between scheduled detections in the largest unit that divides it: 24 小时, 2 天, 90 分钟. */
 export const intervalText = (seconds: number) => seconds > 86400 && seconds % 86400 === 0 ? `${seconds / 86400} 天`
