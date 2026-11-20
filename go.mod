@@ -6,11 +6,13 @@ toolchain go1.26.11
 
 require (
 	filippo.io/age v1.3.2
+	github.com/Ikaleio/lm-detector/sdk/go v0.2.0
 	github.com/aws/aws-sdk-go-v2 v1.47.5
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.12
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.6
 	github.com/gin-gonic/gin v1.12.0
 	github.com/goccy/go-yaml v1.19.2
+	github.com/klauspost/compress v1.18.4
 	github.com/robfig/cron/v3 v3.0.1
 	golang.org/x/crypto v0.58.0
 	golang.org/x/net v0.62.0
