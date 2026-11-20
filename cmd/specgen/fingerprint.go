@@ -9,6 +9,7 @@ func addFingerprintContract(schemas, paths object, add func(string, string, stri
 	enum("FingerprintAnalysis", "verdict", "match", "family", "mismatch", "unlisted", "undetermined")
 	enum("FingerprintAnalysis", "level", "full", "reference", "test")
 	enum("FingerprintAnalysis", "reason", "", "no_valid_answers", "not_model_like")
+	enum("FingerprintSummary", "verdict", "match", "family", "mismatch", "unlisted", "undetermined")
 	count := props("FingerprintAnswerInput")["expected_count"].(object)
 	count["minimum"], count["maximum"] = fingerprint.MinExpectedCount, fingerprint.MaxExpectedCount
 	answers := props("FingerprintAnalyzeRequest")["answers"].(object)
@@ -31,9 +32,11 @@ func addFingerprintContract(schemas, paths object, add func(string, string, stri
 	responses := paths["/public/fingerprint/analyze"].(object)["post"].(object)["responses"].(object)
 	responses["429"] = object{"description": "请求过于频繁，Retry-After 给出重试秒数", "content": object{"application/json": object{"schema": ref("Error")}}}
 	responses["503"] = object{"description": "参考库暂不可用", "content": object{"application/json": object{"schema": ref("Error")}}}
+	add("/public/fingerprint/results", "get", "指纹匹对：每个公开模型的结论，取最近 3 轮中多数轮次的结论；尚未检测的模型 summary 为 null", "", "FingerprintPublicResults", false, false)
+	add("/public/fingerprint/models/{id}/results", "get", "指纹匹对：一个公开模型保存的检测轮次，新的在前；失败的请求只给出代码，不给出上游的报错原文", "", "FingerprintResult", false, true)
 
 	unavailable := object{"description": "参考库暂不可用", "content": object{"application/json": object{"schema": ref("Error")}}}
-	add("/admin/fingerprint", "get", "指纹匹对：参考库状态、参考模型，以及每个未归档模型的检测设置、最近一轮结果与最近一次检测任务", "", "AdminFingerprintOverview", true, false)
+	add("/admin/fingerprint", "get", "指纹匹对：参考库状态、参考模型，以及每个未归档模型的检测设置、最近一轮结果、访客看到的结论与最近一次检测任务", "", "AdminFingerprintOverview", true, false)
 	add("/admin/fingerprint/models/{id}", "put", "指纹匹对：保存一个模型的期望模型、每轮题数与定时开关，不改动模型的其他配置", "FingerprintModelSettingsWrite", "FingerprintModelSettings", true, false)
 	paths["/admin/fingerprint/models/{id}"].(object)["put"].(object)["responses"].(object)["503"] = unavailable
 	add("/admin/fingerprint/models/{id}/results", "get", "指纹匹对：一个模型保存的检测轮次，新的在前，每个模型最多保留 30 轮", "", "FingerprintResult", true, true)

@@ -153,6 +153,47 @@ type FingerprintRequestError struct {
 	Message  string `json:"message"`
 }
 
+// FingerprintSummary is the conclusion drawn from the newest stored rounds of a model, at most three of them. It is
+// the conclusion visitors see.
+type FingerprintSummary struct {
+	// Verdict is the verdict most of the rounds reached. A round without a verdict does not vote; when no round
+	// reached one, Verdict is undetermined. Between verdicts reached equally often, the one of the more complete
+	// round wins (full before reference before test), then the one of the newer round.
+	Verdict string `json:"verdict"`
+	// Agree is how many of the rounds reached Verdict.
+	Agree int `json:"agree"`
+	// Verdicts are the verdicts of the rounds, newest first.
+	Verdicts []string `json:"verdicts"`
+	// RoundID is the ID of the round that stands for Verdict: the most complete round that reached it, and the
+	// newest among equally complete ones.
+	RoundID string `json:"round_id"`
+}
+
+// FingerprintPublicModel is one public channel model on the public fingerprint page.
+type FingerprintPublicModel struct {
+	ID          string `json:"id"`
+	UpstreamID  string `json:"upstream_id"`
+	DisplayName string `json:"display_name"`
+	// Protocol is the protocol the model is called with, which is that of its channel unless the model sets its own.
+	Protocol     string `json:"protocol"`
+	ChannelID    string `json:"channel_id"`
+	ChannelName  string `json:"channel_name"`
+	PlatformID   string `json:"platform_id"`
+	PlatformName string `json:"platform_name"`
+	// Summary is nil while the model has no stored round.
+	Summary *FingerprintSummary `json:"summary"`
+	// Round is the round that Summary.RoundID names.
+	Round *FingerprintResult `json:"round"`
+	// CheckedAt is when the newest round of the model was stored.
+	CheckedAt *time.Time `json:"checked_at"`
+}
+
+// FingerprintPublicResults is what visitors see of the stored detections: every public model, grouped by platform
+// and channel in the order of the monitor page.
+type FingerprintPublicResults struct {
+	Models []FingerprintPublicModel `json:"models"`
+}
+
 // FingerprintModelSettings is how the detection of one channel model is set up.
 type FingerprintModelSettings struct {
 	// Mode is auto, manual or unlisted. See the FingerprintMode constants.
@@ -182,6 +223,9 @@ type AdminFingerprintModel struct {
 	Expected string `json:"expected"`
 	// Latest is the newest stored round.
 	Latest *FingerprintResult `json:"latest"`
+	// Summary is the conclusion visitors see for the model while it is public. It is nil while the model has no
+	// stored round.
+	Summary *FingerprintSummary `json:"summary"`
 	// Job is the newest detection job. It may still be running, or may have failed without storing a round.
 	Job *Job `json:"job"`
 	// NextRunAt is when the next scheduled detection is due. It is nil while scheduled detection is off, and while

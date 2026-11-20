@@ -227,6 +227,8 @@ func (s *Server) Handler() http.Handler {
 	a.GET("/public/fingerprint", s.fingerprintOverview)
 	a.GET("/public/fingerprint/challenges", s.fingerprintChallenges)
 	a.POST("/public/fingerprint/analyze", s.fingerprintAnalyze)
+	a.GET("/public/fingerprint/results", s.fingerprintResults)
+	a.GET("/public/fingerprint/models/:id/results", s.fingerprintModelResults)
 	memberTest := a.Group("/test")
 	memberTest.Use(s.requireMemberAuth)
 	memberTest.POST("/models", s.testModels)

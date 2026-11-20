@@ -529,6 +529,31 @@ export interface FingerprintResult {
   created_at: string;
 }
 
+export interface FingerprintSummary {
+  verdict: string;
+  agree: number;
+  verdicts: Array<string>;
+  round_id: string;
+}
+
+export interface FingerprintPublicModel {
+  id: string;
+  upstream_id: string;
+  display_name: string;
+  protocol: string;
+  channel_id: string;
+  channel_name: string;
+  platform_id: string;
+  platform_name: string;
+  summary: FingerprintSummary | null;
+  round: FingerprintResult | null;
+  checked_at: string | null;
+}
+
+export interface FingerprintPublicResults {
+  models: Array<FingerprintPublicModel>;
+}
+
 export interface FingerprintModelSettings {
   mode: string;
   model: string;
@@ -548,6 +573,7 @@ export interface AdminFingerprintModel {
   settings: FingerprintModelSettings;
   expected: string;
   latest: FingerprintResult | null;
+  summary: FingerprintSummary | null;
   job: Job | null;
   next_run_at: string | null;
 }

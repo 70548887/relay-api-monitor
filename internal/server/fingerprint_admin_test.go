@@ -354,6 +354,7 @@ func TestRefreshFingerprintBank(t *testing.T) {
 		t.Fatalf("refresh with a local bank: %d %s after %d downloads", w.Code, w.Body.String(), bank.refreshes)
 	}
 }
+
 func TestAdminFingerprintOverviewShowsTheScheduleOfEveryModel(t *testing.T) {
 	s, p, _, m := publicFixture(t)
 	ctx := context.Background()

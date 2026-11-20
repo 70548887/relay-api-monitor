@@ -48,7 +48,7 @@ func (s *Server) adminFingerprint(c *gin.Context) {
 		dbError(c, err)
 		return
 	}
-	rounds, err := s.Store.ListLatestFingerprintResults(ctx, 1)
+	rounds, err := s.Store.ListLatestFingerprintResults(ctx, fingerprint.SummaryRounds)
 	if err != nil {
 		dbError(c, err)
 		return
@@ -71,10 +71,7 @@ func (s *Server) adminFingerprint(c *gin.Context) {
 	for _, ch := range channels {
 		channelByID[ch.ID] = ch
 	}
-	latest := map[string]*domain.FingerprintResult{}
-	for i := range rounds {
-		latest[rounds[i].ModelID] = &rounds[i]
-	}
+	recent := fingerprintRoundsByModel(rounds)
 	job := map[string]*domain.Job{}
 	for i := range jobs {
 		job[jobs[i].ModelID] = &jobs[i]
@@ -104,7 +101,10 @@ func (s *Server) adminFingerprint(c *gin.Context) {
 		}
 		row := domain.AdminFingerprintModel{
 			ID: m.ID, UpstreamID: m.UpstreamID, DisplayName: m.DisplayName, ChannelID: ch.ID, ChannelName: ch.Name, PlatformID: p.ID, PlatformName: p.Name,
-			Runnable: !m.Missing && ch.Enabled, Settings: fingerprintModelSettings(m), Latest: latest[m.ID], Job: job[m.ID], NextRunAt: nextRun[m.ID],
+			Runnable: !m.Missing && ch.Enabled, Settings: fingerprintModelSettings(m), Job: job[m.ID], NextRunAt: nextRun[m.ID],
+		}
+		if stored := recent[m.ID]; len(stored) > 0 {
+			row.Latest, row.Summary = &stored[0], fingerprint.Summarize(stored)
 		}
 		if out.Bank.Ready {
 			if expected, err := s.Fingerprint.Expected(bankCtx, settings.FingerprintBankDir, m); err == nil {

@@ -24,7 +24,7 @@ const round = (change: Partial<FingerprintRound> = {}): FingerprintRound => ({
 const job = (change: Partial<Job> = {}) => ({ id: 'j1', model_id: 'm1', channel_id: 'c1', kind: 'fingerprint', state: 'succeeded', error_code: '', error_message: '', created_at: '2026-11-20T03:59:00Z', ...change }) as Job;
 const row = (change: Partial<AdminFingerprintModel> = {}): AdminFingerprintModel => ({
   id: 'm1', upstream_id: 'gpt-5.5', display_name: 'GPT 5.5', channel_id: 'c1', channel_name: '默认分组', platform_id: 'p1', platform_name: '示例平台',
-  runnable: true, settings: { mode: 'auto', model: '', questions: 3, scheduled: false }, expected: 'gpt-5.5', latest: null, job: null, next_run_at: null, ...change,
+  runnable: true, settings: { mode: 'auto', model: '', questions: 3, scheduled: false }, expected: 'gpt-5.5', latest: null, summary: null, job: null, next_run_at: null, ...change,
 });
 const weakRound = round({
   id: 'r0', job_id: 'j0', questions: 3, returned_model: '', created_at: '2026-11-19T04:00:00Z',
