@@ -234,10 +234,7 @@ func (s *Store) MarkDispatching(ctx context.Context, id, token string, deadline 
 			if !plan.Enabled || plan.ModelID != m.ID || plan.Kind != v.Kind || plan.TemplateID != v.TemplateID || !c.Enabled || m.Missing {
 				return ErrConfigurationChanged
 			}
-			if v.Kind == "artifact" && !c.ScheduledArtifactEnabled(*m, v.TemplateID) {
-				return ErrConfigurationChanged
-			}
-			if v.Kind == "probe" && !c.ScheduledProbeEnabled(*m) {
+			if !c.ScheduledEnabled(*m, v.Kind, v.TemplateID) {
 				return ErrConfigurationChanged
 			}
 		}

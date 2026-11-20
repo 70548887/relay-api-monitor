@@ -549,10 +549,12 @@ export interface AdminFingerprintModel {
   expected: string;
   latest: FingerprintResult | null;
   job: Job | null;
+  next_run_at: string | null;
 }
 
 export interface AdminFingerprintOverview {
   bank: FingerprintBank;
+  interval_seconds: number;
   references: Array<FingerprintModel>;
   models: Array<AdminFingerprintModel>;
 }

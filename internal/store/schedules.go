@@ -92,6 +92,11 @@ func reconcileSchedules(ctx context.Context, tx queryer, m domain.Model) error {
 	}
 	available := !m.Archived && !m.Missing && !c.Archived && c.Enabled && !p.Archived
 	desired := []domain.Schedule{{ModelID: m.ID, Kind: "probe", IntervalSeconds: pi, Enabled: available && c.ScheduledProbeEnabled(m)}, {ModelID: m.ID, Kind: "artifact", TemplateID: "cn_html", IntervalSeconds: ai, Enabled: available && c.ScheduledArtifactEnabled(m, "cn_html")}, {ModelID: m.ID, Kind: "artifact", TemplateID: "en_svg", IntervalSeconds: ai, Enabled: available && c.ScheduledArtifactEnabled(m, "en_svg")}}
+	// A model gets its fingerprint schedule when scheduled detection is first switched on for it, and keeps the row
+	// afterwards so that switching off cancels the jobs the schedule queued.
+	if _, known := byKey["fingerprint:"]; known || m.FingerprintScheduled {
+		desired = append(desired, domain.Schedule{ModelID: m.ID, Kind: "fingerprint", IntervalSeconds: domain.NormalizeFingerprintSettings(*cfg).FingerprintIntervalSeconds, Enabled: available && m.FingerprintScheduled})
+	}
 	n := nowUTC()
 	for _, want := range desired {
 		key := want.Kind + ":" + want.TemplateID
@@ -152,7 +157,7 @@ func (s *Store) TickSchedules(ctx context.Context, now time.Time) (int, error) {
 			if e != nil {
 				return e
 			}
-			enabled := !m.Archived && !m.Missing && !c.Archived && c.Enabled && !p.Archived && ((v.Kind == "probe" && c.ScheduledProbeEnabled(*m)) || (v.Kind == "artifact" && c.ScheduledArtifactEnabled(*m, v.TemplateID)))
+			enabled := !m.Archived && !m.Missing && !c.Archived && c.Enabled && !p.Archived && c.ScheduledEnabled(*m, v.Kind, v.TemplateID)
 			if enabled {
 				job := domain.Job{ID: domain.NewID(), ScheduleID: v.ID, ModelID: m.ID, ChannelID: c.ID, ChannelRevision: c.Revision, Kind: v.Kind, TemplateID: v.TemplateID, State: "queued", ScheduledAt: v.NextRunAt, CreatedAt: now}
 				if e = enqueue(ctx, tx, &job, now); e == nil {

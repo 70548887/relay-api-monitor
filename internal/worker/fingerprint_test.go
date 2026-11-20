@@ -423,3 +423,77 @@ func TestFingerprintJobsRunUnderTheirOwnConcurrencyLimit(t *testing.T) {
 		t.Fatal("the worker did not stop")
 	}
 }
+
+// scheduledFingerprintJob switches scheduled detection on for the model, makes its schedule due and lets the
+// scheduler queue the detection.
+func scheduledFingerprintJob(t *testing.T, st *store.Store, ctx context.Context, m domain.Model) domain.Job {
+	t.Helper()
+	if err := st.SaveFingerprintModelSettings(ctx, m.ID, domain.FingerprintModelSettings{Mode: domain.FingerprintModeAuto, Questions: 3, Scheduled: true}); err != nil {
+		t.Fatal(err)
+	}
+	plans, err := st.ListSchedules(ctx, m.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	for _, plan := range plans {
+		if plan.Kind == "fingerprint" {
+			plan.NextRunAt = now.Add(-time.Minute)
+			if err = st.SaveSchedule(ctx, plan); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if _, err = st.TickSchedules(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := st.ListActiveJobs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, j := range jobs {
+		if j.Kind == "fingerprint" && j.ScheduleID != "" {
+			return j
+		}
+	}
+	t.Fatal("the due schedule queued no detection")
+	return domain.Job{}
+}
+
+func TestScheduledFingerprintDetectionRunsOnlyWhileSwitchedOn(t *testing.T) {
+	t.Run("switched on", func(t *testing.T) {
+		var requests requestLog
+		w, st, ctx, m, _ := fingerprintFixture(t, func(rw http.ResponseWriter, r *http.Request) {
+			requests.add(t, r)
+			chatResponse(rw, numberList(200))
+		})
+		j := scheduledFingerprintJob(t, st, ctx, m)
+		workFingerprint(t, w, ctx)
+		saved, rounds := savedJob(t, st, ctx, j.ID), storedRounds(t, st, ctx, m)
+		if saved.State != "succeeded" || len(rounds) != 1 || rounds[0].JobID != j.ID || len(requests.all()) != 3 {
+			t.Fatalf("job %+v, %d rounds, %d requests; want the scheduled detection to store its round", saved, len(rounds), len(requests.all()))
+		}
+	})
+	t.Run("switched off before it starts", func(t *testing.T) {
+		var requests requestLog
+		w, st, ctx, m, _ := fingerprintFixture(t, func(rw http.ResponseWriter, r *http.Request) {
+			requests.add(t, r)
+			chatResponse(rw, numberList(200))
+		})
+		j := scheduledFingerprintJob(t, st, ctx, m)
+		// SaveModel stores the switch without reconciling the schedule, so the queued job is still there.
+		stored, err := st.GetModel(ctx, m.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stored.FingerprintScheduled = false
+		if err = st.SaveModel(ctx, *stored); err != nil {
+			t.Fatal(err)
+		}
+		workFingerprint(t, w, ctx)
+		saved := savedJob(t, st, ctx, j.ID)
+		if saved.State != "failed" || saved.ErrorCode != "schedule_disabled" || len(requests.all()) != 0 || len(storedRounds(t, st, ctx, m)) != 0 {
+			t.Fatalf("job %+v, %d requests; want it refused before any request", saved, len(requests.all()))
+		}
+	})
+}

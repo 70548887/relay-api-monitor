@@ -184,11 +184,16 @@ type AdminFingerprintModel struct {
 	Latest *FingerprintResult `json:"latest"`
 	// Job is the newest detection job. It may still be running, or may have failed without storing a round.
 	Job *Job `json:"job"`
+	// NextRunAt is when the next scheduled detection is due. It is nil while scheduled detection is off, and while
+	// it is paused because the model is not runnable.
+	NextRunAt *time.Time `json:"next_run_at"`
 }
 
 // AdminFingerprintOverview is the data of the admin fingerprint page.
 type AdminFingerprintOverview struct {
 	Bank FingerprintBank `json:"bank"`
+	// IntervalSeconds is the time between two scheduled detections of one model.
+	IntervalSeconds int `json:"interval_seconds"`
 	// References are the models of the reference bank.
 	References []FingerprintModel      `json:"references"`
 	Models     []AdminFingerprintModel `json:"models"`

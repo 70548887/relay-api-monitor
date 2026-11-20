@@ -354,3 +354,62 @@ func TestRefreshFingerprintBank(t *testing.T) {
 		t.Fatalf("refresh with a local bank: %d %s after %d downloads", w.Code, w.Body.String(), bank.refreshes)
 	}
 }
+func TestAdminFingerprintOverviewShowsTheScheduleOfEveryModel(t *testing.T) {
+	s, p, _, m := publicFixture(t)
+	ctx := context.Background()
+	paused := domain.Channel{ID: "paused-channel", PlatformID: p.ID, Name: "Paused Channel", Enabled: false, Protocol: "chat", EncryptedKey: "encrypted-key-private", BaseURL: "https://internal-upstream-private.example/v1"}
+	if err := s.Store.SaveChannel(ctx, paused); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.SaveModel(ctx, domain.Model{ID: "paused-model", ChannelID: paused.ID, UpstreamID: "paused-model-name", DisplayName: "Paused model"}); err != nil {
+		t.Fatal(err)
+	}
+	s.Fingerprint = readyFingerprintBank()
+	h := s.Handler()
+	cookie, csrf := loginForTest(t, h)
+	schedule := func(id string, on bool) {
+		t.Helper()
+		w := request(t, h, "PUT", "/api/v1/admin/fingerprint/models/"+id, domain.FingerprintModelSettings{Mode: "auto", Questions: 3, Scheduled: on}, cookie, csrf)
+		if w.Code != 200 {
+			t.Fatalf("save %s scheduled=%t: %d %s", id, on, w.Code, w.Body.String())
+		}
+	}
+
+	overview, body := adminFingerprintOverview(t, h, cookie)
+	if overview.IntervalSeconds != 86400 || fingerprintRow(t, overview, m.ID).NextRunAt != nil || !strings.Contains(body, `"next_run_at":null`) {
+		t.Fatalf("scheduled detection is off until someone switches it on: %s", body)
+	}
+
+	before := time.Now().UTC()
+	schedule(m.ID, true)
+	schedule("paused-model", true)
+	overview, _ = adminFingerprintOverview(t, h, cookie)
+	row := fingerprintRow(t, overview, m.ID)
+	if !row.Settings.Scheduled || row.NextRunAt == nil || row.NextRunAt.Before(before.Add(-time.Second)) || row.NextRunAt.After(time.Now().UTC().Add(24*time.Hour)) {
+		t.Fatalf("scheduled model = %+v, want its next run within one interval", row)
+	}
+	// The switch of a model that cannot run is kept, but nothing is due.
+	if stopped := fingerprintRow(t, overview, "paused-model"); !stopped.Settings.Scheduled || stopped.NextRunAt != nil {
+		t.Fatalf("scheduled model of a disabled channel = %+v", stopped)
+	}
+
+	settings, err := s.Store.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.FingerprintIntervalSeconds = 7200
+	if err = s.Store.SaveSettingsAndReconcile(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	overview, _ = adminFingerprintOverview(t, h, cookie)
+	row = fingerprintRow(t, overview, m.ID)
+	if want := time.Now().UTC().Add(2 * time.Hour); overview.IntervalSeconds != 7200 || row.NextRunAt == nil || row.NextRunAt.Sub(want).Abs() > 10*time.Second {
+		t.Fatalf("after changing the interval: %d seconds, next run %v, want about %s", overview.IntervalSeconds, row.NextRunAt, want)
+	}
+
+	schedule(m.ID, false)
+	overview, _ = adminFingerprintOverview(t, h, cookie)
+	if row = fingerprintRow(t, overview, m.ID); row.Settings.Scheduled || row.NextRunAt != nil {
+		t.Fatalf("model after switching off = %+v", row)
+	}
+}

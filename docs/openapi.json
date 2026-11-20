@@ -121,6 +121,17 @@
               }
             ]
           },
+          "next_run_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "platform_id": {
             "type": "string"
           },
@@ -149,7 +160,8 @@
           "settings",
           "expected",
           "latest",
-          "job"
+          "job",
+          "next_run_at"
         ],
         "type": "object"
       },
@@ -157,6 +169,9 @@
         "properties": {
           "bank": {
             "$ref": "#/components/schemas/FingerprintBank"
+          },
+          "interval_seconds": {
+            "type": "integer"
           },
           "models": {
             "items": {
@@ -173,6 +188,7 @@
         },
         "required": [
           "bank",
+          "interval_seconds",
           "references",
           "models"
         ],

@@ -24,7 +24,7 @@ const round = (change: Partial<FingerprintRound> = {}): FingerprintRound => ({
 const job = (change: Partial<Job> = {}) => ({ id: 'j1', model_id: 'm1', channel_id: 'c1', kind: 'fingerprint', state: 'succeeded', error_code: '', error_message: '', created_at: '2026-11-20T03:59:00Z', ...change }) as Job;
 const row = (change: Partial<AdminFingerprintModel> = {}): AdminFingerprintModel => ({
   id: 'm1', upstream_id: 'gpt-5.5', display_name: 'GPT 5.5', channel_id: 'c1', channel_name: '默认分组', platform_id: 'p1', platform_name: '示例平台',
-  runnable: true, settings: { mode: 'auto', model: '', questions: 3, scheduled: false }, expected: 'gpt-5.5', latest: null, job: null, ...change,
+  runnable: true, settings: { mode: 'auto', model: '', questions: 3, scheduled: false }, expected: 'gpt-5.5', latest: null, job: null, next_run_at: null, ...change,
 });
 const weakRound = round({
   id: 'r0', job_id: 'j0', questions: 3, returned_model: '', created_at: '2026-11-19T04:00:00Z',
@@ -47,7 +47,7 @@ beforeEach(() => {
   vi.spyOn(window, 'getComputedStyle').mockImplementation(element => getStyle(element));
   vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: false, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn() }));
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
-  overview = { bank, references: [claude, gpt], models: [row()] };
+  overview = { bank, interval_seconds: 86400, references: [claude, gpt], models: [row()] };
   loads = 0;
   sent = [];
   rounds = [];
@@ -165,6 +165,54 @@ describe('admin fingerprint page', () => {
     expect(cells.getByTitle('未收录（只看最接近的模型）')).toBeInTheDocument();
   });
 
+  it('switches scheduled detection per model and shows when the next one is due', async () => {
+    overview = { ...overview, interval_seconds: 172800, models: [
+      row(),
+      row({ id: 'm2', display_name: '定时中的模型', settings: { mode: 'unlisted', model: '', questions: 2, scheduled: true }, expected: '', next_run_at: '2026-11-21T03:12:00Z' }),
+      row({ id: 'm3', display_name: '停用分组的模型', runnable: false, settings: { mode: 'auto', model: '', questions: 3, scheduled: true } }),
+    ] };
+    reply = request => {
+      const settings = request.body as AdminFingerprintModel['settings'], id = request.path.split('/').pop();
+      overview = { ...overview, models: overview.models.map(item => item.id === id ? { ...item, settings, next_run_at: settings.scheduled ? '2026-11-20T19:40:00Z' : null } : item) };
+      return json(settings);
+    };
+    show();
+
+    const off = await line('GPT 5.5');
+    expect(screen.getByText(/打开定时的模型每 2 天自动检测一次/)).toBeInTheDocument();
+    expect(off.getByRole('switch', { name: 'GPT 5.5 的定时检测' })).not.toBeChecked();
+    expect(off.queryByText(/^下次/)).not.toBeInTheDocument();
+    expect(off.queryByText('不可检测，已暂停')).not.toBeInTheDocument();
+
+    const on = await line('定时中的模型');
+    expect(on.getByRole('switch', { name: '定时中的模型 的定时检测' })).toBeChecked();
+    expect(on.getByText('下次 11/21 11:12')).toHaveAttribute('title', time('2026-11-21T03:12:00Z'));
+
+    const paused = await line('停用分组的模型');
+    expect(paused.getByRole('switch')).toBeChecked();
+    expect(paused.getByText('不可检测，已暂停')).toBeInTheDocument();
+
+    fireEvent.click(off.getByRole('switch'));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual({ method: 'PUT', path: '/admin/fingerprint/models/m1', body: { mode: 'auto', model: '', questions: 3, scheduled: true } });
+    expect(await off.findByText('下次 11/21 03:40')).toBeInTheDocument();
+    expect(off.getByRole('switch')).toBeChecked();
+
+    await waitFor(() => expect(on.getByRole('switch')).toBeEnabled());
+    fireEvent.click(on.getByRole('switch'));
+    await waitFor(() => expect(sent).toHaveLength(2));
+    expect(sent[1]).toEqual({ method: 'PUT', path: '/admin/fingerprint/models/m2', body: { mode: 'unlisted', model: '', questions: 2, scheduled: false } });
+    await waitFor(() => expect(on.getByRole('switch')).toBeEnabled());
+    expect(on.getByRole('switch')).not.toBeChecked();
+    expect(on.queryByText(/^下次/)).not.toBeInTheDocument();
+
+    reply = () => refused(503, 'fingerprint_unavailable', '指纹匹对暂不可用');
+    fireEvent.click(on.getByRole('switch'));
+    expect(await screen.findByText('指纹匹对暂不可用')).toBeInTheDocument();
+    await waitFor(() => expect(on.getByRole('switch')).toBeEnabled());
+    expect(on.getByRole('switch')).not.toBeChecked();
+  });
+
   it('queues a detection and shows why a second one is refused', async () => {
     reply = () => {
       overview = { ...overview, models: [row({ job: job({ id: 'j9', state: 'queued' }) })] };
@@ -206,6 +254,18 @@ describe('admin fingerprint page', () => {
     expect(sent).toEqual([]);
   }, 15000);
 
+  it('loads again when a scheduled detection is due and shows it running', async () => {
+    const scheduled = { mode: 'auto', model: '', questions: 3, scheduled: true } as const;
+    overview.models = [row({ settings: scheduled, next_run_at: new Date(Date.now() + 1500).toISOString() })];
+    show();
+    const cells = await line('GPT 5.5');
+    expect(cells.getByText('尚未检测')).toBeInTheDocument();
+
+    overview = { ...overview, models: [row({ settings: scheduled, next_run_at: '2099-01-01T00:00:00Z', job: job({ id: 'j5', state: 'running', schedule_id: 's1' }) })] };
+    expect(await cells.findByText('运行中', undefined, { timeout: 8000 })).toBeInTheDocument();
+    expect(loads).toBe(2);
+  }, 15000);
+
   it('updates the reference bank and reports whether a newer build arrived', async () => {
     const newer = { ...bank, built_at: '2026-11-21T05:00:00+00:00', models: 78 };
     reply = () => { overview = { ...overview, bank: newer }; return json({ bank: newer, changed: true }); };
@@ -231,7 +291,7 @@ describe('admin fingerprint page', () => {
   });
 
   it('blocks detection while the bank is unavailable and online updates of a local bank', async () => {
-    overview = { bank: { ready: false, source: 'online', built_at: '', models: 0, updated_at: null, error: 'download bundle.json: connection refused' }, references: [], models: [row({ expected: '' })] };
+    overview = { ...overview, bank: { ready: false, source: 'online', built_at: '', models: 0, updated_at: null, error: 'download bundle.json: connection refused' }, references: [], models: [row({ expected: '' })] };
     show();
     expect(await screen.findByText('参考库暂不可用，暂时不能检测')).toBeInTheDocument();
     expect(screen.getByText('download bundle.json: connection refused')).toBeInTheDocument();
@@ -243,7 +303,7 @@ describe('admin fingerprint page', () => {
 
     cleanup();
     client.clear();
-    overview = { bank: { ...bank, source: 'local' }, references: [claude, gpt], models: [row()] };
+    overview = { ...overview, bank: { ...bank, source: 'local' } };
     show();
     expect(await screen.findByText(`收录 75 个模型 · 来自本地目录 · 上次更新 ${time(bank.updated_at)}`)).toBeInTheDocument();
     const update = screen.getByRole('button', { name: /更新参考库/ });

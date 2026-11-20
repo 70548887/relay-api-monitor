@@ -106,6 +106,20 @@ func DefaultArtifactMaxTokens(protocol string) int {
 	return 8192
 }
 
+// ScheduledEnabled reports whether scheduled jobs of this kind are switched on for the model. Fingerprint detection
+// has its own switch on the model and ignores the channel's probe and artifact controls.
+func (c Channel) ScheduledEnabled(m Model, kind, template string) bool {
+	switch kind {
+	case "probe":
+		return c.ScheduledProbeEnabled(m)
+	case "artifact":
+		return c.ScheduledArtifactEnabled(m, template)
+	case "fingerprint":
+		return m.FingerprintScheduled
+	}
+	return false
+}
+
 func (c Channel) ScheduledProbeEnabled(m Model) bool {
 	if plan := c.IntelligenceSchedule; plan != nil && plan.ModelScope != "all" && plan.ModelID != m.ID {
 		return false

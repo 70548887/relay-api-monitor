@@ -82,7 +82,7 @@ func (w *Worker) execute(parent context.Context, j domain.Job) error {
 		return failBeforeDispatch("disabled", "模型已缺失或分组已停用，请检查配置")
 	}
 	if j.ScheduleID != "" {
-		enabled := c.Enabled && !m.Missing && ((j.Kind == "probe" && c.ScheduledProbeEnabled(*m)) || (j.Kind == "artifact" && c.ScheduledArtifactEnabled(*m, j.TemplateID)))
+		enabled := c.Enabled && !m.Missing && c.ScheduledEnabled(*m, j.Kind, j.TemplateID)
 		if !enabled {
 			return failBeforeDispatch("schedule_disabled", "定时任务已停用")
 		}
