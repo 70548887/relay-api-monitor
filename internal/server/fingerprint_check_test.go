@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -189,6 +190,18 @@ func (f *checkFixture) round(t *testing.T, body any) domain.FingerprintCheck {
 	return check
 }
 
+// reportsAskedCounts checks that a round tells how many numbers each of its questions asked for.
+func (f *checkFixture) reportsAskedCounts(t *testing.T, check domain.FingerprintCheck) {
+	t.Helper()
+	want := make([]int, len(f.bank.answers))
+	for i, answer := range f.bank.answers {
+		want[i] = answer.ExpectedCount
+	}
+	if !slices.Equal(check.ExpectedCounts, want) {
+		t.Fatalf("expected counts %v, want %v: what each question asked for", check.ExpectedCounts, want)
+	}
+}
+
 func TestFingerprintCheckAsksTheQuestionsAtOnceAndScoresTheirReplies(t *testing.T) {
 	f := fingerprintCheckFixture(t)
 	var mu sync.Mutex
@@ -241,6 +254,7 @@ func TestFingerprintCheckAsksTheQuestionsAtOnceAndScoresTheirReplies(t *testing.
 	if len(counts) != 3 {
 		t.Fatalf("answers for the counts %v, want one per question", counts)
 	}
+	f.reportsAskedCounts(t, check)
 
 	if check.Questions != 3 || check.Analysis.Verdict != domain.FingerprintMatch || check.Analysis.Confidence == nil || *check.Analysis.Confidence != 0.93 || check.Analysis.Expected == nil {
 		t.Fatalf("check %+v, want the analysis of the bank", check)
@@ -306,6 +320,7 @@ func TestFingerprintCheckIsScoredOnTheRepliesThatArrived(t *testing.T) {
 	if check.Questions != 3 || check.ReturnedModel != returnedModel(requests[0].asks()) || check.Usage.TotalTokens == nil || *check.Usage.TotalTokens != 8 {
 		t.Fatalf("check %+v, want three questions and the model and usage of the answered one", check)
 	}
+	f.reportsAskedCounts(t, check)
 
 	f.upstream.respond = func(int, askedRequest) *http.Response { return failedReply(502, "down") }
 	f.bank.analysis = domain.FingerprintAnalysis{Verdict: domain.FingerprintUndetermined, Reason: domain.FingerprintNoValidAnswers}
@@ -318,6 +333,7 @@ func TestFingerprintCheckIsScoredOnTheRepliesThatArrived(t *testing.T) {
 			t.Fatalf("error %d is %+v with the answer %q", i+1, failure, f.bank.answers[i].Text)
 		}
 	}
+	f.reportsAskedCounts(t, check)
 
 	f.upstream.respond = func(int, askedRequest) *http.Response {
 		body, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": checkNumbers(50)}, "finish_reason": "length"}}})
@@ -356,6 +372,7 @@ func TestFingerprintCheckFollowsTheRequestedModeAndQuestionCount(t *testing.T) {
 			if check.Questions != tc.questions || len(check.QuestionMS) != tc.questions || len(requests) != tc.questions || len(f.bank.answers) != tc.questions {
 				t.Fatalf("%d questions, %d requests, %d answers; want %d", check.Questions, len(requests), len(f.bank.answers), tc.questions)
 			}
+			f.reportsAskedCounts(t, check)
 			if asked := f.bank.asked[len(f.bank.asked)-1]; asked != tc.asked || f.bank.expected != tc.expected || requests[0].body["model"] != tc.asked.UpstreamID {
 				t.Fatalf("asked the bank for %+v and judged against %q, sent the model %v", asked, f.bank.expected, requests[0].body["model"])
 			}

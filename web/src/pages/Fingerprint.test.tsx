@@ -1,9 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App } from 'antd';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { FingerprintAnalysis, FingerprintChallenge, FingerprintOverview, FingerprintPublicResults } from '../types';
+import type { FingerprintAnalysis, FingerprintChallenge, FingerprintCheck, FingerprintOverview, FingerprintPublicResults } from '../types';
+import { setUserSession } from '../userApi';
 import Fingerprint from './Fingerprint';
 
 const gpt = { id: 'gpt-5.5', display_name: 'gpt-5.5', family: 'gpt', family_name: 'GPT' };
@@ -37,6 +38,11 @@ const undetermined: FingerprintAnalysis = {
   candidates: [], answers: [{ numbers: 300, minimum: 166, valid: true }], bank_built_at: readyBank.bank.built_at,
 };
 
+const apiRound: FingerprintCheck = {
+  questions: 3, analysis: fullMatch, errors: [], question_ms: [4600, 5210, 3980], expected_counts: [301, 312, 325], returned_model: 'gpt-5.5',
+  usage: { input_tokens: 9, output_tokens: 15, total_tokens: 24 }, duration_ms: 5300, created_at: '2026-11-20T08:00:00Z',
+};
+
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 let client: QueryClient;
 let overview: FingerprintOverview;
@@ -44,6 +50,8 @@ let results: FingerprintPublicResults;
 let rounds: FingerprintChallenge[][];
 let analyze: (body: unknown) => Response;
 let submitted: unknown[];
+/** Whether the visitor is a signed-in member, who has one saved connection. */
+let member: boolean;
 
 beforeEach(() => {
   const getStyle = window.getComputedStyle.bind(window);
@@ -55,11 +63,15 @@ beforeEach(() => {
   rounds = [firstRound, secondRound];
   analyze = () => json(fullMatch);
   submitted = [];
+  member = false;
   vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
     const path = String(url), method = init?.method || 'GET';
     if (path === '/api/v1/public/fingerprint' && method === 'GET') return json(overview);
     if (path === '/api/v1/public/fingerprint/results' && method === 'GET') return json(results);
     if (path === '/api/v1/public/fingerprint/challenges?count=3' && method === 'GET') return json({ challenges: rounds.shift() });
+    if (path === '/api/v1/user/auth/me' && method === 'GET') return member ? json({ user: { id: 'm1', username: 'tester' }, csrf_token: 'csrf-1' }) : json({ error: { code: 'unauthorized', message: '请先登录' } }, 401);
+    if (path === '/api/v1/user/connections' && method === 'GET' && member) return json([{ id: 'relay-a', name: '中转站 A', base_url: 'https://relay-a.example.com/v1', revision: 3, disabled: false }]);
+    if (path === '/api/v1/test/fingerprint' && method === 'POST' && member) return json(apiRound);
     if (path === '/api/v1/public/fingerprint/analyze' && method === 'POST') {
       const body = JSON.parse(String(init?.body));
       submitted.push(body);
@@ -69,10 +81,23 @@ beforeEach(() => {
   }));
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
-afterEach(() => { cleanup(); client.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); client.clear(); setUserSession(null); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
+function Where() {
+  const location = useLocation();
+  return <output data-testid="location">{location.pathname + location.search}</output>;
+}
 function show(path = '/fingerprint?tab=self') {
-  render(<QueryClientProvider client={client}><App><MemoryRouter initialEntries={[path]}><Fingerprint/></MemoryRouter></App></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><App><MemoryRouter initialEntries={[path]}><Fingerprint/><Where/></MemoryRouter></App></QueryClientProvider>);
+}
+/**
+ * The radio behind one choice of a segmented control, in the part of the page that is shown. With both ways of the
+ * self check mounted, a lookup by role walks the whole page on every call and makes these tests several times slower.
+ */
+function choice(name: string) {
+  const labels = screen.getAllByText(name).filter(node => !node.closest('[hidden]'));
+  expect(labels).toHaveLength(1);
+  return labels[0].closest('label')!.querySelector('input')!;
 }
 const card = (number: number) => within(screen.getByRole('region', { name: `题目 ${number}` }));
 const paste = (number: number, text: string) => fireEvent.change(screen.getByLabelText(`题目 ${number} 的回答`), { target: { value: text } });
@@ -173,6 +198,67 @@ describe('public fingerprint page', () => {
     expect(result.getByRole('heading', { name: '无法判定' })).toBeInTheDocument();
     expect(result.getByText(/不像是模型直接写出来的/)).toBeInTheDocument();
     expect(screen.queryByText('请求过于频繁，请一分钟后重试')).not.toBeInTheDocument();
+  });
+
+  it('switches between pasting and the API without losing what was pasted', async () => {
+    show();
+    await screen.findByText('请写出 301 个整数');
+    expect(screen.getByText('检测设置')).toBeInTheDocument();
+    expect(choice('手动粘贴')).toBeChecked();
+    expect(fetch).not.toHaveBeenCalledWith('/api/v1/user/auth/me', expect.anything());
+    paste(1, '1 2 3');
+
+    fireEvent.click(choice('通过 API'));
+    expect(await screen.findByText('登录后才能通过 API 检测')).toBeVisible();
+    expect(screen.getByTestId('location').textContent).toBe('/fingerprint?tab=self&mode=api');
+    expect(choice('通过 API')).toBeChecked();
+    expect(choice('手动粘贴')).not.toBeChecked();
+    expect(screen.getByLabelText('题目 1 的回答')).not.toBeVisible();
+    expect(screen.getByText('自助检测的结果只给你自己看，不会出现在平台检测结果里')).toBeInTheDocument();
+
+    fireEvent.click(choice('手动粘贴'));
+    expect(screen.getByTestId('location').textContent).toBe('/fingerprint?tab=self');
+    expect(choice('手动粘贴')).toBeChecked();
+    expect(screen.getByLabelText('题目 1 的回答')).toBeVisible();
+    expect(screen.getByLabelText('题目 1 的回答')).toHaveValue('1 2 3');
+    expect(screen.getByText('登录后才能通过 API 检测')).not.toBeVisible();
+    expect(rounds).toHaveLength(1);
+  });
+
+  it('opens the API way from the address and fetches no questions to paste until they are wanted', async () => {
+    show('/fingerprint?tab=self&mode=api');
+    expect(await screen.findByText('登录后才能通过 API 检测')).toBeVisible();
+    expect(choice('通过 API')).toBeChecked();
+    expect(fetch).not.toHaveBeenCalledWith('/api/v1/public/fingerprint/challenges?count=3', expect.anything());
+
+    fireEvent.click(choice('平台检测结果'));
+    expect(await screen.findByText('还没有平台检测结果')).toBeInTheDocument();
+    expect(screen.getByTestId('location').textContent).toBe('/fingerprint');
+    expect(screen.queryByText('登录后才能通过 API 检测')).not.toBeInTheDocument();
+
+    fireEvent.click(choice('自助检测'));
+    expect(await screen.findByText('请写出 301 个整数')).toBeInTheDocument();
+    expect(screen.getByTestId('location').textContent).toBe('/fingerprint?tab=self');
+    expect(choice('手动粘贴')).toBeChecked();
+    expect(screen.queryByText('登录后才能通过 API 检测')).not.toBeInTheDocument();
+  });
+
+  it('keeps the result of an API round while the pasting way is shown', async () => {
+    member = true;
+    show('/fingerprint?tab=self&mode=api');
+    fireEvent.change(await screen.findByLabelText('模型'), { target: { value: 'gpt-5.5' } });
+    fireEvent.click(screen.getByText('开始检测'));
+    expect(await screen.findByText('要求 301 个 · 识别 301 个')).toBeVisible();
+
+    fireEvent.click(choice('手动粘贴'));
+    expect(await screen.findByText('请写出 301 个整数')).toBeVisible();
+    expect(screen.getByText('要求 301 个 · 识别 301 个')).not.toBeVisible();
+    expect(screen.getByLabelText('模型')).not.toBeVisible();
+
+    fireEvent.click(choice('通过 API'));
+    expect(screen.getByText('要求 301 个 · 识别 301 个')).toBeVisible();
+    expect(screen.getByLabelText('模型')).toHaveValue('gpt-5.5');
+    expect(screen.getByLabelText('题目 1 的回答')).not.toBeVisible();
   });
 
   it('does not score while the bank is unavailable and asks before replacing answered questions', async () => {

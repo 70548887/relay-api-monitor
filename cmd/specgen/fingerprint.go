@@ -33,6 +33,7 @@ func addFingerprintContract(schemas, paths object, add func(string, string, stri
 	checked["minimum"], checked["maximum"], checked["description"] = 1, fingerprint.MaxChallenges, "本轮的题数：3 题最准确，2 题可参考，1 题仅作测试；省略时为 3"
 	props("FingerprintCheck")["errors"].(object)["description"] = "请求失败的题，按题号排列；message 是连接给出的原因，不含密钥。全部成功时为空数组"
 	props("FingerprintCheck")["question_ms"].(object)["description"] = "每道题的请求用时（毫秒），顺序同题号"
+	props("FingerprintCheck")["expected_counts"].(object)["description"] = "每道题要求写出的整数个数，顺序同题号"
 	props("FingerprintCheck")["returned_model"].(object)["description"] = "连接在回答里报告的模型名，取第一道报告了模型名的题；都没有报告时为空"
 	props("FingerprintCheck")["usage"].(object)["description"] = "本轮各题用量之和；连接没有报告的项为 null"
 

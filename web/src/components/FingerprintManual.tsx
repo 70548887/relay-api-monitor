@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Alert, App, Button, Input, Popconfirm, Select, Skeleton, Space, Tag } from 'antd';
 import { CopyOutlined, InfoCircleOutlined, PlayCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import { api, post } from '../api';
-import { ROUND_SIZE } from '../fingerprint';
+import { modelGroups, ROUND_SIZE } from '../fingerprint';
 import type { FingerprintAnalysis, FingerprintAnalyzeRequest, FingerprintChallengeSet, FingerprintModel } from '../types';
 import { FingerprintResult } from './FingerprintResult';
 
@@ -12,8 +12,11 @@ type Outcome = { analysis: FingerprintAnalysis; cards: number[] };
 
 const blankAnswers = () => Array.from({ length: ROUND_SIZE }, () => '');
 
-/** Scores answers that the visitor collected by hand. Nothing is sent to a model and nothing is stored. */
-export function FingerprintManual({ models, ready }: { models: FingerprintModel[]; ready: boolean }) {
+/**
+ * Scores answers that the visitor collected by hand. Nothing is sent to a model and nothing is stored.
+ * head opens the settings panel; a hidden panel keeps what was pasted into it.
+ */
+export function FingerprintManual({ models, ready, head, hidden }: { models: FingerprintModel[]; ready: boolean; head: ReactNode; hidden: boolean }) {
   const { message } = App.useApp();
   const [answers, setAnswers] = useState(blankAnswers);
   const [claimed, setClaimed] = useState<string>();
@@ -36,15 +39,7 @@ export function FingerprintManual({ models, ready }: { models: FingerprintModel[
     if (outcome) resultRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
   }, [outcome]);
 
-  const modelOptions = useMemo(() => {
-    const families = new Map<string, { label: string; options: { value: string; label: string }[] }>();
-    for (const model of models) {
-      const family = families.get(model.family) || { label: model.family_name || model.family, options: [] };
-      family.options.push({ value: model.id, label: model.display_name });
-      families.set(model.family, family);
-    }
-    return [...families.values()];
-  }, [models]);
+  const modelOptions = useMemo(() => modelGroups(models), [models]);
 
   const questions = challenges.data?.challenges || [];
   const pasted = answers.map((text, card) => ({ text: text.trim(), card })).filter(item => item.text && questions[item.card]);
@@ -81,10 +76,9 @@ export function FingerprintManual({ models, ready }: { models: FingerprintModel[
 
   const renewButton = <Button block icon={<ReloadOutlined aria-hidden="true"/>} loading={challenges.isFetching} disabled={compare.isPending} onClick={pasted.length ? undefined : () => void renew()}>换一组题目</Button>;
 
-  return <div className="fp-self">
+  return <div className="fp-self" hidden={hidden}>
     <aside className="panel fp-self-config">
-      <h2>手动粘贴</h2>
-      <p className="muted">自己把题目发给要检测的模型，再把回答交给本站比对。</p>
+      {head}
       <ol className="fp-steps">
         <li>复制题目，原样发给要检测的模型。每题新开一个对话，不要加系统提示词。</li>
         <li>把模型的完整回答粘贴到对应的输入框。</li>

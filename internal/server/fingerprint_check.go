@@ -113,10 +113,10 @@ func (s *Server) fingerprintCheck(c *gin.Context) {
 		return
 	}
 
-	check := domain.FingerprintCheck{Questions: len(challenges), Errors: []domain.FingerprintRequestError{}, QuestionMS: make([]int64, len(challenges)), DurationMS: time.Since(started).Milliseconds(), CreatedAt: time.Now().UTC()}
+	check := domain.FingerprintCheck{Questions: len(challenges), Errors: []domain.FingerprintRequestError{}, QuestionMS: make([]int64, len(challenges)), ExpectedCounts: make([]int, len(challenges)), DurationMS: time.Since(started).Milliseconds(), CreatedAt: time.Now().UTC()}
 	answers := make([]fingerprint.Answer, len(challenges))
 	for i, reply := range replies {
-		answers[i], check.QuestionMS[i] = reply.answer, reply.response.DurationMS
+		answers[i], check.QuestionMS[i], check.ExpectedCounts[i] = reply.answer, reply.response.DurationMS, challenges[i].ExpectedCount
 		check.Usage.Add(reply.response.Usage)
 		if check.ReturnedModel == "" {
 			check.ReturnedModel = redactPrivate(reply.response.ReturnedModel, connection.APIKey)

@@ -1983,6 +1983,13 @@
             },
             "type": "array"
           },
+          "expected_counts": {
+            "description": "每道题要求写出的整数个数，顺序同题号",
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
           "question_ms": {
             "description": "每道题的请求用时（毫秒），顺序同题号",
             "items": {
@@ -2007,6 +2014,7 @@
           "analysis",
           "errors",
           "question_ms",
+          "expected_counts",
           "returned_model",
           "usage",
           "duration_ms",

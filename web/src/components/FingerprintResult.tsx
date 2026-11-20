@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Tag } from 'antd';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import { bankDate, levelMeta, percent, verdictMeta } from '../fingerprint';
@@ -13,9 +14,14 @@ const undeterminedReason: Record<string, string> = {
   not_model_like: '这些数字不像是模型直接写出来的（例如按顺序排列，或由程序生成），无法比对。',
 };
 
-function claimText(analysis: FingerprintAnalysis) {
+/** How a result words a round that was compared with no declared model: in its headline and in its list of facts. */
+export type Unclaimed = { line: string; fact: string };
+
+const notChosen: Unclaimed = { line: '没有选择声明的模型，只给出最接近的模型', fact: '未选择' };
+
+function claimText(analysis: FingerprintAnalysis, unclaimed: Unclaimed) {
   const expected = analysis.expected;
-  if (!expected) return '没有选择声明的模型，只给出最接近的模型';
+  if (!expected) return unclaimed.line;
   if (analysis.verdict === 'match') return `与声明的 ${expected.display_name} 对得上`;
   if (analysis.verdict === 'family') return `声明的是 ${expected.display_name}，最接近的是同家族的另一个型号`;
   return analysis.expected_rank > 0 ? `声明的是 ${expected.display_name}，它排在第 ${analysis.expected_rank} 位` : `声明的是 ${expected.display_name}`;
@@ -37,8 +43,13 @@ export function FingerprintCandidates({ analysis }: { analysis: FingerprintAnaly
   </li>)}</ol>;
 }
 
-/** The outcome of one round. submitted is the number of answers that were sent for scoring. */
-export function FingerprintResult({ analysis, submitted, footnote }: { analysis: FingerprintAnalysis; submitted: number; footnote: string }) {
+/**
+ * The outcome of one round. submitted is the number of answers that were sent for scoring, and facts are further
+ * rows for its list of facts.
+ */
+export function FingerprintResult({ analysis, submitted, footnote, unclaimed = notChosen, facts }: {
+  analysis: FingerprintAnalysis; submitted: number; footnote: string; unclaimed?: Unclaimed; facts?: ReactNode;
+}) {
   const closest = analysis.candidates[0];
   if (analysis.verdict === 'undetermined' || !analysis.level || !closest) {
     return <section className="fp-result" aria-label="比对结果">
@@ -50,6 +61,7 @@ export function FingerprintResult({ analysis, submitted, footnote }: { analysis:
         </div>
         <div className="fp-result-score partial"><strong>{analysis.valid_answers} / {submitted}</strong><span>有效回答</span></div>
       </div>
+      {facts && <div className="fp-result-body single"><div><h4>检测信息</h4><dl className="fp-facts">{facts}</dl></div></div>}
       <div className="fp-result-foot"><InfoCircleOutlined aria-hidden="true"/><span>{footnote}</span></div>
     </section>;
   }
@@ -63,7 +75,7 @@ export function FingerprintResult({ analysis, submitted, footnote }: { analysis:
         <h3>{closest.display_name}</h3>
         <div className="fp-result-line">
           {expected && <VerdictTag verdict={analysis.verdict}/>}
-          <span className="fp-result-claim">{claimText(analysis)}{closest.family_name && ` · ${closest.family_name} 家族`}</span>
+          <span className="fp-result-claim">{claimText(analysis, unclaimed)}{closest.family_name && ` · ${closest.family_name} 家族`}</span>
         </div>
       </div>
       {analysis.confidence != null
@@ -80,9 +92,10 @@ export function FingerprintResult({ analysis, submitted, footnote }: { analysis:
         <dl className="fp-facts">
           <div><dt>有效回答</dt><dd>{analysis.valid_answers} / {submitted}</dd></div>
           <div><dt>结果等级</dt><dd>{level.label}（{level.note}）</dd></div>
-          <div><dt>声明的模型</dt><dd>{expected ? expected.display_name : '未选择'}</dd></div>
+          <div><dt>声明的模型</dt><dd>{expected ? expected.display_name : unclaimed.fact}</dd></div>
           {expected && analysis.expected_rank > 0 && <div><dt>声明模型的排名</dt><dd>第 {analysis.expected_rank} 位</dd></div>}
           <div><dt>参考库版本</dt><dd>{bankDate(analysis.bank_built_at)}</dd></div>
+          {facts}
         </dl>
       </div>
     </div>

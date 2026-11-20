@@ -32,6 +32,8 @@ export type FingerprintPublicResults = {models:FingerprintPublicModel[]};
 export type AdminFingerprintModel = Omit<Domain.AdminFingerprintModel,'settings'|'latest'|'summary'|'job'> & {settings:FingerprintModelSettings;latest:FingerprintRound|null;summary:FingerprintSummary|null;job:Job|null};
 export type AdminFingerprintOverview = Omit<Domain.AdminFingerprintOverview,'models'> & {models:AdminFingerprintModel[]};
 export type FingerprintBankRefresh = Domain.FingerprintBankRefresh;
+export type FingerprintCheckRequest = Omit<Domain.FingerprintCheckRequest,'mode'> & {mode:'auto'|'manual'|'unlisted'};
+export type FingerprintCheck = Omit<Domain.FingerprintCheck,'analysis'> & {analysis:FingerprintAnalysis};
 
 /** Public/admin lists omit source and raw payloads; detail endpoints add them. */
 export interface Artifact extends Omit<Domain.Artifact,'code'|'raw_response'> {
