@@ -137,12 +137,19 @@ func ValidateNewDataDirectory(dataDir string) error {
 	}
 	allowed := map[string]bool{"relaylab.db": true, "relaylab.db-wal": true, "relaylab.db-shm": true, "serve.out.log": true, "serve.err.log": true, "worker.out.log": true, "worker.err.log": true, "serve.log": true, "worker.log": true, "processes.json": true, "processes.json.tmp": true, "stop.request": true, "launcher.token": true, "launcher.json": true, "launcher.json.tmp": true, "launcher.process.json": true, "launcher.process.json.tmp": true, "launcher.out.log": true, "launcher.err.log": true, "update-state.json": true, "launcher.lock": true, "launcher-update.json": true, "maintenance.request": true, "runtime-serve.json": true, "runtime-worker.json": true, "serve.stop.request": true, "worker.stop.request": true, "runtime-serve.lock": true, "runtime-worker.lock": true, "launcher-child-serve.json": true, "launcher-child-worker.json": true}
 	for _, entry := range entries {
+		if entry.IsDir() && entry.Name() == RecreatableCacheDir {
+			continue
+		}
 		if entry.IsDir() || (!allowed[entry.Name()] && !strings.HasPrefix(entry.Name(), ".master-key-") && !managedInitializationTemporary(entry)) {
 			return errors.New("新数据目录包含其他文件，请选择空的专用目录")
 		}
 	}
 	return nil
 }
+
+// RecreatableCacheDir is the one subdirectory the application keeps in its data directory: the downloaded
+// fingerprint reference bank. It holds no instance data, so it may outlive a database that is being initialized again.
+const RecreatableCacheDir = "fingerprint-bank"
 
 // A managed child can inspect the empty data directory while the launcher is
 // atomically publishing its child PID or start.ps1 is updating its process

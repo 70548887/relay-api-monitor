@@ -138,6 +138,34 @@ func TestNewDataDirectoryAllowsOnlyManagedWriterTemporaryFiles(t *testing.T) {
 	}
 }
 
+func TestNewDataDirectoryAllowsOnlyTheRecreatableCacheDirectory(t *testing.T) {
+	dir := t.TempDir()
+	cache := filepath.Join(dir, RecreatableCacheDir)
+	if err := os.Mkdir(cache, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cache, "data.bin"), []byte("bank"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateNewDataDirectory(dir); err != nil {
+		t.Fatalf("data directory with only the cache rejected: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "other"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateNewDataDirectory(dir); err == nil {
+		t.Fatal("another directory accepted next to the cache")
+	}
+
+	fileNamedLikeTheCache := t.TempDir()
+	if err := os.WriteFile(filepath.Join(fileNamedLikeTheCache, RecreatableCacheDir), []byte("preserve"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateNewDataDirectory(fileNamedLikeTheCache); err == nil {
+		t.Fatal("a file named like the cache directory accepted")
+	}
+}
+
 func TestManagedInitializationTemporaryRejectsSymlink(t *testing.T) {
 	t.Setenv("RELAYLAB_LAUNCHER", "1")
 	dir := t.TempDir()
