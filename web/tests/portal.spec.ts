@@ -66,7 +66,8 @@ test('public monitor and gallery have member entry links and never initialize an
     await page.goto(path);
     await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
     const navigation = page.getByRole('navigation', { name: '主导航', exact: true });
-    await expect(navigation.getByRole('link')).toHaveCount(3);
+    await expect(navigation.getByRole('link')).toHaveCount(4);
+    await expect(navigation.getByRole('link', { name: '指纹匹对', exact: true })).toHaveAttribute('href', '/fingerprint');
     await expect(page.getByRole('link', { name: '登录', exact: true })).toHaveAttribute('href', '/login');
     await expect(page.getByRole('link', { name: '注册', exact: true })).toHaveAttribute('href', '/register');
     await expect(page.locator('a[href^="/admin"]')).toHaveCount(0);
