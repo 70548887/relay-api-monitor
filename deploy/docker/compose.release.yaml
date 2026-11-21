@@ -2,7 +2,7 @@
 name: relaylab
 services:
   relaylab:
-    image: relay-api-monitor:${RELAYLAB_VERSION:-1.6.3}
+    image: relay-api-monitor:${RELAYLAB_VERSION:-1.7.0}
     build:
       context: .
       dockerfile: Dockerfile
